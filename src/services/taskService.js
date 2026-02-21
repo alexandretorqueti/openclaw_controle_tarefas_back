@@ -1,8 +1,77 @@
 const prisma = require('./prismaService');
 
 class TaskService {
+  // Validate referenced IDs exist before creating a task
+  async validateReferences(data) {
+    const errors = [];
+    
+    // Check project exists
+    const project = await prisma.project.findUnique({
+      where: { id: data.projectId }
+    });
+    if (!project) {
+      errors.push(`Project with ID ${data.projectId} not found`);
+    }
+    
+    // Check status exists
+    const status = await prisma.status.findUnique({
+      where: { id: data.statusId }
+    });
+    if (!status) {
+      errors.push(`Status with ID ${data.statusId} not found`);
+    }
+    
+    // Check priority exists
+    const priority = await prisma.priority.findUnique({
+      where: { id: data.priorityId }
+    });
+    if (!priority) {
+      errors.push(`Priority with ID ${data.priorityId} not found`);
+    }
+    
+    // Check creator exists
+    const creator = await prisma.user.findUnique({
+      where: { id: data.createdById }
+    });
+    if (!creator) {
+      errors.push(`Creator with ID ${data.createdById} not found`);
+    }
+    
+    // Check assignee exists
+    const assignee = await prisma.user.findUnique({
+      where: { id: data.assignedToId }
+    });
+    if (!assignee) {
+      errors.push(`Assignee with ID ${data.assignedToId} not found`);
+    }
+    
+    // Check parent task exists if provided
+    if (data.parentTaskId) {
+      const parentTask = await prisma.task.findUnique({
+        where: { id: data.parentTaskId }
+      });
+      if (!parentTask) {
+        errors.push(`Parent task with ID ${data.parentTaskId} not found`);
+      } else if (parentTask.projectId !== data.projectId) {
+        errors.push(`Parent task belongs to a different project`);
+      }
+    }
+    
+    if (errors.length > 0) {
+      const error = new Error(`Validation failed: ${errors.join(', ')}`);
+      error.validationErrors = errors;
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    return { project, status, priority, creator, assignee };
+  }
+
   // Create a new task
   async createTask(data) {
+    // Validate all referenced IDs exist
+    await this.validateReferences(data);
+    
     return await prisma.task.create({
       data: {
         title: data.title,
@@ -247,13 +316,107 @@ class TaskService {
     });
   }
 
+  // Validate update references
+  async validateUpdateReferences(id, data) {
+    const errors = [];
+    
+    // Get current task to check project context
+    const currentTask = await prisma.task.findUnique({
+      where: { id },
+      select: { projectId: true }
+    });
+    
+    if (!currentTask) {
+      throw new Error(`Task with ID ${id} not found`);
+    }
+    
+    // Check project exists if being updated
+    if (data.projectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: data.projectId }
+      });
+      if (!project) {
+        errors.push(`Project with ID ${data.projectId} not found`);
+      }
+    }
+    
+    // Check status exists if being updated
+    if (data.statusId) {
+      const status = await prisma.status.findUnique({
+        where: { id: data.statusId }
+      });
+      if (!status) {
+        errors.push(`Status with ID ${data.statusId} not found`);
+      }
+    }
+    
+    // Check priority exists if being updated
+    if (data.priorityId) {
+      const priority = await prisma.priority.findUnique({
+        where: { id: data.priorityId }
+      });
+      if (!priority) {
+        errors.push(`Priority with ID ${data.priorityId} not found`);
+      }
+    }
+    
+    // Check assignee exists if being updated
+    if (data.assignedToId) {
+      const assignee = await prisma.user.findUnique({
+        where: { id: data.assignedToId }
+      });
+      if (!assignee) {
+        errors.push(`Assignee with ID ${data.assignedToId} not found`);
+      }
+    }
+    
+    // Check parent task exists if provided
+    if (data.parentTaskId !== undefined) {
+      if (data.parentTaskId === null) {
+        // Allow null (removing parent)
+      } else {
+        const parentTask = await prisma.task.findUnique({
+          where: { id: data.parentTaskId }
+        });
+        if (!parentTask) {
+          errors.push(`Parent task with ID ${data.parentTaskId} not found`);
+        } else {
+          // Check parent task belongs to same project (or new project if project is being updated)
+          const targetProjectId = data.projectId || currentTask.projectId;
+          if (parentTask.projectId !== targetProjectId) {
+            errors.push(`Parent task belongs to a different project`);
+          }
+          
+          // Check for circular reference
+          if (parentTask.id === id) {
+            errors.push(`Task cannot be its own parent`);
+          }
+        }
+      }
+    }
+    
+    if (errors.length > 0) {
+      const error = new Error(`Validation failed: ${errors.join(', ')}`);
+      error.validationErrors = errors;
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
   // Update task
   async updateTask(id, data) {
+    // Validate update references
+    await this.validateUpdateReferences(id, data);
+    
     // Check if status is changing to record history
     const oldTask = await prisma.task.findUnique({
       where: { id },
-      select: { statusId: true }
+      select: { statusId: true, createdById: true }
     });
+
+    if (!oldTask) {
+      throw new Error(`Task with ID ${id} not found`);
+    }
 
     const updateData = {
       title: data.title,

@@ -22,6 +22,7 @@ model User {
   comments        Comment[]
   attachments     Attachment[]
   taskHistory     TaskHistory[]
+  logs            Log[]
   
   @@map("users")
 }
@@ -166,4 +167,44 @@ model TaskHistory {
   user        User     @relation(fields: [userId], references: [id])
   
   @@map("task_history")
+}
+
+model Log {
+  id           String   @id @default(uuid())
+  timestamp    DateTime @default(now())
+  level        String   @default("ERROR") // ERROR, WARN, INFO, DEBUG
+  endpoint     String
+  method       String
+  statusCode   Int
+  message      String
+  errorType    String?  // e.g., "ValidationError", "DatabaseError", "BusinessError", "SystemError"
+  stackTrace   String?
+  
+  // Request data
+  requestBody  String?
+  requestQuery String?
+  requestParams String?
+  headers      String?
+  clientIp     String?
+  
+  // User context
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  
+  // Log correlation
+  correlationId String? @default(uuid())
+  parentLogId   String?
+  parentLog     Log?    @relation("LogHierarchy", fields: [parentLogId], references: [id])
+  childLogs     Log[]   @relation("LogHierarchy")
+  
+  // Performance metrics
+  responseTime  Int?    // in milliseconds
+  
+  @@index([timestamp])
+  @@index([level])
+  @@index([endpoint])
+  @@index([statusCode])
+  @@index([userId])
+  @@index([correlationId])
+  @@map("logs")
 }
