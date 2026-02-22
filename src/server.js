@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -55,6 +56,9 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+
+// Rotas de autenticação simples
+app.use('/api/auth', authRoutes);
 
 // 404 handler
 app.use((req, res) => {
