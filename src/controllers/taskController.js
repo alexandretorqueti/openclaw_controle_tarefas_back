@@ -93,7 +93,10 @@ class TaskController {
   async updateTask(req, res, next) {
     try {
       const { id } = req.params;
-      const validation = validateTaskUpdate(req.body);
+      // Convert snake_case to camelCase if needed
+      const body = snakeToCamel(req.body);
+      
+      const validation = validateTaskUpdate(body);
       
       if (!validation.success) {
         return res.status(400).json({
