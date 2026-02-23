@@ -1,11 +1,93 @@
 const express = require('express');
 const router = express.Router();
+const prisma = require('../services/prismaService');
 
-// Armazenamento simples em memória (para desenvolvimento)
-const users = new Map();
+// Rota de cadastro/registro
+router.post('/register', async (req, res) => {
+  try {
+    const { name, nickname, email } = req.body;
+    
+    // Validações
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nome deve ter pelo menos 2 caracteres' 
+      });
+    }
+    
+    if (!nickname || nickname.trim().length < 2) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Nickname deve ter pelo menos 2 caracteres' 
+      });
+    }
+    
+    const cleanNickname = nickname.trim().toLowerCase();
+    const cleanName = name.trim();
+    const cleanEmail = email ? email.trim().toLowerCase() : null;
+    
+    // Verificar se nickname já existe
+    const existingNickname = await prisma.user.findUnique({
+      where: { nickname: cleanNickname }
+    });
+    
+    if (existingNickname) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Este nickname já está em uso' 
+      });
+    }
+    
+    // Verificar se email já existe (se fornecido)
+    if (cleanEmail) {
+      const existingEmail = await prisma.user.findUnique({
+        where: { email: cleanEmail }
+      });
+      
+      if (existingEmail) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Este email já está em uso' 
+        });
+      }
+    }
+    
+    // Criar novo usuário
+    const newUser = await prisma.user.create({
+      data: {
+        name: cleanName,
+        nickname: cleanNickname,
+        email: cleanEmail,
+        role: 'Viewer' // Default role
+      }
+    });
+    
+    console.log(`✅ Usuário cadastrado (DEV): ${newUser.nickname} (ID: ${newUser.id})`);
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Cadastro realizado com sucesso',
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        nickname: newUser.nickname,
+        email: newUser.email,
+        role: newUser.role,
+        isAuthenticated: true
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erro no cadastro (DEV):', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Erro interno no servidor' 
+    });
+  }
+});
 
-// Rota de login/cadastro simples
-router.post('/simple-auth/login', (req, res) => {
+// Rota de login
+router.post('/login', async (req, res) => {
   try {
     const { nickname } = req.body;
     
@@ -18,55 +100,36 @@ router.post('/simple-auth/login', (req, res) => {
     
     const cleanNickname = nickname.trim().toLowerCase();
     
-    // Verifica se já existe um usuário com esse nickname (case-insensitive)
-    let existingUser = null;
-    for (const [id, u] of users.entries()) {
-      if (u.nickname.toLowerCase() === cleanNickname) {
-        existingUser = u;
-        break;
-      }
-    }
-
-    if (existingUser) {
-      console.log(`🔐 Login simples (existente): ${existingUser.nickname} (ID: ${existingUser.id})`);
-      return res.status(200).json({
-        success: true,
-        message: 'Login realizado com sucesso',
-        user: {
-          id: existingUser.id,
-          nickname: existingUser.nickname,
-          isAuthenticated: true
-        }
+    // Buscar usuário pelo nickname
+    const user = await prisma.user.findUnique({
+      where: { nickname: cleanNickname }
+    });
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Usuário não encontrado' 
       });
     }
     
-    const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`🔐 Login realizado (DEV): ${user.nickname} (ID: ${user.id})`);
     
-    const newUser = {
-      id: userId,
-      nickname: nickname.trim(), // Mantém casing original no display
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString()
-    };
-
-    // Armazena usuário (em memória para DEV)
-    users.set(userId, newUser);
-    
-    console.log(`🔐 Login simples (novo): ${newUser.nickname} (ID: ${userId})`);
-    
-    // Retorna sucesso
     return res.status(200).json({
       success: true,
-      message: 'Conta criada e login realizado com sucesso',
+      message: 'Login realizado com sucesso',
       user: {
-        id: userId,
-        nickname: newUser.nickname,
+        id: user.id,
+        name: user.name,
+        nickname: user.nickname,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl,
         isAuthenticated: true
       }
     });
     
   } catch (error) {
-    console.error('Erro no login simples:', error);
+    console.error('Erro no login (DEV):', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Erro interno no servidor' 
@@ -74,26 +137,94 @@ router.post('/simple-auth/login', (req, res) => {
   }
 });
 
-// Rota para verificar autenticação
-router.get('/check', (req, res) => {
-  // Em modo simples, se houver um usuário na query ou se quisermos simular
-  // (Como o sistema atual não usa sessions persistentes para simple-auth em memória,
-  // vamos permitir que o frontend controle o estado ou usar uma lógica básica)
-  
-  // Nota: Para persistência real entre reloads sem sessions complexas em DEV,
-  // poderíamos usar cookies, mas aqui vamos apenas garantir que não dê 404
-  return res.status(200).json({
-    isAuthenticated: false,
-    message: 'Sistema aguardando autenticação'
-  });
+// Rota para verificar autenticação (por ID)
+router.post('/check', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(200).json({
+        isAuthenticated: false,
+        message: 'Nenhum usuário autenticado'
+      });
+    }
+    
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
+    if (!user) {
+      return res.status(200).json({
+        isAuthenticated: false,
+        message: 'Usuário não encontrado'
+      });
+    }
+    
+    return res.status(200).json({
+      isAuthenticated: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        nickname: user.nickname,
+        email: user.email,
+        role: user.role,
+        avatarUrl: user.avatarUrl
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erro ao verificar autenticação (DEV):', error);
+    return res.status(200).json({
+      isAuthenticated: false,
+      message: 'Erro ao verificar autenticação'
+    });
+  }
+});
+
+// Rota para listar todos os usuários (para desenvolvimento)
+router.get('/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        email: true,
+        role: true,
+        createdAt: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    
+    return res.status(200).json({
+      success: true,
+      users
+    });
+    
+  } catch (error) {
+    console.error('Erro ao listar usuários (DEV):', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Erro interno no servidor' 
+    });
+  }
 });
 
 // Rota de logout
 router.post('/logout', (req, res) => {
-  // Em modo simples, apenas confirma logout
   return res.status(200).json({
     success: true,
     message: 'Logout realizado'
+  });
+});
+
+// Mantendo a rota simple-auth para compatibilidade durante transição
+router.post('/simple-auth/login', (req, res) => {
+  return res.status(200).json({
+    success: false,
+    message: 'Sistema de autenticação atualizado. Use /api/auth/register ou /api/auth/login'
   });
 });
 

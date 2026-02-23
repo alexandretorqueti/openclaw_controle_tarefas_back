@@ -5,6 +5,11 @@ require('dotenv').config();
 const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes = require('./routes/taskRoutes');
 const authRoutes = require('./routes/authRoutes');
+const statusRoutes = require('./routes/statusRoutes');
+const priorityRoutes = require('./routes/priorityRoutes');
+const userRoutes = require('./routes/userRoutes');
+const recurrenceRoutes = require('./routes/recurrenceRoutes');
+const cronScheduler = require('./cronScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,7 +21,11 @@ const corsOptions = {
 
 // Parse CORS_ORIGIN environment variable
 if (process.env.CORS_ORIGIN) {
-  if (process.env.CORS_ORIGIN.includes(',')) {
+  if (process.env.CORS_ORIGIN === '*') {
+    // Allow any origin (reflect request origin)
+    corsOptions.origin = true;
+    console.log(`🌐 CORS configured to allow ANY origin (wildcard)`);
+  } else if (process.env.CORS_ORIGIN.includes(',')) {
     // Multiple origins - split into array
     corsOptions.origin = process.env.CORS_ORIGIN.split(',').map(origin => origin.trim());
     console.log(`🌐 CORS configured with multiple origins:`, corsOptions.origin);
@@ -56,8 +65,12 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/statuses', statusRoutes);
+app.use('/api/priorities', priorityRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/recurrence', recurrenceRoutes);
 
-// Rotas de autenticação simples
+// Rotas de autenticação
 app.use('/api/auth', authRoutes);
 
 // 404 handler
@@ -79,4 +92,12 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📁 Database: ${process.env.DATABASE_URL}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN}`);
+  
+  // Start cron scheduler for recurring tasks
+  if (process.env.ENABLE_CRON_SCHEDULER !== 'false') {
+    cronScheduler.init();
+    console.log('🕐 Cron scheduler enabled for recurring tasks');
+  } else {
+    console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
+  }
 });

@@ -10,12 +10,26 @@ const taskSchema = z.object({
     .optional()
     .or(z.literal('')),
   deadline: z.string()
-    .datetime('Invalid date format. Use ISO 8601 format')
+    .refine(date => {
+      // Aceita tanto formato ISO 8601 completo quanto sem segundos
+      const isoRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
+      return isoRegex.test(date) && !isNaN(new Date(date).getTime());
+    }, 'Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS)')
     .refine(date => new Date(date) > new Date(), {
       message: 'Deadline must be in the future'
     }),
   position: z.number().int().min(0).optional().default(0),
   isCompleted: z.boolean().optional().default(false),
+  
+  // Recurrence fields
+  isRecurring: z.boolean().optional().default(false),
+  recurrenceType: z.enum(['daily', 'weekly', 'monthly']).optional().nullable(),
+  recurrenceTimes: z.array(z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:MM'))
+    .optional()
+    .nullable(),
+  recurrenceDays: z.array(z.number().int().min(0).max(6))
+    .optional()
+    .nullable(),
   
   projectId: z.string().uuid('Invalid project ID format'),
   statusId: z.string().uuid('Invalid status ID format'),
@@ -36,16 +50,32 @@ const updateTaskSchema = z.object({
     .max(1000, 'Description must be at most 1000 characters')
     .optional(),
   deadline: z.string()
-    .datetime('Invalid date format. Use ISO 8601 format')
+    .refine(date => {
+      // Aceita tanto formato ISO 8601 completo quanto sem segundos
+      const isoRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
+      return isoRegex.test(date) && !isNaN(new Date(date).getTime());
+    }, 'Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS)')
     .optional(),
   position: z.number().int().min(0).optional(),
   isCompleted: z.boolean().optional(),
+  
+  // Recurrence fields
+  isRecurring: z.boolean().optional(),
+  recurrenceType: z.enum(['daily', 'weekly', 'monthly']).optional().nullable(),
+  recurrenceTimes: z.array(z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:MM'))
+    .optional()
+    .nullable(),
+  recurrenceDays: z.array(z.number().int().min(0).max(6))
+    .optional()
+    .nullable(),
+  
   projectId: z.string().uuid('Invalid project ID format').optional(),
   statusId: z.string().uuid('Invalid status ID format').optional(),
   priorityId: z.string().uuid('Invalid priority ID format').optional(),
   assignedToId: z.string().uuid('Invalid assignee ID format').optional(),
   parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable(),
-  statusChangeNotes: z.string().max(500).optional()
+  statusChangeNotes: z.string().max(500).optional(),
+  userId: z.string().uuid('Invalid user ID format').optional()
 });
 
 const taskFiltersSchema = z.object({

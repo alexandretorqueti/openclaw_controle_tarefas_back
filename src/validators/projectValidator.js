@@ -9,6 +9,7 @@ const projectSchema = z.object({
     .max(500, 'Description must be at most 500 characters')
     .optional()
     .or(z.literal('')),
+  regras: z.string().optional().nullable(),
   status: z.boolean().optional().default(true),
   createdById: z.string().uuid('Invalid user ID format')
 });
@@ -22,6 +23,7 @@ const updateProjectSchema = z.object({
     .min(10, 'Description must be at least 10 characters')
     .max(500, 'Description must be at most 500 characters')
     .optional(),
+  regras: z.string().optional().nullable(),
   status: z.boolean().optional()
 });
 

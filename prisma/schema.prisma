@@ -10,7 +10,8 @@ datasource db {
 model User {
   id        String   @id @default(uuid())
   name      String
-  email     String   @unique
+  nickname  String   @unique
+  email     String?  @unique
   avatarUrl String?
   role      String   @default("Viewer") // Admin, Editor, Viewer
   createdAt DateTime @default(now())
@@ -30,6 +31,7 @@ model Project {
   id          String   @id @default(uuid())
   name        String
   description String
+  regras      String?
   status      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -73,6 +75,14 @@ model Task {
   position     Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  // Campos de recorrência
+  isRecurring      Boolean   @default(false)
+  recurrenceType   String?   // 'daily', 'weekly', 'monthly'
+  recurrenceTimes  String?   // JSON array de horários no formato "HH:MM"
+  recurrenceDays   String?   // JSON array de dias da semana (0-6, onde 0=Domingo)
+  lastExecutedAt   DateTime? // Data/hora da última execução
+  nextExecutionAt  DateTime? // Próxima data/hora agendada
 
   projectId    String
   project      Project  @relation(fields: [projectId], references: [id])
