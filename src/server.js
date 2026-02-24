@@ -9,6 +9,7 @@ const statusRoutes = require('./routes/statusRoutes');
 const priorityRoutes = require('./routes/priorityRoutes');
 const userRoutes = require('./routes/userRoutes');
 const recurrenceRoutes = require('./routes/recurrenceRoutes');
+const commentRoutes = require('./routes/commentRoutes');
 const cronScheduler = require('./cronScheduler');
 
 const app = express();
@@ -69,6 +70,7 @@ app.use('/api/statuses', statusRoutes);
 app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
+app.use('/api/comments', commentRoutes);
 
 // Rotas de autenticação
 app.use('/api/auth', authRoutes);
