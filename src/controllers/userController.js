@@ -1,0 +1,287 @@
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+const ErrorMiddleware = require('../middlewares/errorMiddleware');
+
+class UserController {
+  // Get all users
+  getAllUsers = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const users = await prisma.user.findMany({
+      orderBy: {
+        name: 'asc'
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        nickname: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    res.json({
+      count: users.length,
+      users,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Get user by ID
+  getUserById = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        nickname: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    if (!user) {
+      const error = new Error(`User with ID ${id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+    
+    res.json({
+      ...user,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Get current user (from session)
+  getCurrentUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    if (!req.session.userId) {
+      const error = new Error('Not authenticated');
+      error.statusCode = 401;
+      throw error;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.session.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    if (!user) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      throw error;
+    }
+    
+    res.json({
+      ...user,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Create a new user
+  createUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { name, email, avatarUrl, role = 'Viewer', nickname } = req.body;
+    
+    if (!name || !email) {
+      const error = new Error('Name and email are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Generate nickname from email if not provided
+    let finalNickname = nickname;
+    if (!finalNickname) {
+      finalNickname = email.split('@')[0];
+    }
+
+    // Check if email already exists
+    const existingUserByEmail = await prisma.user.findUnique({
+      where: { email }
+    });
+    
+    if (existingUserByEmail) {
+      const error = new Error('User with this email already exists');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Check if nickname already exists
+    const existingUserByNickname = await prisma.user.findUnique({
+      where: { nickname: finalNickname }
+    });
+    
+    if (existingUserByNickname) {
+      const error = new Error('User with this nickname already exists');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        nickname: finalNickname,
+        avatarUrl,
+        role
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        nickname: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    res.status(201).json({
+      message: 'User created successfully',
+      user,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Update user
+  updateUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const { name, email, avatarUrl, role, nickname } = req.body;
+    
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id }
+    });
+    
+    if (!existingUser) {
+      const error = new Error(`User with ID ${id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Check if email is being changed and if it already exists
+    if (email && email !== existingUser.email) {
+      const userWithEmail = await prisma.user.findUnique({
+        where: { email }
+      });
+      
+      if (userWithEmail) {
+        const error = new Error('Email already in use by another user');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    // Check if nickname is being changed and if it already exists
+    if (nickname && nickname !== existingUser.nickname) {
+      const userWithNickname = await prisma.user.findUnique({
+        where: { nickname }
+      });
+      
+      if (userWithNickname) {
+        const error = new Error('Nickname already in use by another user');
+        error.statusCode = 400;
+        throw error;
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        name,
+        email,
+        nickname,
+        avatarUrl,
+        role
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        nickname: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+    
+    res.json({
+      message: 'User updated successfully',
+      user: updatedUser,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Delete user
+  deleteUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id }
+    });
+    
+    if (!existingUser) {
+      const error = new Error(`User with ID ${id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Check if user has created any projects
+    const userProjects = await prisma.project.findFirst({
+      where: { createdById: id }
+    });
+    
+    if (userProjects) {
+      const error = new Error('Cannot delete user who has created projects');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Check if user has created any tasks
+    const userTasks = await prisma.task.findFirst({
+      where: { createdById: id }
+    });
+    
+    if (userTasks) {
+      const error = new Error('Cannot delete user who has created tasks');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Check if user is assigned to any tasks
+    const assignedTasks = await prisma.task.findFirst({
+      where: { assignedToId: id }
+    });
+    
+    if (assignedTasks) {
+      const error = new Error('Cannot delete user who is assigned to tasks');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    await prisma.user.delete({
+      where: { id }
+    });
+    
+    res.json({
+      message: 'User deleted successfully',
+      correlationId: req.correlationId
+    });
+  });
+}
+
+module.exports = new UserController();

@@ -88,7 +88,10 @@ class TaskController {
   // Update task
   updateTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    const validation = validateTaskUpdate(req.body);
+    // Convert snake_case to camelCase if needed
+    const body = snakeToCamel(req.body);
+    
+    const validation = validateTaskUpdate(body);
     
     if (!validation.success) {
       const error = new Error('Validation failed');

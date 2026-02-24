@@ -8,22 +8,21 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  avatarUrl String?
-  role      String   @default("Viewer") // Admin, Editor, Viewer
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  createdProjects Project[] @relation("ProjectCreator")
-  createdTasks    Task[]    @relation("TaskCreator")
-  assignedTasks   Task[]    @relation("TaskAssignee")
-  comments        Comment[]
+  id              String        @id @default(uuid())
+  name            String
+  nickname        String        @unique
+  email           String?       @unique
+  avatarUrl       String?
+  role            String        @default("Viewer")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
   attachments     Attachment[]
+  comments        Comment[]
+  createdProjects Project[]     @relation("ProjectCreator")
   taskHistory     TaskHistory[]
-  logs            Log[]
-  
+  assignedTasks   Task[]        @relation("TaskAssignee")
+  createdTasks    Task[]        @relation("TaskCreator")
+
   @@map("users")
 }
 
@@ -31,27 +30,25 @@ model Project {
   id          String   @id @default(uuid())
   name        String
   description String
+  regras      String?
   status      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   createdById String
   createdBy   User     @relation("ProjectCreator", fields: [createdById], references: [id])
-  
   tasks       Task[]
-  
+
   @@map("projects")
 }
 
 model Status {
-  id            String @id @default(uuid())
-  name          String
-  colorCode     String @default("#666666")
-  isFinalState  Boolean @default(false)
-  order         Int    @default(0)
-  
-  tasks         Task[]
-  
+  id           String  @id @default(uuid())
+  name         String
+  colorCode    String  @default("#666666")
+  isFinalState Boolean @default(false)
+  order        Int     @default(0)
+  tasks        Task[]
+
   @@map("statuses")
 }
 
@@ -59,81 +56,73 @@ model Priority {
   id     String @id @default(uuid())
   name   String
   weight Int    @default(1)
-  
   tasks  Task[]
-  
+
   @@map("priorities")
 }
 
 model Task {
-  id           String   @id @default(uuid())
-  title        String
-  description  String
-  isCompleted  Boolean  @default(false)
-  deadline     DateTime
-  position     Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String        @id @default(uuid())
+  title           String
+  description     String
+  isCompleted     Boolean       @default(false)
+  deadline        DateTime
+  position        Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  isRecurring     Boolean       @default(false)
+  recurrenceType  String?
+  recurrenceTimes String?
+  recurrenceDays  String?
+  lastExecutedAt  DateTime?
+  nextExecutionAt DateTime?
+  projectId       String
+  parentTaskId    String?
+  statusId        String
+  priorityId      String
+  createdById     String
+  assignedToId    String
+  attachments     Attachment[]
+  comments        Comment[]
+  dependents      Dependency[]  @relation("TaskDependents")
+  dependencies    Dependency[]  @relation("TaskDependencies")
+  history         TaskHistory[]
+  assignedTo      User          @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  createdBy       User          @relation("TaskCreator", fields: [createdById], references: [id])
+  priority        Priority      @relation(fields: [priorityId], references: [id])
+  status          Status        @relation(fields: [statusId], references: [id])
+  parentTask      Task?         @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  subtasks        Task[]        @relation("TaskHierarchy")
+  project         Project       @relation(fields: [projectId], references: [id])
 
-  projectId    String
-  project      Project  @relation(fields: [projectId], references: [id])
-
-  parentTaskId String?
-  parentTask   Task?    @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
-  subtasks     Task[]   @relation("TaskHierarchy")
-
-  statusId     String
-  status       Status   @relation(fields: [statusId], references: [id])
-
-  priorityId   String
-  priority     Priority @relation(fields: [priorityId], references: [id])
-
-  createdById  String
-  createdBy    User     @relation("TaskCreator", fields: [createdById], references: [id])
-
-  assignedToId String
-  assignedTo   User     @relation("TaskAssignee", fields: [assignedToId], references: [id])
-
-  dependencies Dependency[] @relation("TaskDependencies")
-  dependents   Dependency[] @relation("TaskDependents")
-  
-  comments     Comment[]
-  attachments  Attachment[]
-  history      TaskHistory[]
-  
   @@map("tasks")
 }
 
 model Dependency {
-  id               String @id @default(uuid())
-  type             String @default("BLOCKING") // BLOCKING, PARALLEL
-  
-  taskId           String
-  task             Task   @relation("TaskDependencies", fields: [taskId], references: [id])
-  
-  dependentTaskId  String
-  dependentTask    Task   @relation("TaskDependents", fields: [dependentTaskId], references: [id])
-  
+  id              String @id @default(uuid())
+  type            String @default("BLOCKING")
+  taskId          String
+  dependentTaskId String
+  dependentTask   Task   @relation("TaskDependents", fields: [dependentTaskId], references: [id])
+  task            Task   @relation("TaskDependencies", fields: [taskId], references: [id])
+
   @@unique([taskId, dependentTaskId])
   @@map("dependencies")
 }
 
 model Comment {
-  id             String   @id @default(uuid())
-  content        String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  taskId         String
-  task           Task     @relation(fields: [taskId], references: [id])
-
-  userId         String
-  user           User     @relation(fields: [userId], references: [id])
-
+  id              String    @id @default(uuid())
+  content         String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  taskId          String
+  userId          String
   parentCommentId String?
-  parentComment   Comment? @relation("CommentHierarchy", fields: [parentCommentId], references: [id])
-  replies        Comment[] @relation("CommentHierarchy")
-  
+  parentComment   Comment?  @relation("CommentHierarchy", fields: [parentCommentId], references: [id])
+  replies         Comment[] @relation("CommentHierarchy")
+  user            User      @relation(fields: [userId], references: [id])
+  task            Task      @relation(fields: [taskId], references: [id])
+
   @@map("comments")
 }
 
@@ -143,13 +132,11 @@ model Attachment {
   fileUrl   String
   mimeType  String
   createdAt DateTime @default(now())
-
   taskId    String
-  task      Task     @relation(fields: [taskId], references: [id])
-
   userId    String
   user      User     @relation(fields: [userId], references: [id])
-  
+  task      Task     @relation(fields: [taskId], references: [id])
+
   @@map("attachments")
 }
 
@@ -159,52 +146,10 @@ model TaskHistory {
   newStatusId String
   notes       String?
   timestamp   DateTime @default(now())
-
   taskId      String
-  task        Task     @relation(fields: [taskId], references: [id])
-
   userId      String
   user        User     @relation(fields: [userId], references: [id])
-  
-  @@map("task_history")
-}
+  task        Task     @relation(fields: [taskId], references: [id])
 
-model Log {
-  id           String   @id @default(uuid())
-  timestamp    DateTime @default(now())
-  level        String   @default("ERROR") // ERROR, WARN, INFO, DEBUG
-  endpoint     String
-  method       String
-  statusCode   Int
-  message      String
-  errorType    String?  // e.g., "ValidationError", "DatabaseError", "BusinessError", "SystemError"
-  stackTrace   String?
-  
-  // Request data
-  requestBody  String?
-  requestQuery String?
-  requestParams String?
-  headers      String?
-  clientIp     String?
-  
-  // User context
-  userId       String?
-  user         User?    @relation(fields: [userId], references: [id])
-  
-  // Log correlation
-  correlationId String? @default(uuid())
-  parentLogId   String?
-  parentLog     Log?    @relation("LogHierarchy", fields: [parentLogId], references: [id])
-  childLogs     Log[]   @relation("LogHierarchy")
-  
-  // Performance metrics
-  responseTime  Int?    // in milliseconds
-  
-  @@index([timestamp])
-  @@index([level])
-  @@index([endpoint])
-  @@index([statusCode])
-  @@index([userId])
-  @@index([correlationId])
-  @@map("logs")
+  @@map("task_history")
 }

@@ -4,20 +4,46 @@ require('dotenv').config();
 
 const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes = require('./routes/taskRoutes');
+const statusRoutes = require('./routes/statusRoutes');
+const priorityRoutes = require('./routes/priorityRoutes');
+const userRoutes = require('./routes/userRoutes');
+const authRoutes = require('./routes/authRoutes');
+const recurrenceRoutes = require('./routes/recurrenceRoutes');
+const commentRoutes = require('./routes/commentRoutes');
 const ErrorMiddleware = require('./middlewares/errorMiddleware');
 const { Logger, LOG_LEVELS } = require('./utils/logger');
+const { passport, sessionConfig, getCurrentUser } = require('./middlewares/authMiddleware');
+const cronScheduler = require('./cronScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 const corsOptions = {
-  credentials: true
+  credentials: true,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = process.env.CORS_ORIGIN 
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : ['http://localhost:3000'];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
 };
 
 // Parse CORS_ORIGIN environment variable
 if (process.env.CORS_ORIGIN) {
-  if (process.env.CORS_ORIGIN.includes(',')) {
+  if (process.env.CORS_ORIGIN === '*') {
+    // Allow any origin (reflect request origin)
+    corsOptions.origin = true;
+    console.log(`🌐 CORS configured to allow ANY origin (wildcard)`);
+  } else if (process.env.CORS_ORIGIN.includes(',')) {
     // Multiple origins - split into array
     corsOptions.origin = process.env.CORS_ORIGIN.split(',').map(origin => origin.trim());
     console.log(`🌐 CORS configured with multiple origins:`, corsOptions.origin);
@@ -35,6 +61,16 @@ if (process.env.CORS_ORIGIN) {
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session middleware (must come before passport)
+app.use(require('express-session')(sessionConfig));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Get current user middleware
+app.use(getCurrentUser);
 
 // Add correlation ID and request timing
 app.use(ErrorMiddleware.addCorrelationId);
@@ -115,9 +151,18 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Auth Routes
+app.use('/api/auth', authRoutes);
+app.use('/callback', require('./routes/callbackProxy'));
+
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/statuses', statusRoutes);
+app.use('/api/priorities', priorityRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/recurrence', recurrenceRoutes);
+app.use('/api/comments', commentRoutes);
 
 // Logs endpoint for debugging (protected in production)
 if (process.env.NODE_ENV === 'development') {
@@ -173,4 +218,12 @@ app.listen(PORT, () => {
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN}`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV}`);
   console.log(`📊 Error logging: ENABLED`);
+  
+  // Start cron scheduler for recurring tasks
+  if (process.env.ENABLE_CRON_SCHEDULER !== 'false') {
+    cronScheduler.init();
+    console.log('🕐 Cron scheduler enabled for recurring tasks');
+  } else {
+    console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
+  }
 });

@@ -23,7 +23,6 @@ async function main() {
   const users = await prisma.user.createManyAndReturn({
     data: [
       {
-        id: 'f23d0cc1-8908-47a9-b615-0393fb77ae92', // UUID usado no frontend
         name: 'Alexandre Bragato',
         nickname: 'alexandre',
         email: 'alexandre@example.com',

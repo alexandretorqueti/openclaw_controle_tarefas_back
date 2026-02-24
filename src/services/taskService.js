@@ -72,6 +72,15 @@ class TaskService {
     // Validate all referenced IDs exist
     await this.validateReferences(data);
     
+    // Process recurrence fields
+    const recurrenceTimes = data.recurrenceTimes ? JSON.stringify(data.recurrenceTimes) : null;
+    const recurrenceDays = data.recurrenceDays ? JSON.stringify(data.recurrenceDays) : null;
+    
+    // Calculate next execution time if task is recurring
+    let nextExecutionAt = null;
+    if (data.isRecurring && data.recurrenceType) {
+      nextExecutionAt = this.calculateNextExecution(data);
+    }
     return await prisma.task.create({
       data: {
         title: data.title,
@@ -79,6 +88,14 @@ class TaskService {
         deadline: new Date(data.deadline),
         position: data.position || 0,
         isCompleted: data.isCompleted || false,
+        
+        // Recurrence fields
+        isRecurring: data.isRecurring || false,
+        recurrenceType: data.recurrenceType || null,
+        recurrenceTimes: recurrenceTimes,
+        recurrenceDays: recurrenceDays,
+        lastExecutedAt: null,
+        nextExecutionAt: nextExecutionAt,
         
         projectId: data.projectId,
         statusId: data.statusId,
@@ -143,9 +160,15 @@ class TaskService {
       where.assignedToId = filters.assignedToId;
     }
 
+    // Default to excluding completed tasks unless explicitly requested
+    console.log('DEBUG getAllTasks filters:', filters);
+    console.log('DEBUG getAllTasks filters.isCompleted:', filters.isCompleted);
     if (filters.isCompleted !== undefined) {
       where.isCompleted = filters.isCompleted === 'true';
+    } else {
+      where.isCompleted = false;
     }
+    console.log('DEBUG getAllTasks where:', JSON.stringify(where));
 
     if (filters.search) {
       where.OR = [
@@ -418,6 +441,7 @@ class TaskService {
       throw new Error(`Task with ID ${id} not found`);
     }
 
+    // Process recurrence fields
     const updateData = {
       title: data.title,
       description: data.description,
@@ -431,6 +455,51 @@ class TaskService {
       parentTaskId: data.parentTaskId,
       updatedAt: new Date()
     };
+
+    // Add recurrence fields if provided
+    if (data.isRecurring !== undefined) {
+      updateData.isRecurring = data.isRecurring;
+    }
+    
+    if (data.recurrenceType !== undefined) {
+      updateData.recurrenceType = data.recurrenceType;
+    }
+    
+    if (data.recurrenceTimes !== undefined) {
+      updateData.recurrenceTimes = data.recurrenceTimes ? JSON.stringify(data.recurrenceTimes) : null;
+    }
+    
+    if (data.recurrenceDays !== undefined) {
+      updateData.recurrenceDays = data.recurrenceDays ? JSON.stringify(data.recurrenceDays) : null;
+    }
+    
+    // Recalculate next execution if recurrence fields changed
+    if (data.isRecurring || data.recurrenceType || data.recurrenceTimes || data.recurrenceDays) {
+      const taskData = await prisma.task.findUnique({
+        where: { id },
+        select: {
+          isRecurring: true,
+          recurrenceType: true,
+          recurrenceTimes: true,
+          recurrenceDays: true,
+          lastExecutedAt: true
+        }
+      });
+      
+      const combinedData = {
+        isRecurring: data.isRecurring !== undefined ? data.isRecurring : taskData.isRecurring,
+        recurrenceType: data.recurrenceType !== undefined ? data.recurrenceType : taskData.recurrenceType,
+        recurrenceTimes: data.recurrenceTimes !== undefined ? data.recurrenceTimes : (taskData.recurrenceTimes ? JSON.parse(taskData.recurrenceTimes) : null),
+        recurrenceDays: data.recurrenceDays !== undefined ? data.recurrenceDays : (taskData.recurrenceDays ? JSON.parse(taskData.recurrenceDays) : null),
+        lastExecutedAt: taskData.lastExecutedAt
+      };
+      
+      if (combinedData.isRecurring && combinedData.recurrenceType) {
+        updateData.nextExecutionAt = this.calculateNextExecution(combinedData);
+      } else {
+        updateData.nextExecutionAt = null;
+      }
+    }
 
     // Remove undefined values
     Object.keys(updateData).forEach(key => 
@@ -456,17 +525,25 @@ class TaskService {
 
     // Add history record if status changed
     if (data.statusId && oldTask && data.statusId !== oldTask.statusId) {
-      transaction.push(
-        prisma.taskHistory.create({
-          data: {
-            taskId: id,
-            userId: data.userId || oldTask.createdById,
-            oldStatusId: oldTask.statusId,
-            newStatusId: data.statusId,
-            notes: data.statusChangeNotes
-          }
-        })
-      );
+      // Determine userId for history: use provided userId, or oldTask.createdById, or fallback to task creator
+      const userId = data.userId || oldTask.createdById;
+      if (userId) {
+        transaction.push(
+          prisma.taskHistory.create({
+            data: {
+              taskId: id,
+              userId: userId,
+              oldStatusId: oldTask.statusId,
+              newStatusId: data.statusId,
+              notes: data.statusChangeNotes
+            }
+          })
+        );
+      }
+      // If userId is not available, skip history creation (log warning)
+      else {
+        console.warn(`Cannot create task history for task ${id}: userId not available`);
+      }
     }
 
     const results = await prisma.$transaction(transaction);
@@ -548,9 +625,15 @@ class TaskService {
       where.statusId = filters.statusId;
     }
 
+    // Default to excluding completed tasks unless explicitly requested
+    console.log('DEBUG getTasksByProject filters:', filters);
+    console.log('DEBUG getTasksByProject filters.isCompleted:', filters.isCompleted);
     if (filters.isCompleted !== undefined) {
       where.isCompleted = filters.isCompleted === 'true';
+    } else {
+      where.isCompleted = false;
     }
+    console.log('DEBUG getTasksByProject where:', JSON.stringify(where));
 
     return await prisma.task.findMany({
       where,
@@ -576,6 +659,204 @@ class TaskService {
         position: 'asc'
       }
     });
+  }
+
+  // Get recurring tasks that need execution
+  async getRecurringTasksDue() {
+    const now = new Date();
+    
+    return await prisma.task.findMany({
+      where: {
+        isRecurring: true,
+        isCompleted: false,
+        OR: [
+          {
+            nextExecutionAt: {
+              lte: now
+            }
+          },
+          {
+            nextExecutionAt: null,
+            lastExecutedAt: null
+          }
+        ]
+      },
+      include: {
+        project: true,
+        status: true,
+        priority: true,
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+  }
+
+  // Mark task as executed and calculate next execution
+  async markTaskAsExecuted(taskId) {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: {
+        isRecurring: true,
+        recurrenceType: true,
+        recurrenceTimes: true,
+        recurrenceDays: true,
+        lastExecutedAt: true
+      }
+    });
+
+    if (!task) {
+      throw new Error('Task not found');
+    }
+
+    const updateData = {
+      lastExecutedAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Calculate next execution if task is recurring
+    if (task.isRecurring && task.recurrenceType) {
+      const taskData = {
+        isRecurring: task.isRecurring,
+        recurrenceType: task.recurrenceType,
+        recurrenceTimes: task.recurrenceTimes ? JSON.parse(task.recurrenceTimes) : null,
+        recurrenceDays: task.recurrenceDays ? JSON.parse(task.recurrenceDays) : null,
+        lastExecutedAt: new Date() // Use current time as last executed
+      };
+      
+      updateData.nextExecutionAt = this.calculateNextExecution(taskData);
+    } else {
+      updateData.nextExecutionAt = null;
+    }
+
+    return await prisma.task.update({
+      where: { id: taskId },
+      data: updateData,
+      include: {
+        project: true,
+        status: true,
+        priority: true
+      }
+    });
+  }
+
+  // Calculate next execution time based on recurrence rules
+  calculateNextExecution(taskData) {
+    const now = new Date();
+    const lastExecuted = taskData.lastExecutedAt || now;
+    
+    if (!taskData.recurrenceType) {
+      return null;
+    }
+
+    switch (taskData.recurrenceType) {
+      case 'daily':
+        return this.calculateNextDailyExecution(lastExecuted, taskData.recurrenceTimes);
+      case 'weekly':
+        return this.calculateNextWeeklyExecution(lastExecuted, taskData.recurrenceDays, taskData.recurrenceTimes);
+      case 'monthly':
+        return this.calculateNextMonthlyExecution(lastExecuted, taskData.recurrenceTimes);
+      default:
+        return null;
+    }
+  }
+
+  // Calculate next daily execution
+  calculateNextDailyExecution(lastExecuted, recurrenceTimes) {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    
+    if (!recurrenceTimes || !Array.isArray(recurrenceTimes) || recurrenceTimes.length === 0) {
+      // Default to same time tomorrow
+      const next = new Date(lastExecuted);
+      next.setDate(next.getDate() + 1);
+      return next;
+    }
+
+    // Parse times and find next one
+    const times = recurrenceTimes.map(time => {
+      const [hours, minutes] = time.split(':').map(Number);
+      const date = new Date(today);
+      date.setHours(hours, minutes, 0, 0);
+      return date;
+    }).sort((a, b) => a - b);
+
+    // Find next time today
+    for (const time of times) {
+      if (time > now) {
+        return time;
+      }
+    }
+
+    // If no more times today, use first time tomorrow
+    const firstTimeTomorrow = new Date(times[0]);
+    firstTimeTomorrow.setDate(firstTimeTomorrow.getDate() + 1);
+    return firstTimeTomorrow;
+  }
+
+  // Calculate next weekly execution
+  calculateNextWeeklyExecution(lastExecuted, recurrenceDays, recurrenceTimes) {
+    const now = new Date();
+    const today = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    
+    if (!recurrenceDays || !Array.isArray(recurrenceDays) || recurrenceDays.length === 0) {
+      // Default to same day next week
+      const next = new Date(lastExecuted);
+      next.setDate(next.getDate() + 7);
+      return next;
+    }
+
+    // Parse days (0-6)
+    const days = recurrenceDays.map(Number).sort((a, b) => a - b);
+    
+    // Find next day this week
+    for (const day of days) {
+      if (day > today) {
+        return this.calculateDateTimeForDay(day, recurrenceTimes, now);
+      }
+    }
+
+    // If no more days this week, use first day next week
+    const nextWeek = new Date(now);
+    nextWeek.setDate(nextWeek.getDate() + 7 - today + days[0]);
+    return this.calculateDateTimeForDay(days[0], recurrenceTimes, nextWeek);
+  }
+
+  // Calculate next monthly execution
+  calculateNextMonthlyExecution(lastExecuted, recurrenceTimes) {
+    const next = new Date(lastExecuted);
+    next.setMonth(next.getMonth() + 1);
+    
+    if (recurrenceTimes && Array.isArray(recurrenceTimes) && recurrenceTimes.length > 0) {
+      // Use first time for monthly recurrence
+      const [hours, minutes] = recurrenceTimes[0].split(':').map(Number);
+      next.setHours(hours, minutes, 0, 0);
+    }
+    
+    return next;
+  }
+
+  // Helper: Calculate date/time for a specific day
+  calculateDateTimeForDay(dayOfWeek, recurrenceTimes, baseDate) {
+    const date = new Date(baseDate);
+    const currentDay = date.getDay();
+    const daysToAdd = (dayOfWeek - currentDay + 7) % 7;
+    date.setDate(date.getDate() + daysToAdd);
+    
+    if (recurrenceTimes && Array.isArray(recurrenceTimes) && recurrenceTimes.length > 0) {
+      // Use first time for the day
+      const [hours, minutes] = recurrenceTimes[0].split(':').map(Number);
+      date.setHours(hours, minutes, 0, 0);
+    } else {
+      // Default to same time
+      date.setHours(baseDate.getHours(), baseDate.getMinutes(), 0, 0);
+    }
+    
+    return date;
   }
 }
 

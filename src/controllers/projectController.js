@@ -78,7 +78,10 @@ class ProjectController {
   // Update project
   updateProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    const validation = validateProjectUpdate(req.body);
+    // Convert snake_case to camelCase if needed
+    const body = snakeToCamel(req.body);
+    
+    const validation = validateProjectUpdate(body);
     
     if (!validation.success) {
       const error = new Error('Validation failed');

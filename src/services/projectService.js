@@ -7,6 +7,7 @@ class ProjectService {
       data: {
         name: data.name,
         description: data.description,
+        regras: data.regras || null,
         status: data.status !== undefined ? data.status : true,
         createdById: data.createdById
       },
@@ -134,6 +135,7 @@ class ProjectService {
       data: {
         name: data.name,
         description: data.description,
+        regras: data.regras,
         status: data.status,
         updatedAt: new Date()
       },
