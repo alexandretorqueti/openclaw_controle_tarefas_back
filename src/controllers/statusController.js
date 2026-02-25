@@ -39,7 +39,7 @@ class StatusController {
 
   // Create a new status
   createStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { name, colorCode = '#666666', isFinalState = false, allowAI = false, order = 0 } = req.body;
+    const { name, color_code = '#666666', is_final_state = false, visible_to_ai = true, order = 0 } = req.body;
     
     if (!name) {
       const error = new Error('Name is required');
@@ -50,9 +50,9 @@ class StatusController {
     const status = await prisma.status.create({
       data: {
         name,
-        colorCode,
-        isFinalState,
-        allowAI,
+        colorCode: color_code,
+        isFinalState: is_final_state,
+        visible_to_ai,
         order
       }
     });
@@ -67,7 +67,7 @@ class StatusController {
   // Update status
   updateStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    const { name, colorCode, isFinalState, allowAI, order } = req.body;
+    const { name, color_code, is_final_state, visible_to_ai, order } = req.body;
     
     // Check if status exists
     const existingStatus = await prisma.status.findUnique({
@@ -83,11 +83,11 @@ class StatusController {
     const updatedStatus = await prisma.status.update({
       where: { id },
       data: {
-        name,
-        colorCode,
-        isFinalState,
-        allowAI,
-        order
+        name: name !== undefined ? name : existingStatus.name,
+        colorCode: color_code !== undefined ? color_code : existingStatus.colorCode,
+        isFinalState: is_final_state !== undefined ? is_final_state : existingStatus.isFinalState,
+        visible_to_ai: visible_to_ai !== undefined ? visible_to_ai : existingStatus.visible_to_ai,
+        order: order !== undefined ? order : existingStatus.order
       }
     });
     

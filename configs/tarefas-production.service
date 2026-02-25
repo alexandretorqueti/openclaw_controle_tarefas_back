@@ -1,0 +1,126 @@
+[Unit]
+Description=Tarefas Production System (Frontend + Backend)
+After=network.target
+Wants=network-online.target
+Requires=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=alexandrebragatorqueti
+WorkingDirectory=/home/alexandrebragatorqueti/projetos
+Environment=NODE_ENV=production
+Environment=PATH=/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Comando para iniciar os serviços
+ExecStart=/bin/bash -c '
+  echo "🚀 Iniciando sistema Tarefas de produção..."
+  
+  # Iniciar Backend
+  cd /home/alexandrebragatorqueti/projetos/tarefas-server-prod
+  nohup node src/server.js > /home/alexandrebragatorqueti/projetos/backend-production.log 2>&1 &
+  BACKEND_PID=$!
+  echo $BACKEND_PID > /home/alexandrebragatorqueti/projetos/backend.pid
+  
+  # Aguardar backend iniciar
+  sleep 5
+  
+  # Verificar se backend está rodando
+  if curl -s -f http://localhost:8091/health > /dev/null 2>&1; then
+    echo "✅ Backend iniciado na porta 8091"
+  else
+    echo "❌ Falha ao iniciar Backend"
+    exit 1
+  fi
+  
+  # Iniciar Frontend
+  cd /home/alexandrebragatorqueti/projetos/tarefas-web-prod
+  nohup node server.js > /home/alexandrebragatorqueti/projetos/frontend-production.log 2>&1 &
+  FRONTEND_PID=$!
+  echo $FRONTEND_PID > /home/alexandrebragatorqueti/projetos/frontend.pid
+  
+  # Aguardar frontend iniciar
+  sleep 3
+  
+  # Verificar se frontend está rodando
+  if curl -s -f http://localhost:8090 > /dev/null 2>&1; then
+    echo "✅ Frontend iniciado na porta 8090"
+    echo "🌐 Sistema acessível em: http://localhost:8090"
+  else
+    echo "❌ Falha ao iniciar Frontend"
+    exit 1
+  fi
+  
+  echo "🎉 Sistema Tarefas iniciado com sucesso!"
+'
+
+# Comando para parar os serviços
+ExecStop=/bin/bash -c '
+  echo "🛑 Parando sistema Tarefas de produção..."
+  
+  # Parar Frontend
+  if [ -f /home/alexandrebragatorqueti/projetos/frontend.pid ]; then
+    FRONTEND_PID=$(cat /home/alexandrebragatorqueti/projetos/frontend.pid)
+    kill $FRONTEND_PID 2>/dev/null && echo "✅ Frontend parado" || echo "⚠️  Frontend já parado"
+    rm -f /home/alexandrebragatorqueti/projetos/frontend.pid
+  fi
+  
+  # Parar Backend
+  if [ -f /home/alexandrebragatorqueti/projetos/backend.pid ]; then
+    BACKEND_PID=$(cat /home/alexandrebragatorqueti/projetos/backend.pid)
+    kill $BACKEND_PID 2>/dev/null && echo "✅ Backend parado" || echo "⚠️  Backend já parado"
+    rm -f /home/alexandrebragatorqueti/projetos/backend.pid
+  fi
+  
+  # Garantir que não há processos restantes
+  pkill -f "tarefas-server-prod" 2>/dev/null
+  pkill -f "tarefas-web-prod" 2>/dev/null
+  
+  echo "✅ Sistema Tarefas parado com sucesso"
+'
+
+# Comando para verificar status
+ExecStatus=/bin/bash -c '
+  echo "📊 Status do sistema Tarefas:"
+  echo ""
+  
+  # Verificar Frontend
+  if ss -tln | grep -q ":8090 "; then
+    echo "Frontend (8090): ✅ ATIVO"
+    echo "  URL: http://localhost:8090"
+  else
+    echo "Frontend (8090): ❌ INATIVO"
+  fi
+  
+  # Verificar Backend
+  if ss -tln | grep -q ":8091 "; then
+    if curl -s -f http://localhost:8091/health > /dev/null 2>&1; then
+      echo "Backend  (8091): ✅ ATIVO e SAUDÁVEL"
+      echo "  Health: http://localhost:8091/health"
+    else
+      echo "Backend  (8091): ⚠️  ATIVO mas com problemas"
+    fi
+  else
+    echo "Backend  (8091): ❌ INATIVO"
+  fi
+  
+  echo ""
+  echo "📋 Logs disponíveis em:"
+  echo "  Backend:  /home/alexandrebragatorqueti/projetos/backend-production.log"
+  echo "  Frontend: /home/alexandrebragatorqueti/projetos/frontend-production.log"
+  echo "  Monitor:  /home/alexandrebragatorqueti/projetos/tarefas-monitor.log"
+'
+
+# Reiniciar se falhar
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tarefas-production
+
+[Install]
+WantedBy=multi-user.target

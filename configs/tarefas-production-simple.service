@@ -1,0 +1,19 @@
+[Unit]
+Description=Tarefas Production System
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=alexandrebragatorqueti
+WorkingDirectory=/home/alexandrebragatorqueti/projetos
+Environment=NODE_ENV=production
+
+# Iniciar serviços individuais
+ExecStart=/bin/bash -c 'systemctl start tarefas-backend.service && systemctl start tarefas-frontend.service'
+# Parar serviços individuais
+ExecStop=/bin/bash -c 'systemctl stop tarefas-frontend.service && systemctl stop tarefas-backend.service'
+
+[Install]
+WantedBy=multi-user.target
