@@ -39,7 +39,7 @@ class StatusController {
 
   // Create a new status
   createStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { name, colorCode = '#666666', isFinalState = false, order = 0 } = req.body;
+    const { name, colorCode = '#666666', isFinalState = false, allowAI = false, order = 0 } = req.body;
     
     if (!name) {
       const error = new Error('Name is required');
@@ -52,6 +52,7 @@ class StatusController {
         name,
         colorCode,
         isFinalState,
+        allowAI,
         order
       }
     });
@@ -66,7 +67,7 @@ class StatusController {
   // Update status
   updateStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    const { name, colorCode, isFinalState, order } = req.body;
+    const { name, colorCode, isFinalState, allowAI, order } = req.body;
     
     // Check if status exists
     const existingStatus = await prisma.status.findUnique({
@@ -85,6 +86,7 @@ class StatusController {
         name,
         colorCode,
         isFinalState,
+        allowAI,
         order
       }
     });

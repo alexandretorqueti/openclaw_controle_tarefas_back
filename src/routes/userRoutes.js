@@ -17,4 +17,7 @@ router.put('/:id', userController.updateUser);
 // DELETE /api/users/:id - Delete user
 router.delete('/:id', userController.deleteUser);
 
+// GET /api/users/nickname/:nickname/next-task - Get next task for user
+router.get('/nickname/:nickname/next-task', userController.getNextTaskByNickname);
+
 module.exports = router;

@@ -282,6 +282,63 @@ class UserController {
       correlationId: req.correlationId
     });
   });
+
+  // Get next task for a user by nickname
+  getNextTaskByNickname = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { nickname } = req.params;
+
+    // 1. Find the user
+    const user = await prisma.user.findUnique({
+      where: { nickname }
+    });
+
+    if (!user) {
+      const error = new Error(`User with nickname ${nickname} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // 2. Find the next task
+    const nextTask = await prisma.task.findFirst({
+      where: {
+        assignedToId: user.id,
+        isCompleted: false,
+        status: {
+          allowAI: true
+        }
+      },
+      include: {
+        status: true,
+        priority: true,
+        project: true
+      },
+      orderBy: [
+        {
+          priority: {
+            weight: 'desc'
+          }
+        },
+        {
+          createdAt: 'asc'
+        }
+      ]
+    });
+
+    if (!nextTask) {
+      return res.json({
+        success: true,
+        message: 'No pending tasks found for this user with AI-enabled status.',
+        task: null,
+        correlationId: req.correlationId
+      });
+    }
+
+    res.json({
+      success: true,
+      task: nextTask,
+      correlationId: req.correlationId
+    });
+  });
 }
 
 module.exports = new UserController();
