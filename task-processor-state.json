@@ -14,6 +14,18 @@
       "type": "backend",
       "path": "/home/alexandrebragatorqueti/projetos/tarefas-server",
       "branch": "task/9bda56fc-teste-final-do-task-processor-"
+    },
+    {
+      "taskId": "3cd48f01-7564-4d13-a2d9-41077180779f",
+      "type": "frontend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-web",
+      "branch": "task/3cd48f01-erro-ao-excluir-projetos"
+    },
+    {
+      "taskId": "3cd48f01-7564-4d13-a2d9-41077180779f",
+      "type": "backend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-server",
+      "branch": "task/3cd48f01-erro-ao-excluir-projetos"
     }
   ],
   "lastCheck": null

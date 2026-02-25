@@ -32,6 +32,7 @@ model Project {
   description    String
   regras         String?
   status         Boolean  @default(true)
+  ativo          Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   createdById    String

@@ -9,6 +9,7 @@ class ProjectService {
         description: data.description,
         regras: data.regras || null,
         status: data.status !== undefined ? data.status : true,
+        ativo: data.ativo !== undefined ? data.ativo : true,
         createdById: data.createdById,
         // Novos campos
         frontendPath: data.frontendPath || null,
@@ -33,6 +34,7 @@ class ProjectService {
   // Get all projects with task counts
   async getAllProjects() {
     const projects = await prisma.project.findMany({
+      where: { ativo: true },
       include: {
         createdBy: {
           select: {
@@ -54,6 +56,7 @@ class ProjectService {
         createdAt: 'desc'
       }
     });
+    console.log('Projects with ativo:', projects.map(p => ({ id: p.id, ativo: p.ativo })));
 
     // Calculate statistics for each project
     return projects.map(project => {
@@ -141,6 +144,7 @@ class ProjectService {
       description: data.description,
       regras: data.regras,
       status: data.status,
+      ativo: data.ativo,
       updatedAt: new Date()
     };
     
@@ -167,16 +171,16 @@ class ProjectService {
     });
   }
 
-  // Delete project
+  // Delete project (soft delete)
   async deleteProject(id) {
-    // First, delete all tasks in the project
-    await prisma.task.deleteMany({
-      where: { projectId: id }
-    });
-
-    // Then delete the project
-    return await prisma.project.delete({
-      where: { id }
+    // Soft delete: set ativo = false, status = false
+    return await prisma.project.update({
+      where: { id },
+      data: {
+        ativo: false,
+        status: false,
+        updatedAt: new Date()
+      }
     });
   }
 
