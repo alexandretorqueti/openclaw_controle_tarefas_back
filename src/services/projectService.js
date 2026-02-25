@@ -9,7 +9,13 @@ class ProjectService {
         description: data.description,
         regras: data.regras || null,
         status: data.status !== undefined ? data.status : true,
-        createdById: data.createdById
+        createdById: data.createdById,
+        // Novos campos
+        frontendPath: data.frontendPath || null,
+        frontendPort: data.frontendPort || null,
+        backendPath: data.backendPath || null,
+        backendPort: data.backendPort || null,
+        repositoryUrl: data.repositoryUrl || null
       },
       include: {
         createdBy: {
@@ -130,15 +136,24 @@ class ProjectService {
 
   // Update project
   async updateProject(id, data) {
+    const updateData = {
+      name: data.name,
+      description: data.description,
+      regras: data.regras,
+      status: data.status,
+      updatedAt: new Date()
+    };
+    
+    // Adicionar novos campos apenas se fornecidos
+    if (data.frontendPath !== undefined) updateData.frontendPath = data.frontendPath;
+    if (data.frontendPort !== undefined) updateData.frontendPort = data.frontendPort;
+    if (data.backendPath !== undefined) updateData.backendPath = data.backendPath;
+    if (data.backendPort !== undefined) updateData.backendPort = data.backendPort;
+    if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl;
+    
     return await prisma.project.update({
       where: { id },
-      data: {
-        name: data.name,
-        description: data.description,
-        regras: data.regras,
-        status: data.status,
-        updatedAt: new Date()
-      },
+      data: updateData,
       include: {
         createdBy: {
           select: {

@@ -27,16 +27,23 @@ model User {
 }
 
 model Project {
-  id          String   @id @default(uuid())
-  name        String
-  description String
-  regras      String?
-  status      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdById String
-  createdBy   User     @relation("ProjectCreator", fields: [createdById], references: [id])
-  tasks       Task[]
+  id             String   @id @default(uuid())
+  name           String
+  description    String
+  regras         String?
+  status         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdById    String
+  createdBy      User     @relation("ProjectCreator", fields: [createdById], references: [id])
+  tasks          Task[]
+  
+  // Novos campos para configuração de repositórios
+  frontendPath   String?  // Caminho absoluto do repositório frontend
+  frontendPort   Int?     // Porta do frontend (ex: 3000, 8080)
+  backendPath    String?  // Caminho absoluto do repositório backend
+  backendPort    Int?     // Porta do backend (ex: 3001, 8081)
+  repositoryUrl  String?  // URL do repositório principal (GitHub, GitLab, etc.)
 
   @@map("projects")
 }

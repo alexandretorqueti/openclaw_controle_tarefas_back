@@ -183,7 +183,9 @@ class TaskService {
         project: {
           select: {
             id: true,
-            name: true
+            name: true,
+            description: true,
+            regras: true
           }
         },
         status: true,
@@ -233,7 +235,8 @@ class TaskService {
           select: {
             id: true,
             name: true,
-            description: true
+            description: true,
+            regras: true
           }
         },
         status: true,
@@ -638,6 +641,14 @@ class TaskService {
     return await prisma.task.findMany({
       where,
       include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            regras: true
+          }
+        },
         status: true,
         priority: true,
         assignedTo: {

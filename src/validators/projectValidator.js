@@ -11,7 +11,13 @@ const projectSchema = z.object({
     .or(z.literal('')),
   regras: z.string().optional().nullable(),
   status: z.boolean().optional().default(true),
-  createdById: z.string().uuid('Invalid user ID format')
+  createdById: z.string().uuid('Invalid user ID format'),
+  // Novos campos
+  frontendPath: z.string().optional().nullable(),
+  frontendPort: z.number().int().positive().max(65535).optional().nullable(),
+  backendPath: z.string().optional().nullable(),
+  backendPort: z.number().int().positive().max(65535).optional().nullable(),
+  repositoryUrl: z.string().url('Invalid URL format').optional().nullable()
 });
 
 const updateProjectSchema = z.object({
@@ -24,7 +30,13 @@ const updateProjectSchema = z.object({
     .max(500, 'Description must be at most 500 characters')
     .optional(),
   regras: z.string().optional().nullable(),
-  status: z.boolean().optional()
+  status: z.boolean().optional(),
+  // Novos campos
+  frontendPath: z.string().optional().nullable(),
+  frontendPort: z.number().int().positive().max(65535).optional().nullable(),
+  backendPath: z.string().optional().nullable(),
+  backendPort: z.number().int().positive().max(65535).optional().nullable(),
+  repositoryUrl: z.string().url('Invalid URL format').optional().nullable()
 });
 
 const validateProject = (data) => {

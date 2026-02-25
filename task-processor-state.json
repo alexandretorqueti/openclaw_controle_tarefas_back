@@ -1,0 +1,20 @@
+{
+  "currentTask": null,
+  "agentSessionId": null,
+  "taskStartedAt": null,
+  "branchesCreated": [
+    {
+      "taskId": "9bda56fc-713a-468e-8695-adfa70d06555",
+      "type": "frontend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-web",
+      "branch": "task/9bda56fc-teste-final-do-task-processor-"
+    },
+    {
+      "taskId": "9bda56fc-713a-468e-8695-adfa70d06555",
+      "type": "backend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-server",
+      "branch": "task/9bda56fc-teste-final-do-task-processor-"
+    }
+  ],
+  "lastCheck": null
+}

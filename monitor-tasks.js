@@ -67,7 +67,8 @@ async function createExecuteScript(task) {
   let projetoRegras = "Nenhuma regra específica definida.";
   try {
     const projRes = await axios.get(`${API_URL}/api/projects/${task.projectId}`);
-    projetoRegras = projRes.data.project?.regras || projetoRegras;
+    projetoRegras = projRes.data?.regras || projetoRegras;
+    log(`[INFO] Regras do projeto ${task.projectId}: ${projetoRegras !== "Nenhuma regra específica definida." ? "ENCONTRADAS" : "NÃO ENCONTRADAS"}`);
   } catch (e) { log(`[AVISO] Falha ao buscar regras do projeto: ${e.message}`); }
 
   // 2. Buscar comentários da tarefa

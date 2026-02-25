@@ -164,6 +164,15 @@ app.use('/api/users', userRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/comments', commentRoutes);
 
+// IA Test endpoint
+app.get('/api/ia-test', (req, res) => {
+  res.json({ 
+    message: 'Teste de processamento IA funcionando',
+    timestamp: new Date().toISOString(),
+    taskId: 'afaa26ed-96d9-4067-a9e9-19e5854cdcec'
+  });
+});
+
 // Logs endpoint for debugging (protected in production)
 if (process.env.NODE_ENV === 'development') {
   app.get('/api/logs', async (req, res, next) => {
@@ -226,4 +235,6 @@ app.listen(PORT, () => {
   } else {
     console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
   }
+
+  // Teste completo do novo task-processor - modificação de teste pelo agente Jarbas em 2026-02-25 18:55 GMT-3
 });
