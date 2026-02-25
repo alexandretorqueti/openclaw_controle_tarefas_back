@@ -1,0 +1,5 @@
+⚠️ ARQUIVOS DE SEED DESABILITADOS ⚠️
+# Estes arquivos foram desabilitados para evitar limpeza acidental do banco
+# Para habilitar novamente, renomeie removendo .DISABLED
+# seed.js.DISABLED -> seed.js
+# seed_enhanced.js.DISABLED -> seed_enhanced.js

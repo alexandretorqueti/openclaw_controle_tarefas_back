@@ -1,4 +1,5 @@
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
+const prisma = require('../services/prismaService');
 
 class AuthController {
   // Initiate Google OAuth login
@@ -39,6 +40,56 @@ class AuthController {
     
     // Successful authentication, redirect to frontend
     res.redirect(`${frontendUrl}/auth/callback`);
+  });
+
+  // Login by nickname
+  login = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { nickname } = req.body;
+
+    if (!nickname) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'Nickname is required'
+      });
+    }
+
+    // Buscar usuário pelo nickname
+    const user = await prisma.user.findUnique({
+      where: { nickname },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        email: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'User not found with this nickname'
+      });
+    }
+
+    // Logar o usuário manualmente (sem senha, apenas sessão)
+    req.login(user, (err) => {
+      if (err) {
+        console.error('❌ Error logging in user:', err);
+        return next(err);
+      }
+
+      console.log(`✅ User logged in by nickname: ${user.nickname} (${user.name})`);
+      
+      res.json({
+        message: 'Login successful',
+        user: user,
+        correlationId: req.correlationId
+      });
+    });
   });
 
   // Get current user
