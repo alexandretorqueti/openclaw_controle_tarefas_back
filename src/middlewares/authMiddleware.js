@@ -113,10 +113,10 @@ passport.deserializeUser(async (id, done) => {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         avatarUrl: true,
         role: true,
-        googleId: true,
         createdAt: true,
         updatedAt: true
       }

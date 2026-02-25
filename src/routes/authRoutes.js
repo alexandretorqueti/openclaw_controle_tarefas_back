@@ -104,15 +104,75 @@ router.get('/google/callback',
 // GET /auth/me - Get current user
 router.get('/me', authController.getCurrentUser);
 
-// GET /auth/check - Check authentication status
+// GET /auth/check - Check authentication status (session-based)
 router.get('/check', authController.checkAuth);
+
+// POST /auth/check - Check authentication status (session-based) or specific user by ID
+router.post('/check', (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    // If userId is provided, check that specific user in database
+    if (userId) {
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient();
+      
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          nickname: true,
+          email: true,
+          avatarUrl: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      }).then(user => {
+        prisma.$disconnect();
+        
+        if (user) {
+          return res.json({
+            isAuthenticated: true,
+            user: user
+          });
+        } else {
+          return res.json({
+            isAuthenticated: false,
+            user: null
+          });
+        }
+      }).catch(error => {
+        console.error('Error checking user by ID:', error);
+        prisma.$disconnect();
+        
+        return res.status(500).json({
+          isAuthenticated: false,
+          message: 'Error checking user'
+        });
+      });
+    } else {
+      // No userId provided, delegate to session-based authentication check
+      console.log(`🔐 POST /auth/check - No userId, using session authentication`);
+      return authController.checkAuth(req, res);
+    }
+    
+  } catch (error) {
+    console.error('Error in POST /auth/check:', error);
+    return res.status(500).json({
+      isAuthenticated: false,
+      message: 'Internal server error'
+    });
+  }
+});
 
 // POST /auth/logout - Logout
 router.post('/logout', authController.logout);
 
 // --- SIMPLE AUTHENTICATION ---
 // POST /auth/login - Simple authentication (using name as identifier)
-router.post('/login', (req, res) => {
+router.post('/login', (req, res, next) => {
   try {
     const { nickname } = req.body;
     
@@ -145,17 +205,30 @@ router.post('/login', (req, res) => {
         }).then(() => {
           prisma.$disconnect();
           
-          return res.status(200).json({
-            success: true,
-            message: 'Login realizado com sucesso',
-            user: {
-              id: existingUser.id,
-              name: existingUser.name,
-              email: existingUser.email,
-              role: existingUser.role,
-              avatarUrl: existingUser.avatarUrl,
-              isAuthenticated: true
+          // Logar o usuário manualmente (criar sessão)
+          req.login(existingUser, (err) => {
+            if (err) {
+              console.error('Erro ao criar sessão:', err);
+              return res.status(500).json({ 
+                success: false, 
+                message: 'Erro ao criar sessão de login' 
+              });
             }
+            
+            console.log(`✅ Sessão criada para: ${existingUser.name} (${existingUser.id})`);
+            
+            return res.status(200).json({
+              success: true,
+              message: 'Login realizado com sucesso',
+              user: {
+                id: existingUser.id,
+                name: existingUser.name,
+                email: existingUser.email,
+                role: existingUser.role,
+                avatarUrl: existingUser.avatarUrl,
+                isAuthenticated: true
+              }
+            });
           });
         });
       } else {

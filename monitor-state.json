@@ -1,4 +1,5 @@
 {
   "failure_counts": {},
-  "active_pids": {}
+  "active_pids": {},
+  "blocked_tasks": {}
 }

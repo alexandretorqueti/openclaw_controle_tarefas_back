@@ -1,5 +1,8 @@
 const prisma = require('./prismaService');
 
+// TESTE DE REGRAS E COMENTÁRIOS: Este serviço gerencia comentários e deve receber as regras do projeto
+// para verificar se estão sendo enviados corretamente para a IA. Alteração realizada em 25/02/2026.
+
 class CommentService {
   // Create a new comment
   async createComment(data) {
