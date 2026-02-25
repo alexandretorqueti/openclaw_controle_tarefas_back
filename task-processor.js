@@ -1,5 +1,21 @@
 #!/usr/bin/env node
+/**
+ * TASK-PROCESSOR.JS - Processador automático de tarefas para IA
+ * 
+ * Funcionalidades:
+ * 1. Busca tarefas atribuídas ao Jarbas com status visíveis para IA
+ * 2. Cria branches nos repositórios do projeto
+ * 3. Spawna agente para executar a tarefa
+ * 4. Monitora agentes ativos e timeout (30 minutos)
+ * 5. Detecta conclusão e faz commit/push automático
+ * 
+ * CONFIGURAÇÕES:
+ * - IDs são buscados dinamicamente do banco
+ * - Status visíveis para IA são buscados da API
+ * - Sem fallback hardcoded (erro se não encontrar)
+ */
 
+require('dotenv').config();
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -7,19 +23,14 @@ const { exec: execCmd } = require('child_process');
 const { promisify } = require('util');
 const exec = promisify(execCmd);
 
-// Configurações
-const API_URL = 'http://localhost:3001';
-const MY_USER_ID = '6bdbe73b-8178-4fd5-987d-50f3b73beb2b'; // ID do Jarbas
-const ALEXANDRE_USER_ID = 'dbd7aca0-ba0e-492b-9698-873c85979372'; // ID do Alexandre
+// ========== CONFIGURAÇÕES ==========
+const API_URL = process.env.API_URL || 'http://localhost:3001';
 const LOG_FILE = path.join(__dirname, 'task-processor.log');
 const STATE_FILE = path.join(__dirname, 'task-processor-state.json');
 
-const STATUS = {
-  PENDING: '0df1e0ec-81d4-4579-846f-a7f5eff6fe9c',
-  IN_PROGRESS: '467c1869-3183-46cd-a728-83260efe3c78',
-  IN_PROGRESS_IA: '28a4201d-272e-4e53-8c91-4cd5bf5ea516',
-  COMPLETED: 'd9bc0336-0a16-48eb-8fc7-0c5ebec06f97'
-};
+// IDs serão buscados dinamicamente
+let MY_USER_ID = null;      // ID do Jarbas (buscar por nickname 'Jarbas')
+let ALEXANDRE_USER_ID = null; // ID do Alexandre (buscar por nickname 'alexandre')
 
 // Estado do processador
 let processorState = {
@@ -30,53 +41,7 @@ let processorState = {
   lastCheck: null
 };
 
-// Carregar estado salvo
-function loadState() {
-  try {
-    if (fs.existsSync(STATE_FILE)) {
-      const data = fs.readFileSync(STATE_FILE, 'utf8');
-      processorState = JSON.parse(data);
-      log(`Estado carregado: ${processorState.currentTask ? `Tarefa ${processorState.currentTask}` : 'Nenhuma tarefa ativa'}`);
-    }
-  } catch (error) {
-    log(`Erro ao carregar estado: ${error.message}`);
-  }
-}
-
-// Salvar estado
-function saveState() {
-  try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(processorState, null, 2));
-  } catch (error) {
-    log(`Erro ao salvar estado: ${error.message}`);
-  }
-}
-
-// Função para buscar status visíveis para IA dinamicamente
-async function getAIVisibleStatuses() {
-  try {
-    const response = await axios.get(`${API_URL}/api/statuses`);
-    const statuses = response.data.statuses || [];
-    
-    // Filtrar status com visible_to_ai = true
-    const aiVisibleStatuses = statuses
-      .filter(status => status.visible_to_ai === true)
-      .map(status => status.id);
-    
-    await log(`Status visíveis para IA encontrados: ${aiVisibleStatuses.length}`);
-    
-    return aiVisibleStatuses;
-  } catch (error) {
-    await log(`Erro ao buscar status: ${error.message}`);
-    // Fallback para lista hardcoded se a API falhar
-    return [
-      STATUS.PENDING,
-      STATUS.IN_PROGRESS,
-      STATUS.IN_PROGRESS_IA
-    ];
-  }
-}
-
+// ========== FUNÇÕES DE LOG ==========
 async function log(message) {
   const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const logLine = `[${timestamp}] ${message}\n`;
@@ -94,9 +59,9 @@ async function log(message) {
     // Adicionar nova linha no início (mais recente primeiro)
     logs.unshift(logLine.trim());
     
-    // Manter apenas as últimas 100 linhas
-    if (logs.length > 100) {
-      logs = logs.slice(0, 100);
+    // Manter apenas as últimas 1000 linhas
+    if (logs.length > 1000) {
+      logs = logs.slice(0, 1000);
     }
     
     // Salvar log
@@ -106,27 +71,111 @@ async function log(message) {
   }
 }
 
-// Verificar se há tarefa "Em Andamento" atribuída ao Jarbas
+// ========== FUNÇÕES DE ESTADO ==========
+function loadState() {
+  try {
+    if (fs.existsSync(STATE_FILE)) {
+      const data = fs.readFileSync(STATE_FILE, 'utf8');
+      processorState = JSON.parse(data);
+      log(`Estado carregado: ${processorState.currentTask ? `Tarefa ${processorState.currentTask}` : 'Nenhuma tarefa ativa'}`);
+    }
+  } catch (error) {
+    log(`Erro ao carregar estado: ${error.message}`);
+  }
+}
+
+function saveState() {
+  try {
+    fs.writeFileSync(STATE_FILE, JSON.stringify(processorState, null, 2));
+  } catch (error) {
+    log(`Erro ao salvar estado: ${error.message}`);
+  }
+}
+
+// ========== BUSCAR IDs DINAMICAMENTE ==========
+async function fetchUserIds() {
+  try {
+    log('🔍 Buscando IDs dos usuários...');
+    
+    // Buscar Alexandre pelo nickname
+    const alexandreRes = await axios.get(`${API_URL}/api/users`);
+    const allUsers = alexandreRes.data.users || [];
+    
+    const alexandre = allUsers.find(u => u.nickname === 'alexandre');
+    const jarbas = allUsers.find(u => u.nickname === 'Jarbas');
+    
+    if (!alexandre) {
+      throw new Error('Usuário Alexandre (nickname: "alexandre") não encontrado na API');
+    }
+    
+    if (!jarbas) {
+      throw new Error('Usuário Jarbas (nickname: "Jarbas") não encontrado na API');
+    }
+    
+    MY_USER_ID = jarbas.id;
+    ALEXANDRE_USER_ID = alexandre.id;
+    
+    log(`✅ IDs carregados: Alexandre=${ALEXANDRE_USER_ID.substring(0, 8)}..., Jarbas=${MY_USER_ID.substring(0, 8)}...`);
+    return true;
+    
+  } catch (error) {
+    log(`❌ Erro ao buscar IDs dos usuários: ${error.message}`);
+    throw error;
+  }
+}
+
+// ========== BUSCAR STATUS VISÍVEIS PARA IA ==========
+async function getAIVisibleStatuses() {
+  try {
+    log('🔍 Buscando status visíveis para IA...');
+    const response = await axios.get(`${API_URL}/api/statuses`);
+    const statuses = response.data.statuses || [];
+    
+    // Filtrar status com visible_to_ai = true
+    const aiVisibleStatuses = statuses
+      .filter(status => status.visible_to_ai === true)
+      .map(status => status.id);
+    
+    if (aiVisibleStatuses.length === 0) {
+      throw new Error('Nenhum status visível para IA encontrado na API. O task-processor não funcionará.');
+    }
+    
+    log(`✅ Status visíveis para IA encontrados: ${aiVisibleStatuses.length}`);
+    return aiVisibleStatuses;
+    
+  } catch (error) {
+    log(`❌ ERRO CRÍTICO ao buscar status: ${error.message}`);
+    throw error; // Não há fallback - erro crítico
+  }
+}
+
+// ========== VERIFICAÇÃO DE TAREFA ATIVA ==========
 async function checkActiveTask() {
   try {
-    // Buscar tarefas atribuídas ao Jarbas com status "Em Andamento (IA)"
-    const response = await axios.get(`${API_URL}/api/tasks?assignedToId=${MY_USER_ID}&statusId=${STATUS.IN_PROGRESS_IA}`);
-    const tasks = response.data.tasks || [];
+    // Primeiro buscar status "Em Andamento (IA)"
+    const statuses = await getAIVisibleStatuses();
     
-    if (tasks.length > 0) {
-      const activeTask = tasks[0]; // Pegar a primeira tarefa ativa
-      await log(`Tarefa ativa encontrada: ${activeTask.title} (ID: ${activeTask.id})`);
+    // Buscar tarefas atribuídas ao Jarbas com qualquer status visível para IA
+    const response = await axios.get(`${API_URL}/api/tasks?assignedToId=${MY_USER_ID}`);
+    const allTasks = response.data.tasks || [];
+    
+    // Filtrar tarefas com status visível para IA
+    const aiTasks = allTasks.filter(t => statuses.includes(t.statusId));
+    
+    if (aiTasks.length > 0) {
+      const activeTask = aiTasks[0]; // Pegar a primeira tarefa ativa
+      log(`Tarefa ativa encontrada: ${activeTask.title} (ID: ${activeTask.id})`);
       return activeTask;
     }
     
     return null;
   } catch (error) {
-    await log(`Erro ao verificar tarefa ativa: ${error.message}`);
+    log(`Erro ao verificar tarefa ativa: ${error.message}`);
     return null;
   }
 }
 
-// Verificar se há sub-agente ativo para a tarefa
+// ========== VERIFICAÇÃO DE AGENTE ATIVO ==========
 async function checkActiveAgent() {
   try {
     // Usar a API do OpenClaw para verificar sessões ativas
@@ -147,7 +196,7 @@ async function checkActiveAgent() {
       });
       
       if (activeSession) {
-        await log(`Sessão ativa encontrada: ${activeSession.id} (${activeSession.label})`);
+        log(`Sessão ativa encontrada: ${activeSession.id} (${activeSession.label})`);
         return {
           active: true,
           sessionId: activeSession.id,
@@ -158,12 +207,12 @@ async function checkActiveAgent() {
     
     return { active: false };
   } catch (error) {
-    await log(`Erro ao verificar sessões: ${error.message}`);
+    log(`Erro ao verificar sessões: ${error.message}`);
     return { active: false };
   }
 }
 
-// Criar branch nos repositórios do projeto
+// ========== CRIAÇÃO DE BRANCHES ==========
 async function createBranchesForTask(task, project) {
   const branches = [];
   
@@ -186,7 +235,7 @@ async function createBranchesForTask(task, project) {
         
         // Criar branch
         await exec(`cd "${frontendRepo}" && git checkout -b "${branchName}"`);
-        await log(`✅ Branch criada no frontend: ${branchName} em ${frontendRepo}`);
+        log(`✅ Branch criada no frontend: ${branchName} em ${frontendRepo}`);
         
         branches.push({
           type: 'frontend',
@@ -194,7 +243,7 @@ async function createBranchesForTask(task, project) {
           branch: branchName
         });
       } catch (error) {
-        await log(`❌ Erro ao criar branch no frontend: ${error.message}`);
+        log(`❌ Erro ao criar branch no frontend: ${error.message}`);
       }
     }
     
@@ -208,7 +257,7 @@ async function createBranchesForTask(task, project) {
         
         // Criar branch
         await exec(`cd "${backendRepo}" && git checkout -b "${branchName}"`);
-        await log(`✅ Branch criada no backend: ${branchName} em ${backendRepo}`);
+        log(`✅ Branch criada no backend: ${branchName} em ${backendRepo}`);
         
         branches.push({
           type: 'backend',
@@ -216,18 +265,18 @@ async function createBranchesForTask(task, project) {
           branch: branchName
         });
       } catch (error) {
-        await log(`❌ Erro ao criar branch no backend: ${error.message}`);
+        log(`❌ Erro ao criar branch no backend: ${error.message}`);
       }
     }
     
     return branches;
   } catch (error) {
-    await log(`Erro ao criar branches: ${error.message}`);
+    log(`Erro ao criar branches: ${error.message}`);
     return branches;
   }
 }
 
-// Detectar arquivos modificados nos repositórios
+// ========== DETECÇÃO DE ARQUIVOS MODIFICADOS ==========
 async function getModifiedFiles(branches) {
   const modifiedFiles = [];
   
@@ -245,14 +294,14 @@ async function getModifiedFiles(branches) {
       
       modifiedFiles.push(...files);
     } catch (error) {
-      await log(`Erro ao verificar arquivos modificados em ${repo.path}: ${error.message}`);
+      log(`Erro ao verificar arquivos modificados em ${repo.path}: ${error.message}`);
     }
   }
   
   return modifiedFiles;
 }
 
-// Fazer commit e push das alterações
+// ========== COMMIT E PUSH AUTOMÁTICO ==========
 async function commitAndPushChanges(branches, taskTitle) {
   for (const repo of branches) {
     try {
@@ -265,14 +314,14 @@ async function commitAndPushChanges(branches, taskTitle) {
       // Fazer push
       await exec(`cd "${repo.path}" && git push origin "${repo.branch}"`);
       
-      await log(`✅ Commit e push realizados em ${repo.type}: ${repo.branch}`);
+      log(`✅ Commit e push realizados em ${repo.type}: ${repo.branch}`);
     } catch (error) {
-      await log(`❌ Erro ao fazer commit/push em ${repo.type}: ${error.message}`);
+      log(`❌ Erro ao fazer commit/push em ${repo.type}: ${error.message}`);
     }
   }
 }
 
-// Processar tarefa concluída
+// ========== PROCESSAMENTO DE TAREFA CONCLUÍDA ==========
 async function processCompletedTask(taskId) {
   try {
     // Buscar detalhes da tarefa
@@ -309,7 +358,7 @@ async function processCompletedTask(taskId) {
           content: commentContent
         });
         
-        await log(`✅ Comentário com arquivos modificados adicionado à tarefa ${taskId}`);
+        log(`✅ Comentário com arquivos modificados adicionado à tarefa ${taskId}`);
       }
     }
     
@@ -327,11 +376,11 @@ async function processCompletedTask(taskId) {
     saveState();
     
   } catch (error) {
-    await log(`Erro ao processar tarefa concluída: ${error.message}`);
+    log(`Erro ao processar tarefa concluída: ${error.message}`);
   }
 }
 
-// Verificar timeout (3 horas) - pode ser ajustado conforme necessário
+// ========== VERIFICAÇÃO DE TIMEOUT (30 MINUTOS) ==========
 async function checkTimeout() {
   if (!processorState.taskStartedAt) return false;
   
@@ -339,15 +388,15 @@ async function checkTimeout() {
   const now = new Date();
   const minutesElapsed = (now - startedAt) / (1000 * 60);
   
-  if (minutesElapsed > 180) { // 180 minutos = 3 horas
-    await log(`⚠️ Timeout detectado: Tarefa ${processorState.currentTask} está ativa há ${Math.round(minutesElapsed)} minutos`);
+  if (minutesElapsed > 30) {
+    log(`⚠️ Timeout detectado: Tarefa ${processorState.currentTask} está ativa há ${Math.round(minutesElapsed)} minutos`);
     return true;
   }
   
   return false;
 }
 
-// Lidar com timeout
+// ========== LIDAR COM TIMEOUT ==========
 async function handleTimeout() {
   if (!processorState.currentTask) return;
   
@@ -361,16 +410,16 @@ async function handleTimeout() {
         const exec = promisify(openclawExec);
         
         await exec(`openclaw sessions kill ${agentStatus.sessionId}`);
-        await log(`🔴 Sessão ${agentStatus.sessionId} finalizada por timeout`);
+        log(`🔴 Sessão ${agentStatus.sessionId} finalizada por timeout`);
       } catch (error) {
-        await log(`Erro ao matar sessão: ${error.message}`);
+        log(`Erro ao matar sessão: ${error.message}`);
       }
     }
     
     // Reatribuir tarefa para Alexandre
     await axios.put(`${API_URL}/api/tasks/${processorState.currentTask}`, {
-      assignedToId: ALEXANDRE_USER_ID,
-      statusId: STATUS.IN_PROGRESS
+      assignedToId: ALEXANDRE_USER_ID
+      // Não alterar status - manter como está
     });
     
     // Adicionar comentário explicativo
@@ -380,7 +429,7 @@ async function handleTimeout() {
       content: `⚠️ **Timeout detectado**\n\nO agente ficou travado por mais de 30 minutos. A tarefa foi reatribuída para @Alexandre para análise manual.\n\n_Timestamp: ${new Date().toLocaleString('pt-BR')}_`
     });
     
-    await log(`✅ Tarefa ${processorState.currentTask} reatribuída para Alexandre devido a timeout`);
+    log(`✅ Tarefa ${processorState.currentTask} reatribuída para Alexandre devido a timeout`);
     
     // Limpar estado
     processorState.currentTask = null;
@@ -389,16 +438,21 @@ async function handleTimeout() {
     saveState();
     
   } catch (error) {
-    await log(`Erro ao lidar com timeout: ${error.message}`);
+    log(`Erro ao lidar com timeout: ${error.message}`);
   }
 }
 
-// Processar próxima tarefa elegível
+// ========== PROCESSAR PRÓXIMA TAREFA ==========
 async function processNextTask() {
   try {
-    await log('=== PROCESSOR: Iniciando ciclo ===');
+    log('=== PROCESSOR: Iniciando ciclo ===');
     
-    // 1. Verificar se há tarefa ativa
+    // 1. Buscar IDs dos usuários (se necessário)
+    if (!MY_USER_ID || !ALEXANDRE_USER_ID) {
+      await fetchUserIds();
+    }
+    
+    // 2. Verificar se há tarefa ativa
     const activeTask = await checkActiveTask();
     
     if (activeTask && activeTask.id) {
@@ -409,34 +463,39 @@ async function processNextTask() {
         saveState();
       }
       
-      // 2. Verificar se há agente ativo
+      // 3. Verificar se há agente ativo
       const agentStatus = await checkActiveAgent();
       
       if (agentStatus.active) {
-        // 3. Verificar timeout
+        // 4. Verificar timeout
         if (await checkTimeout()) {
           await handleTimeout();
           return;
         }
         
-        await log(`⏳ Aguardando conclusão da tarefa ${activeTask.id} (agente ativo)`);
+        log(`⏳ Aguardando conclusão da tarefa ${activeTask.id} (agente ativo)`);
         return; // Não processar nova tarefa enquanto há agente ativo
       } else {
-        // Agente não está ativo, mas tarefa está "Em Andamento"
+        // Agente não está ativo, mas tarefa está com status visível para IA
         // Verificar se a tarefa foi concluída
         try {
           const taskRes = await axios.get(`${API_URL}/api/tasks/${activeTask.id}`);
           const task = taskRes.data.task;
           
-          if (task && task.statusId === STATUS.COMPLETED) {
-            await log(`✅ Tarefa ${activeTask.id} concluída, processando...`);
+          // Buscar status "Concluído" para verificar
+          const statusesRes = await axios.get(`${API_URL}/api/statuses`);
+          const allStatuses = statusesRes.data.statuses || [];
+          const completedStatus = allStatuses.find(s => s.name === 'Concluído');
+          
+          if (completedStatus && task && task.statusId === completedStatus.id) {
+            log(`✅ Tarefa ${activeTask.id} concluída, processando...`);
             await processCompletedTask(activeTask.id);
             processorState.currentTask = null;
             processorState.taskStartedAt = null;
             saveState();
           } else {
             // Tarefa não concluída e sem agente ativo - pode ser um problema
-            await log(`⚠️ Tarefa ${activeTask.id} está "Em Andamento" mas não há agente ativo`);
+            log(`⚠️ Tarefa ${activeTask.id} está com status visível para IA mas não há agente ativo`);
             
             // Verificar se passou muito tempo
             if (await checkTimeout()) {
@@ -445,7 +504,7 @@ async function processNextTask() {
             }
           }
         } catch (error) {
-          await log(`❌ Erro ao verificar tarefa ${activeTask.id}: ${error.message}`);
+          log(`❌ Erro ao verificar tarefa ${activeTask.id}: ${error.message}`);
         }
       }
     } else {
@@ -458,52 +517,52 @@ async function processNextTask() {
       }
     }
     
-    // 4. Buscar status visíveis para IA dinamicamente
+    // 5. Buscar status visíveis para IA dinamicamente
     const aiVisibleStatuses = await getAIVisibleStatuses();
     
-    // 5. Buscar tarefas não concluídas
+    // 6. Buscar tarefas não concluídas
     const tasksRes = await axios.get(`${API_URL}/api/tasks?isCompleted=false`);
     const allTasks = tasksRes.data.tasks || [];
     
-    // 6. Filtrar tarefas com status visíveis para IA
+    // 7. Filtrar tarefas com status visíveis para IA
     const aiTasks = allTasks.filter(t => aiVisibleStatuses.includes(t.statusId));
     
-    // 7. Filtrar tarefas atribuídas ao Jarbas
+    // 8. Filtrar tarefas atribuídas ao Jarbas
     const myTasks = aiTasks.filter(t => t.assignedToId === MY_USER_ID);
     
     if (myTasks.length === 0) {
-      await log('Nenhuma tarefa elegível para IA atribuída ao Jarbas');
+      log('Nenhuma tarefa elegível para IA atribuída ao Jarbas');
       return;
     }
     
-    // 8. Ordenar por prioridade (posição) e pegar a primeira
+    // 9. Ordenar por prioridade (posição) e pegar a primeira
     const task = myTasks.sort((a, b) => a.position - b.position)[0];
     
-    await log(`Tarefa selecionada: ${task.title} (ID: ${task.id})`);
+    log(`Tarefa selecionada: ${task.title} (ID: ${task.id})`);
     
-    // 9. Buscar detalhes do projeto
+    // 10. Buscar detalhes do projeto
     let projetoRegras = "Nenhuma regra específica definida.";
     let project = null;
     try {
       const projRes = await axios.get(`${API_URL}/api/projects/${task.projectId}`);
-      await log(`API Projeto: Status ${projRes.status}`);
+      log(`API Projeto: Status ${projRes.status}`);
       
       project = projRes.data;
       projetoRegras = project.regras || projetoRegras;
       
       // Log detalhado para debug
-      await log(`Campos disponíveis no projeto: ${Object.keys(project).join(', ')}`);
-      await log(`Regras do projeto: ${projetoRegras}`);
-      await log(`Regras do projeto encontradas: ${projetoRegras !== "Nenhuma regra específica definida." ? "SIM" : "NÃO"}`);
+      log(`Campos disponíveis no projeto: ${Object.keys(project).join(', ')}`);
+      log(`Regras do projeto: ${projetoRegras}`);
+      log(`Regras do projeto encontradas: ${projetoRegras !== "Nenhuma regra específica definida." ? "SIM" : "NÃO"}`);
     } catch (e) {
-      await log(`ERRO ao buscar projeto: ${e.message}`);
+      log(`ERRO ao buscar projeto: ${e.message}`);
     }
     
-    // 10. Buscar comentários
+    // 11. Buscar comentários
     let comentariosTexto = "Nenhum comentário até o momento.";
     try {
       const commRes = await axios.get(`${API_URL}/api/comments/task/${task.id}`);
-      await log(`API Comentários: Status ${commRes.status}, Count: ${commRes.data.count || 0}`);
+      log(`API Comentários: Status ${commRes.status}, Count: ${commRes.data.count || 0}`);
       const comments = commRes.data.comments || [];
       if (comments.length > 0) {
         comentariosTexto = comments
@@ -513,13 +572,13 @@ async function processNextTask() {
             return `[${data}] ${(c.user && c.user.nickname) || 'Usuário'}: ${c.content}`;
           })
           .join('\n');
-        await log(`Comentários encontrados: ${comments.length}`);
+        log(`Comentários encontrados: ${comments.length}`);
       }
     } catch (e) {
-      await log(`ERRO ao buscar comentários: ${e.message}`);
+      log(`ERRO ao buscar comentários: ${e.message}`);
     }
     
-    // 11. Criar branches nos repositórios do projeto
+    // 12. Criar branches nos repositórios do projeto
     let branches = [];
     if (project) {
       branches = await createBranchesForTask(task, project);
@@ -530,17 +589,29 @@ async function processNextTask() {
       saveState();
     }
     
-    // 12. Atualizar status da tarefa para "Em Andamento (IA)"
+    // 13. Buscar status "Em Andamento (IA)" para atualizar
+    let inProgressIAStatusId = null;
     try {
-      await axios.put(`${API_URL}/api/tasks/${task.id}`, {
-        statusId: STATUS.IN_PROGRESS_IA
-      });
-      await log(`✅ Status da tarefa atualizado para "Em Andamento (IA)"`);
+      const statusesRes = await axios.get(`${API_URL}/api/statuses`);
+      const allStatuses = statusesRes.data.statuses || [];
+      const inProgressIA = allStatuses.find(s => s.name === 'Em Andamento');
+      
+      if (inProgressIA) {
+        inProgressIAStatusId = inProgressIA.id;
+        
+        // Atualizar status da tarefa
+        await axios.put(`${API_URL}/api/tasks/${task.id}`, {
+          statusId: inProgressIAStatusId
+        });
+        log(`✅ Status da tarefa atualizado para "Em Andamento"`);
+      } else {
+        log(`❌ Status "Em Andamento" não encontrado na API`);
+      }
     } catch (error) {
-      await log(`❌ Erro ao atualizar status: ${error.message}`);
+      log(`❌ Erro ao atualizar status: ${error.message}`);
     }
     
-    // 13. Preparar prompt para o agente
+    // 14. Preparar prompt para o agente
     const branchInfo = branches.length > 0 
       ? `\n\n📁 **BRANCHES CRIADAS:**\n${branches.map(b => `- ${b.type}: ${b.branch} (${b.path})`).join('\n')}\n\n⚠️ **TRABALHE NAS BRANCHES ACIMA!**`
       : '';
@@ -565,18 +636,18 @@ INSTRUÇÕES PARA O AGENTE:
 4. EXECUTE a tarefa conforme solicitado${branches.length > 0 ? '\n5. TRABALHE EXCLUSIVAMENTE NAS BRANCHES CRIADAS ACIMA' : ''}
 
 5. APÓS CONCLUIR, você DEVE finalizar a tarefa no sistema via API:
-   - URL: http://localhost:3001/api/tasks/${task.id}
+   - URL: ${API_URL}/api/tasks/${task.id}
    - Método: PUT
-   - Corpo: {"statusId": "${STATUS.COMPLETED}"}
-   - Em seguida, adicione um comentário com o relatório de execução via POST /api/comments
+   - Corpo: {"statusId": "ID_DO_STATUS_CONCLUIDO"} (busque o ID do status "Concluído")
+   - Em seguida, adicione um comentário com o relatório de execução via POST ${API_URL}/api/comments
    - Use o userId: ${MY_USER_ID} (Jarbas)
 
 IMPORTANTE: Não altere o campo "isCompleted" - apenas Alexandre pode fazer isso.
 
 === TASK_DATA_END ===`;
     
-    // 14. Chamar agente
-    await log(`📤 Chamando agente para tarefa: ${task.title}`);
+    // 15. Chamar agente
+    log(`📤 Chamando agente para tarefa: ${task.title}`);
     
     try {
       // Usar OpenClaw para spawnar sub-agente
@@ -588,7 +659,7 @@ IMPORTANTE: Não altere o campo "isCompleted" - apenas Alexandre pode fazer isso
       
       const result = await exec(`openclaw sessions spawn --task "${prompt.replace(/"/g, '\\"')}" --label "${label}" --agent-id main --mode run`);
       
-      await log(`✅ Agente spawnado: ${result.stdout.trim()}`);
+      log(`✅ Agente spawnado: ${result.stdout.trim()}`);
       
       // Atualizar estado
       processorState.currentTask = task.id;
@@ -596,29 +667,22 @@ IMPORTANTE: Não altere o campo "isCompleted" - apenas Alexandre pode fazer isso
       saveState();
       
     } catch (error) {
-      await log(`❌ Erro ao spawnar agente: ${error.message}`);
+      log(`❌ Erro ao spawnar agente: ${error.message}`);
       
-      // Reverter status se falhar
-      try {
-        await axios.put(`${API_URL}/api/tasks/${task.id}`, {
-          statusId: STATUS.PENDING
-        });
-        await log(`✅ Status revertido para "Pendente" devido a erro no agente`);
-      } catch (revertError) {
-        await log(`❌ Erro ao reverter status: ${revertError.message}`);
-      }
+      // Não reverter status - manter como "Em Andamento" para análise manual
+      log(`⚠️ Tarefa ${task.id} mantida como "Em Andamento" para análise manual devido a erro no agente`);
     }
     
   } catch (error) {
-    await log(`❌ Erro no processNextTask: ${error.message}`);
+    log(`❌ Erro no processNextTask: ${error.message}`);
     console.error(error);
   }
 }
 
-// Função principal
+// ========== FUNÇÃO PRINCIPAL ==========
 async function main() {
   try {
-    await log('🚀 Iniciando Task Processor com monitoramento avançado');
+    log('🚀 Iniciando Task Processor com configurações dinâmicas');
     
     // Carregar estado
     loadState();
@@ -626,10 +690,10 @@ async function main() {
     // Processar próxima tarefa
     await processNextTask();
     
-    await log('✅ Ciclo completo do Task Processor');
+    log('✅ Ciclo completo do Task Processor');
     
   } catch (error) {
-    await log(`❌ Erro fatal no Task Processor: ${error.message}`);
+    log(`❌ Erro fatal no Task Processor: ${error.message}`);
     console.error(error);
     process.exit(1);
   }
@@ -643,6 +707,8 @@ if (require.main === module) {
 module.exports = {
   main,
   log,
+  fetchUserIds,
+  getAIVisibleStatuses,
   checkActiveTask,
   checkActiveAgent,
   createBranchesForTask,

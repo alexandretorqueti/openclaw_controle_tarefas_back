@@ -1,7 +1,7 @@
 {
-  "currentTask": null,
+  "currentTask": "a0888091-f43b-473b-993d-5978146eb28f",
   "agentSessionId": null,
-  "taskStartedAt": null,
+  "taskStartedAt": "2026-02-25T23:14:30.980Z",
   "branchesCreated": [
     {
       "taskId": "9bda56fc-713a-468e-8695-adfa70d06555",
@@ -26,6 +26,18 @@
       "type": "backend",
       "path": "/home/alexandrebragatorqueti/projetos/tarefas-server",
       "branch": "task/3cd48f01-erro-ao-excluir-projetos"
+    },
+    {
+      "taskId": "a0888091-f43b-473b-993d-5978146eb28f",
+      "type": "frontend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-web",
+      "branch": "task/a0888091-bug-de-layout-na-edio-de-usuri"
+    },
+    {
+      "taskId": "a0888091-f43b-473b-993d-5978146eb28f",
+      "type": "backend",
+      "path": "/home/alexandrebragatorqueti/projetos/tarefas-server",
+      "branch": "task/a0888091-bug-de-layout-na-edio-de-usuri"
     }
   ],
   "lastCheck": null
