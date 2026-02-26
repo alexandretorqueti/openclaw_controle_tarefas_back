@@ -61,7 +61,8 @@ async function verifyEnvironmentHealth() {
 
   // Proteção: Se a variável de ambiente estiver mal formatada, avisa.
   if (!Array.isArray(servicesConfig)) {
-    throw new Error("A configuração PROJECT_SERVICES no .env é inválida ou não é um Array.");
+    log("A configuração PROJECT_SERVICES no .env é inválida ou não é um Array.");
+    return false;
   }
 
   for (const service of servicesConfig) {

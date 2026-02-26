@@ -56,8 +56,7 @@ class ProjectService {
         createdAt: 'desc'
       }
     });
-    console.log('Projects with ativo:', projects.map(p => ({ id: p.id, ativo: p.ativo })));
-
+    
     // Calculate statistics for each project
     return projects.map(project => {
       const tasks = project.tasks;

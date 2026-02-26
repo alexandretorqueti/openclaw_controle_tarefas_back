@@ -10,6 +10,7 @@ const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const recurrenceRoutes = require('./routes/recurrenceRoutes');
 const commentRoutes = require('./routes/commentRoutes');
+const logRoutes = require('./routes/logRoutes');
 const ErrorMiddleware = require('./middlewares/errorMiddleware');
 const { Logger, LOG_LEVELS } = require('./utils/logger');
 const { passport, sessionConfig, getCurrentUser } = require('./middlewares/authMiddleware');
@@ -163,6 +164,7 @@ app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/logs', logRoutes);
 
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
