@@ -26,7 +26,7 @@ async function reconcileActiveTasks(state) {
     
     // Se ele vir que a IA já marcou como concluída
     if (taskData.statusId === STATUS.COMPLETED) {
-      log(`✅ Tarefa ${taskId} foi concluída pelo DeepSeek! Gerando comentário...`);
+      log(`✅ Tarefa ${taskId} foi concluída pelo DeepSeek/Qwen! Gerando comentário...`);
       
       // 1. LÊ O ARQUIVO DE LOG DA IA ANTES DE MOVER
       if (fs.existsSync(logFile)) {
@@ -43,7 +43,8 @@ async function reconcileActiveTasks(state) {
           });
           log(`✅ Comentário com o relatório adicionado à tarefa ${taskId}.`);
         } catch (commentError) {
-          log(`❌ Erro ao postar comentário do relatório: ${commentError.message}`);
+          const detail = commentError.response?.data ? JSON.stringify(commentError.response.data) : commentError.message;
+          log(`❌ Erro ao postar comentário do relatório: ${detail}`);
         }
       } else {
         log(`⚠️ O arquivo de log não foi encontrado. A IA finalizou sem gerar o relatório físico.`);
@@ -62,21 +63,46 @@ async function reconcileActiveTasks(state) {
     // Se ainda não concluiu, verifica se deu Timeout (1 hora)
     const timeElapsed = Date.now() - taskState.startTime;
     if (timeElapsed > TASK_TIMEOUT_MS) {
-      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de 1h. Bloqueando...`);
+      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de 1h. Devolvendo para Alexandre...`);
       
-      await axios.put(`${API_URL}/api/tasks/${taskId}`, { statusId: STATUS.BLOCKED });
-      await axios.post(`${API_URL}/api/comments`, {
-        taskId: taskId,
-        userId: MY_USER_ID,
-        content: `⚠️ **FALHA (TIMEOUT)**\nO agente DeepSeek demorou mais de 1 hora para finalizar a tarefa e foi interrompido.`
-      });
+      try {
+        let alexandreId = null;
+        try {
+          const usersRes = await axios.get(`${API_URL}/api/users`);
+          const alexandre = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
+          if (alexandre) alexandreId = alexandre.id;
+        } catch (e) {
+          log(`⚠️ Aviso: Falha ao buscar usuários da API.`);
+        }
 
-      if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
-      if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+        const updatePayload = { };
+        if (alexandreId) updatePayload.assignedToId = alexandreId;
 
-      delete state.active_tasks[taskId];
-      save_state(state);
-      return false; // Liberou a VRAM
+        await axios.put(`${API_URL}/api/tasks/${taskId}`, updatePayload);
+        
+        await axios.post(`${API_URL}/api/comments`, {
+          taskId: taskId,
+          userId: MY_USER_ID,
+          content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de uma hora e não houve retorno da IA. A execução foi abortada.`
+        });
+        
+      } catch (timeoutError) {
+        // Pega o erro detalhado da API (Zod/Prisma) para sabermos o que falhou
+        const errorDetail = timeoutError.response?.data ? JSON.stringify(timeoutError.response.data) : timeoutError.message;
+        log(`❌ Erro ao atualizar tarefa no timeout (API recusou): ${errorDetail}`);
+      } finally {
+        // O BLOCO FINALLY É A SALVAÇÃO: Ele roda DANDO ERRO OU NÃO.
+        // Assim, limpamos o sistema de arquivos e a memória obrigatóriamente.
+        try {
+          if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
+          if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+        } catch(e) {} // ignora se o arquivo já sumiu
+
+        delete state.active_tasks[taskId];
+        save_state(state);
+      }
+      
+      return false; // Libera a VRAM para a próxima!
     }
 
     log(`⏳ Tarefa ${taskId} ainda em processamento (${Math.round(timeElapsed/60000)}m). Retendo novos spawns.`);
@@ -102,9 +128,27 @@ async function prepareTaskPrompt(task) {
     projetoRegras = projRes.data?.regras || projetoRegras;
   } catch (e) { log(`Aviso: Sem regras do projeto.`); }
 
+  // === NOVA BUSCA: Pega os comentários da tarefa ===
+  let taskComments = "Nenhum comentário adicional.";
+  try {
+    const commentsRes = await axios.get(`${API_URL}/api/comments/task/${task.id}`);
+    // Ajuste o '.comments' abaixo se o seu backend devolver o array direto no data
+    const commentsArray = commentsRes.data.comments || commentsRes.data || []; 
+    
+    if (commentsArray.length > 0) {
+      taskComments = commentsArray.map(c => 
+        `[${c.user?.name || 'Usuário'} comentou]: ${c.content}`
+      ).join('\n\n');
+    }
+  } catch (e) { log(`Aviso: Falha ao buscar comentários.`); }
+
+  // === MONTAGEM FINAL DO PROMPT ===
   const promptContent = `### CONTEXTO DA TAREFA ###
 TÍTULO: ${task.title}
 DESCRIÇÃO: ${task.description}
+
+### COMENTÁRIOS E HISTÓRICO DA TAREFA ###
+${taskComments}
 
 ### REGRAS DO PROJETO (OBRIGATÓRIAS) ###
 ${projetoRegras}

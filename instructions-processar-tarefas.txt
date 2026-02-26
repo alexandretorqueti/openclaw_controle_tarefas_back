@@ -16,8 +16,7 @@ Siga estas etapas RIGOROSAMENTE nesta exata ordem:
    - label: "Jarbas - " + o valor do campo "title" do JSON.
    - mode: "run"
    - agentId: "main"
-   - model: "deepseek/deepseek-reasoner"
-   - thinking: "minimal"
+   - model: "ollama/qwen2.5-coder:14b"
 
 4. CRÍTICO: Não aguarde a conclusão do subagente. A ferramenta sessions_spawn rodará de forma independente. 
 
