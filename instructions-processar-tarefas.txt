@@ -16,7 +16,7 @@ Siga estas etapas RIGOROSAMENTE nesta exata ordem:
    - label: "Jarbas - " + o valor do campo "title" do JSON.
    - mode: "run"
    - agentId: "main"
-   - model: "deepseek/deepseek-chat"
+   - model: valor do campo "model" do JSON.
 
 4. CRÍTICO: Não aguarde a conclusão do subagente. A ferramenta sessions_spawn rodará de forma independente. 
 

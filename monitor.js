@@ -43,7 +43,8 @@ async function run() {
 
     const jsonOutput = {
       prompt: promptString,
-      title: task.title
+      title: task.title,
+      model: "deepseek/deepseek-chat"
     };
 
     console.log("=== TASK_DATA_START ===");
