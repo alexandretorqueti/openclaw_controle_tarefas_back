@@ -36,7 +36,8 @@ const taskSchema = z.object({
   createdById: z.string().uuid('Invalid creator ID format'),
   assignedToId: z.string().uuid('Invalid assignee ID format'),
   
-  parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable()
+  parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable(),
+  model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable()
 });
 
 const updateTaskSchema = z.object({
@@ -72,6 +73,7 @@ const updateTaskSchema = z.object({
   priorityId: z.string().uuid('Invalid priority ID format').optional(),
   assignedToId: z.string().uuid('Invalid assignee ID format').optional(),
   parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable(),
+  model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable(),
   statusChangeNotes: z.string().max(500).optional(),
   userId: z.string().uuid('Invalid user ID format').optional()
 });

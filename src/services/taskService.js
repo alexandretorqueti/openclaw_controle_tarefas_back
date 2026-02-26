@@ -104,6 +104,7 @@ class TaskService {
         priorityId: data.priorityId,
         createdById: data.createdById,
         assignedToId: data.assignedToId,
+        model: data.model || null,
         
         parentTaskId: data.parentTaskId || null
       },
@@ -458,6 +459,7 @@ class TaskService {
       priorityId: data.priorityId,
       assignedToId: data.assignedToId,
       parentTaskId: data.parentTaskId,
+      model: data.model,
       updatedAt: new Date()
     };
 

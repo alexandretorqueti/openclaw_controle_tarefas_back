@@ -85,6 +85,7 @@ model Task {
   recurrenceDays  String?
   lastExecutedAt  DateTime?
   nextExecutionAt DateTime?
+  model           String?
   projectId       String
   parentTaskId    String?
   statusId        String

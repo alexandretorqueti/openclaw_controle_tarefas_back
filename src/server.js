@@ -165,6 +165,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/logs', logRoutes);
+app.use('/api/models', require('./routes/modelRoutes'));
 
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
