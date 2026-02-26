@@ -18,7 +18,7 @@ async function run() {
     const isBusy = await reconcileActiveTasks(state);
 
     if (isBusy) {
-      log("🚫 RTX 4090 ocupada. Bloqueando novas tarefas.");
+      log("🚫 IA ocupada. Bloqueando novas tarefas.");
       console.log("Nenhuma tarefa elegível para IA");
       process.exit(0); // Força a saída limpa
     }
@@ -40,11 +40,11 @@ async function run() {
     save_state(state);
 
     const promptString = await prepareTaskPrompt(task);
-
+    const model = task.model
     const jsonOutput = {
       prompt: promptString,
       title: task.title,
-      model: "deepseek/deepseek-chat"
+      model: model
     };
 
     console.log("=== TASK_DATA_START ===");
