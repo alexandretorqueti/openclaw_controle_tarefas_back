@@ -3,8 +3,7 @@ const { z } = require('zod');
 // Schema for creating a comment
 const createCommentSchema = z.object({
   content: z.string()
-    .min(1, 'Comment content is required')
-    .max(2000, 'Comment content cannot exceed 2000 characters'),
+    .min(1, 'Comment content is required'),
   
   taskId: z.string()
     .uuid('Invalid task ID format'),
@@ -22,7 +21,6 @@ const createCommentSchema = z.object({
 const updateCommentSchema = z.object({
   content: z.string()
     .min(1, 'Comment content is required')
-    .max(2000, 'Comment content cannot exceed 2000 characters')
     .optional()
 });
 
