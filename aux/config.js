@@ -10,10 +10,10 @@ const ERROR_DIR = path.join(TASKS_DIR, 'error');
 const API_URL = process.env.API_URL || 'http://127.0.0.1:3001';
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = process.env.LOG_FILE || path.join(BASE_DIR, 'jarbas-monitor.log');
-const MY_USER_ID = process.env.MY_USER_ID || '6bdbe73b-8178-4fd5-987d-50f3b73beb2b';
+const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527f2';
 
 const MAX_LOG_LINES = 1000;
-const TASK_TIMEOUT_MS = 60 * 60 * 1000; // 1h
+const TASK_TIMEOUT_MS = 22 * 60 * 1000; // 1h
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 
 const STATUS = {
