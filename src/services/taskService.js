@@ -1,3 +1,5 @@
+// src/services/taskService.js
+
 const prisma = require('./prismaService');
 
 class TaskService {
@@ -868,6 +870,63 @@ class TaskService {
     }
     
     return date;
+  }
+
+  // === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
+  async getNextTaskForUser(nickname) {
+    // 1. Encontrar o usuário pelo nickname
+    const user = await prisma.user.findFirst({
+      where: { nickname: nickname }
+    });
+
+    if (!user) {
+      console.warn(`[TaskService] Usuário com nickname '${nickname}' não encontrado.`);
+      return null;
+    }
+
+    // 2. Buscar todos os IDs de status que são visíveis para a IA
+    const aiVisibleStatuses = await prisma.status.findMany({
+      where: { visible_to_ai: true },
+      select: { id: true }
+    });
+
+    if (!aiVisibleStatuses || aiVisibleStatuses.length === 0) {
+      console.warn(`[TaskService] Nenhum status visível para IA encontrado no banco.`);
+      return null;
+    }
+
+    const statusIds = aiVisibleStatuses.map(status => status.id);
+
+    // 3. Buscar a primeira tarefa que atenda aos critérios, ordenada pela sua regra de negócio
+    const nextTask = await prisma.task.findFirst({
+      where: {
+        assignedToId: user.id,            // Atribuída ao Jarbas
+        isCompleted: false,               // Não pode estar concluída
+        statusId: { in: statusIds }       // O status atual permite ação da IA
+      },
+      orderBy: [
+        { position: 'asc' },              // Prioriza quem está no topo do Kanban/Lista
+        { deadline: 'asc' }               // Desempata por quem vence primeiro
+      ],
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            regras: true                  // Crucial para o contexto da IA
+          }
+        },
+        status: {
+          select: { name: true }
+        },
+        priority: {
+          select: { name: true }
+        }
+      }
+    });
+
+    return nextTask;
   }
 }
 

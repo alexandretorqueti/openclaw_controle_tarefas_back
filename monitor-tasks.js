@@ -2,6 +2,9 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
+require('dotenv').config();
+const net = require('net');
+const { spawn } = require('child_process');
 
 // Configurações
 const API_URL = 'http://localhost:3001';
@@ -10,12 +13,93 @@ const STATE_FILE = path.join(__dirname, 'monitor-state.json');
 const LOG_FILE = '/home/alexandrebragatorqueti/projetos/jarbas-monitor.log';
 const MY_USER_ID = '6bdbe73b-8178-4fd5-987d-50f3b73beb2b'; // ID do Jarbas
 const MAX_LOG_LINES = 1000;
+const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 
 const STATUS = {
   IN_PROGRESS: '28a4201d-272e-4e53-8c91-4cd5bf5ea516',
   COMPLETED: 'd9bc0336-0a16-48eb-8fc7-0c5ebec06f97'
 };
 const MAX_FAILURES = 3;
+
+
+/**
+ * Tenta conectar em uma porta local. 
+ * Retorna true se estiver aberta, false se estiver fechada.
+ */
+function isPortOpen(port) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    
+    socket.setTimeout(2000); // 2 segundos de timeout máximo
+    
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    
+    socket.on('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    
+    socket.connect(port, '127.0.0.1');
+  });
+}
+
+
+/**
+ * Inicia o serviço em background de forma desanexada (detached).
+ * Isso garante que, se o script do Jarbas morrer, o Front/Back continuam rodando.
+ */
+function startService(service) {
+  console.log(`[Health Check] 🚀 Iniciando ${service.name} na porta ${service.port}...`);
+  
+  // Divide o comando (ex: "npm run dev" vira "npm" e ["run", "dev"])
+  const [command, ...args] = service.cmd.split(' ');
+
+  const child = spawn(command, args, {
+    cwd: service.path,
+    detached: true,    // Roda independente do processo principal
+    stdio: 'ignore'    // Ignora os logs para não poluir o terminal do Jarbas
+  });
+
+  // Libera o processo para rodar em background solto do Node
+  child.unref(); 
+}
+
+/**
+ * Passo 1: Verifica a saúde de todas as portas do ambiente.
+ */
+async function verifyEnvironmentHealth() {
+  console.log('=== PASSO 1: VERIFICANDO SAÚDE DO AMBIENTE ===');
+  let environmentHealthy = true;
+
+  for (const service of servicesConfig) {
+    const isOpen = await isPortOpen(service.port);
+    
+    if (isOpen) {
+      console.log(`[Health Check] ✅ ${service.name} (Porta ${service.port}) está SAUDÁVEL.`);
+    } else {
+      console.log(`[Health Check] 🔴 ${service.name} (Porta ${service.port}) está OFFLINE. Iniciando recuperação...`);
+      startService(service);
+      environmentHealthy = false;
+    }
+  }
+
+  // Se algum serviço teve que ser iniciado, damos um tempinho para eles subirem
+  if (!environmentHealthy) {
+    console.log('[Health Check] ⏳ Aguardando 5 segundos para os serviços subirem...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+
+  console.log('=== FIM DO PASSO 1 ===\n');
+  return true;
+}
 
 function log(message) {
   const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -210,4 +294,214 @@ async function monitorTasks() {
   } catch (error) { log(`[CRÍTICO] ${error.message}`); }
 }
 
-monitorTasks();
+// === NOVA LÓGICA DE INICIALIZAÇÃO ===
+async function start() {
+  try {
+    // 1. PRIMEIRO: Verifica e garante a saúde das portas
+    await verifyEnvironmentHealth();
+    
+    // 2. SEGUNDO: Só depois que as portas estiverem OK, inicia o fluxo da IA
+    await monitorTasks();
+    
+  } catch (error) {
+    console.error(`[FALHA FATAL] O script parou antes de iniciar: ${error.message}`);
+  }
+}
+
+// Dispara a inicialização
+start();
+
+
+
+//Funções Auxiliares
+/**
+ * Lida com tarefas que deram Timeout ou Crasharam
+ */
+async function handleCrashedTask(task, state, logFile, reason) {
+  // Lê o que a IA conseguiu cuspir no log antes de morrer (se existir)
+  let partialLog = "Nenhum log foi gerado.";
+  if (fs.existsSync(logFile)) {
+    partialLog = fs.readFileSync(logFile, 'utf8');
+  }
+
+  try {
+    // 1. Avisa na API o que houve
+    await axios.post(`${API_URL}/api/comments`, {
+      taskId: task.id,
+      userId: MY_USER_ID,
+      content: `⚠️ **FALHA NA EXECUÇÃO DO JARBAS**\n**Motivo:** ${reason}\n\n**Últimos logs capturados:**\n\`\`\`bash\n${partialLog.slice(-2000)}\n\`\`\``
+    });
+
+    // 2. Coloca em um status de "Bloqueado" ou devolve para o Alexandre
+    // Exemplo: Devolvendo para a fila ou bloqueando
+    await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.BLOCKED });
+
+    // 3. Move os arquivos para a pasta 'error' para você debugar depois e limpar a fila
+    fs.renameSync(path.join(TASKS_DIR, `prompt-${task.id}.txt`), path.join(ERROR_DIR, `prompt-${task.id}.txt`));
+    fs.renameSync(path.join(TASKS_DIR, `execute-${task.id}.sh`), path.join(ERROR_DIR, `execute-${task.id}.sh`));
+    if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${task.id}.log`));
+
+    // 4. Limpa do estado
+    delete state.active_tasks[task.id];
+    save_state(state);
+
+    console.log(`[RECUPERAÇÃO] Tarefa ${task.id} movida para Bloqueado e arquivos isolados em /error.`);
+  } catch (e) {
+    console.error(`[ERRO CRÍTICO] Falha ao processar o crash da tarefa:`, e.message);
+  }
+}
+
+/**
+ * Cria os arquivos físicos e spawna o agente em background
+ */
+async function spawnNewAgent(task, state, promptFile, scriptFile, logFile) {
+  // 1. Gera o arquivo de Texto (Contexto)
+  const promptContent = `TÍTULO: ${task.title}\nDESCRIÇÃO: ${task.description}\nREGRAS OBRIGATÓRIAS: ...`;
+  fs.writeFileSync(promptFile, promptContent);
+
+  // 2. Gera o arquivo .sh com a inteligência de se auto-mover em caso de sucesso!
+  const scriptContent = `#!/bin/bash
+echo "Iniciando Jarbas para tarefa ${task.id}..." > "${logFile}"
+
+# Chama o OpenClaw, lê do promptFile e anexa a saída no logFile
+openclaw sessions spawn --task "$(cat "${promptFile}")" --label "Jarbas-${task.id}" --agent-id main --mode run >> "${logFile}" 2>&1
+
+# O $? pega o código de saída do comando anterior. 0 significa Sucesso absoluto.
+if [ $? -eq 0 ]; then
+    echo "Agente terminou com sucesso. Movendo para /processed" >> "${logFile}"
+    mv "${promptFile}" "${PROCESSED_DIR}/"
+    mv "${scriptFile}" "${PROCESSED_DIR}/"
+    mv "${logFile}" "${PROCESSED_DIR}/"
+else
+    # Se falhar, não move! O Node.js vai perceber o crash no próximo ciclo.
+    echo "Falha na execução do agente (Exit code $?)." >> "${logFile}"
+fi
+`;
+  
+  fs.writeFileSync(scriptFile, scriptContent);
+  fs.chmodSync(scriptFile, '755'); // Dá permissão de execução
+
+  // 3. Executa o arquivo .sh de forma desanexada
+  const subprocess = spawn(scriptFile, [], {
+    detached: true,
+    stdio: 'ignore'
+  });
+
+  subprocess.unref(); // Solta o processo para não prender o Node
+
+  // 4. Registra no arquivo de estado
+  state.active_tasks = state.active_tasks || {};
+  state.active_tasks[task.id] = {
+    pid: subprocess.pid,
+    startTime: Date.now()
+  };
+  save_state(state);
+
+  // 5. Atualiza o status na API
+  await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.IN_PROGRESS });
+  console.log(`[DISPARADO] Agente em execução. PID: ${subprocess.pid}`);
+}
+
+/**
+ * Função utilitária para checar se o PID está rodando no Linux/Windows
+ */
+function isPidRunning(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0); // O sinal 0 não mata, apenas testa a existência
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Processa a Tarefa da Vez
+ */
+async function processCurrentTask(task, state) {
+  console.log(`\n=== AVALIANDO TAREFA DA VEZ: [${task.id}] ${task.title} ===`);
+
+  // Define os caminhos dos arquivos baseados no ID da tarefa
+  const promptFile = path.join(TASKS_DIR, `prompt-${task.id}.txt`);
+  const scriptFile = path.join(TASKS_DIR, `execute-${task.id}.sh`);
+  const logFile = path.join(TASKS_DIR, `result-${task.id}.log`);
+  
+  const processedLogFile = path.join(PROCESSED_DIR, `result-${task.id}.log`);
+
+  // =====================================================================
+  // CENÁRIO 1: A TAREFA JÁ FOI PROCESSADA COM SUCESSO
+  // =====================================================================
+  if (fs.existsSync(processedLogFile)) {
+    console.log(`[STATUS] Tarefa já está na pasta 'processed'. Finalizando...`);
+    
+    // 1. Lê a saída do log gerado pela IA
+    const logOutput = fs.readFileSync(processedLogFile, 'utf8');
+    
+    try {
+      // 2. Coloca o log no comentário da tarefa
+      await axios.post(`${API_URL}/api/comments`, {
+        taskId: task.id,
+        userId: MY_USER_ID,
+        content: `✅ **Tarefa concluída pelo Jarbas!**\n\n**Log de Execução:**\n\`\`\`bash\n${logOutput.substring(0, 3000)}\n\`\`\`` 
+        // substring limita o tamanho para não quebrar o banco se o log for gigante
+      });
+
+      // 3. Coloca a tarefa como finalizada
+      await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.COMPLETED });
+      
+      console.log(`[SUCESSO] Tarefa ${task.id} finalizada na API.`);
+      
+      // Limpa do estado para não monitorar mais
+      delete state.active_tasks[task.id];
+      save_state(state);
+    } catch (error) {
+      console.error(`[ERRO] Falha ao atualizar API para a tarefa concluída:`, error.message);
+    }
+    return;
+  }
+
+  // =====================================================================
+  // CENÁRIO 2: A TAREFA ESTÁ EM PENDING (INICIADA)
+  // =====================================================================
+  if (fs.existsSync(scriptFile)) {
+    const taskState = state.active_tasks[task.id];
+
+    // Se não tem estado mapeado mas o arquivo existe, o script Node reiniciou e perdeu o rastro
+    if (!taskState || !taskState.pid) {
+      console.log(`[ALERTA] Tarefa órfã detectada. Arquivos existem, mas nenhum processo mapeado.`);
+      await handleCrashedTask(task, state, logFile, "Processo perdeu o rastreamento (Orphaned).");
+      return;
+    }
+
+    const isRunning = isPidRunning(taskState.pid);
+    const timeElapsed = Date.now() - taskState.startTime;
+
+    // Sub-cenário A: Processo ESTÁ rodando
+    if (isRunning) {
+      if (timeElapsed > TASK_TIMEOUT_MS) {
+        console.log(`[TIMEOUT] A tarefa está rodando há mais de 1 hora! Matando processo PID: ${taskState.pid}`);
+        try {
+          process.kill(taskState.pid, 'SIGKILL'); // Força a morte do processo
+        } catch (e) { /* Ignora se já morreu milissegundos antes */ }
+        
+        await handleCrashedTask(task, state, logFile, `Timeout excedido (${Math.round(timeElapsed/60000)} minutos).`);
+      } else {
+        console.log(`[AGUARDANDO] A IA está trabalhando nesta tarefa (PID ${taskState.pid}, Tempo: ${Math.round(timeElapsed/60000)}m). Pulando...`);
+      }
+      return;
+    } 
+    
+    // Sub-cenário B: Processo NÃO ESTÁ rodando, mas não foi pra 'processed'
+    else {
+      console.log(`[FALHA DETECTADA] O processo ${taskState.pid} morreu ou crashou silenciosamente!`);
+      await handleCrashedTask(task, state, logFile, "O agente do OpenClaw crashou ou retornou erro (Exit Code != 0).");
+      return;
+    }
+  }
+
+  // =====================================================================
+  // CENÁRIO 3: É UMA TAREFA TOTALMENTE NOVA
+  // =====================================================================
+  console.log(`[NOVA] Gerando arquivos e spawnando agente...`);
+  await spawnNewAgent(task, state, promptFile, scriptFile, logFile);
+}

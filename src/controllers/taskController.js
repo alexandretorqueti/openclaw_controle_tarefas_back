@@ -1,3 +1,5 @@
+// src/controllers/taskController.js
+
 const taskService = require('../services/taskService');
 const { validateTask, validateTaskUpdate, validateTaskFilters } = require('../validators/taskValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
@@ -200,6 +202,39 @@ class TaskController {
       correlationId: req.correlationId
     });
   });
+
+    // Get next priority task for a user by nickname
+  getNextTaskForUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { nickname } = req.params;
+    
+    // O service será responsável por buscar o ID do usuário pelo nickname,
+    // filtrar as tarefas não concluídas, checar os status visíveis para IA
+    // e ordenar pela prioridade/posição, retornando apenas a primeira.
+    const task = await taskService.getNextTaskForUser(nickname);
+    
+    // Se não encontrou nenhuma tarefa elegível
+    if (!task) {
+      return res.status(200).json({
+        success: false,
+        message: 'Nenhuma tarefa elegível para IA no momento.',
+        task: null,
+        correlationId: req.correlationId
+      });
+    }
+
+    // Se encontrou a tarefa
+    res.status(200).json({
+      success: true,
+      message: 'Próxima tarefa encontrada com sucesso',
+      task: task,
+      correlationId: req.correlationId
+    });
+  });
+
 }
 
+
+
+
 module.exports = new TaskController();
+

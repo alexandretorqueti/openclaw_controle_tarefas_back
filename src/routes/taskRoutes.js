@@ -1,3 +1,5 @@
+// src/routes/taskRoutes.js
+
 const express = require('express');
 const taskController = require('../controllers/taskController');
 
@@ -5,6 +7,9 @@ const router = express.Router();
 
 // GET /api/tasks - Get all tasks with filters
 router.get('/', taskController.getAllTasks);
+
+// GET /api/tasks/next/:nickname - Get the next priority task for a specific user
+router.get('/next/:nickname', taskController.getNextTaskForUser);
 
 // GET /api/tasks/:id - Get task by ID
 router.get('/:id', taskController.getTaskById);
@@ -28,3 +33,4 @@ router.patch('/:id/toggle-completion', taskController.toggleTaskCompletion);
 router.get('/project/:projectId', taskController.getTasksByProject);
 
 module.exports = router;
+

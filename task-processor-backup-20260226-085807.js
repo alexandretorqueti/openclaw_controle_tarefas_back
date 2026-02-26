@@ -22,18 +22,11 @@ const path = require('path');
 const { exec: execCmd } = require('child_process');
 const { promisify } = require('util');
 const exec = promisify(execCmd);
-const net = require('net');
 
 // ========== CONFIGURAÇÕES ==========
 const API_URL = process.env.API_URL || 'http://localhost:3001';
 const LOG_FILE = path.join(__dirname, 'task-processor.log');
 const STATE_FILE = path.join(__dirname, 'task-processor-state.json');
-
-// Portas do projeto para verificação
-const PROJECT_PORTS = {
-  backend: 3001,
-  frontend: 3000
-};
 
 // IDs serão buscados dinamicamente
 let MY_USER_ID = null;      // ID do Jarbas (buscar por nickname 'Jarbas')
@@ -45,9 +38,7 @@ let processorState = {
   agentSessionId: null,
   taskStartedAt: null,
   branchesCreated: [],
-  lastCheck: null,
-  lastPortCheck: null,
-  portCheckFailures: 0
+  lastCheck: null
 };
 
 // ========== FUNÇÕES DE LOG ==========
@@ -101,223 +92,7 @@ function saveState() {
   }
 }
 
-// ========== VERIFICAÇÃO DE PORTAS ==========
-async function checkPort(port) {
-  return new Promise((resolve) => {
-    const socket = new net.Socket();
-    socket.setTimeout(2000); // Timeout de 2 segundos
-    
-    socket.on('connect', () => {
-      socket.destroy();
-      resolve(true);
-    });
-    
-    socket.on('timeout', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    
-    socket.on('error', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    
-    socket.connect(port, 'localhost');
-  });
-}
-
-async function checkProjectPorts() {
-  try {
-    log(`🔌 Verificando portas do projeto...`);
-    
-    const results = {};
-    let allPortsOk = true;
-    
-    for (const [service, port] of Object.entries(PROJECT_PORTS)) {
-      const isOpen = await checkPort(port);
-      results[service] = { port, isOpen };
-      
-      if (!isOpen) {
-        allPortsOk = false;
-        log(`❌ Porta ${port} (${service}) não está respondendo`);
-      } else {
-        log(`✅ Porta ${port} (${service}) está respondendo`);
-      }
-    }
-    
-    processorState.lastPortCheck = new Date().toISOString();
-    
-    if (!allPortsOk) {
-      processorState.portCheckFailures++;
-      log(`⚠️ Falhas consecutivas na verificação de portas: ${processorState.portCheckFailures}`);
-    } else {
-      processorState.portCheckFailures = 0;
-    }
-    
-    saveState();
-    return { allPortsOk, results };
-    
-  } catch (error) {
-    log(`❌ Erro ao verificar portas: ${error.message}`);
-    return { allPortsOk: false, results: {}, error: error.message };
-  }
-}
-
-// ========== REINICIALIZAÇÃO DO SERVIÇO ==========
-async function restartBackendService() {
-  try {
-    log(`🔄 Tentando reiniciar o serviço backend...`);
-    
-    // Tentar encontrar o processo do backend
-    const findProcessCmd = `ps aux | grep "node.*server" | grep -v grep | grep -v "task-processor" | head -1`;
-    const findResult = await exec(findProcessCmd);
-    
-    if (findResult.stdout.trim()) {
-      const pidMatch = findResult.stdout.match(/\s+(\d+)\s+/);
-      if (pidMatch && pidMatch[1]) {
-        const pid = pidMatch[1];
-        log(`🔴 Matando processo backend (PID: ${pid})...`);
-        await exec(`kill ${pid}`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-    }
-    
-    // Tentar iniciar o backend novamente
-    log(`🟢 Iniciando backend...`);
-    
-    // Verificar se há script de inicialização
-    const packageJsonPath = path.join(__dirname, 'package.json');
-    if (fs.existsSync(packageJsonPath)) {
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-      
-      if (packageJson.scripts && packageJson.scripts.dev) {
-        // Iniciar em background
-        const startCmd = `cd "${__dirname}" && npm run dev > backend-restart.log 2>&1 &`;
-        await exec(startCmd);
-        log(`✅ Backend iniciado com 'npm run dev'`);
-      } else if (packageJson.scripts && packageJson.scripts.start) {
-        const startCmd = `cd "${__dirname}" && npm start > backend-restart.log 2>&1 &`;
-        await exec(startCmd);
-        log(`✅ Backend iniciado com 'npm start'`);
-      } else {
-        // Tentar iniciar server.js diretamente
-        const serverPath = path.join(__dirname, 'src', 'server.js');
-        if (fs.existsSync(serverPath)) {
-          const startCmd = `cd "${__dirname}" && node src/server.js > backend-restart.log 2>&1 &`;
-          await exec(startCmd);
-          log(`✅ Backend iniciado com 'node src/server.js'`);
-        } else {
-          log(`❌ Não foi possível encontrar script de inicialização`);
-          return false;
-        }
-      }
-    } else {
-      log(`❌ package.json não encontrado`);
-      return false;
-    }
-    
-    // Aguardar alguns segundos para o serviço iniciar
-    log(`⏳ Aguardando inicialização do backend...`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    // Verificar se a porta está respondendo agora
-    const portCheck = await checkPort(PROJECT_PORTS.backend);
-    
-    if (portCheck) {
-      log(`✅ Backend reiniciado com sucesso!`);
-      processorState.portCheckFailures = 0;
-      saveState();
-      return true;
-    } else {
-      log(`❌ Backend não está respondendo após reinicialização`);
-      return false;
-    }
-    
-  } catch (error) {
-    log(`❌ Erro ao reiniciar backend: ${error.message}`);
-    return false;
-  }
-}
-
-// ========== VERIFICAÇÃO E RECUPERAÇÃO DE ENDPOINTS ==========
-async function checkAndRecoverEndpoints() {
-  try {
-    // Primeiro verificar as portas
-    const portCheck = await checkProjectPorts();
-    
-    if (!portCheck.allPortsOk) {
-      log(`⚠️ Problemas detectados nas portas do projeto`);
-      
-      // Se houver múltiplas falhas consecutivas, tentar reiniciar
-      if (processorState.portCheckFailures >= 2) {
-        log(`🔄 Múltiplas falhas detectadas (${processorState.portCheckFailures}), tentando reiniciar...`);
-        const restartSuccess = await restartBackendService();
-        
-        if (restartSuccess) {
-          // Aguardar um pouco mais após reinicialização
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          return true;
-        } else {
-          log(`❌ Falha ao reiniciar backend após múltiplas tentativas`);
-          return false;
-        }
-      }
-      
-      return false;
-    }
-    
-    // Portas estão OK, verificar endpoints específicos
-    log(`🔍 Verificando endpoints da API...`);
-    
-    const endpointsToCheck = [
-      { name: 'usuários', url: `${API_URL}/api/users` },
-      { name: 'statuses', url: `${API_URL}/api/statuses` },
-      { name: 'tarefas', url: `${API_URL}/api/tasks` }
-    ];
-    
-    let allEndpointsOk = true;
-    
-    for (const endpoint of endpointsToCheck) {
-      try {
-        const response = await axios.get(endpoint.url, { timeout: 5000 });
-        if (response.status >= 200 && response.status < 300) {
-          log(`✅ Endpoint ${endpoint.name} está respondendo (${response.status})`);
-        } else {
-          log(`⚠️ Endpoint ${endpoint.name} retornou status ${response.status}`);
-          allEndpointsOk = false;
-        }
-      } catch (error) {
-        log(`❌ Endpoint ${endpoint.name} falhou: ${error.message}`);
-        allEndpointsOk = false;
-      }
-    }
-    
-    if (!allEndpointsOk) {
-      processorState.portCheckFailures++;
-      log(`⚠️ Falhas em endpoints da API: ${processorState.portCheckFailures}`);
-      
-      // Se houver múltiplas falhas, tentar reiniciar
-      if (processorState.portCheckFailures >= 2) {
-        log(`🔄 Múltiplas falhas em endpoints, tentando reiniciar...`);
-        const restartSuccess = await restartBackendService();
-        return restartSuccess;
-      }
-      
-      return false;
-    }
-    
-    // Resetar contador de falhas se tudo estiver OK
-    processorState.portCheckFailures = 0;
-    saveState();
-    return true;
-    
-  } catch (error) {
-    log(`❌ Erro na verificação de endpoints: ${error.message}`);
-    return false;
-  }
-}
-
-// ========== BUSCAR IDs DINAMICAMENTE COM RECUPERAÇÃO ==========
+// ========== BUSCAR IDs DINAMICAMENTE ==========
 async function fetchUserIds() {
   try {
     log('🔍 Buscando IDs dos usuários...');
@@ -345,31 +120,6 @@ async function fetchUserIds() {
     
   } catch (error) {
     log(`❌ Erro ao buscar IDs dos usuários: ${error.message}`);
-    
-    // Verificar se é erro de conexão/timeout
-    const isConnectionError = error.code === 'ECONNREFUSED' ||
-                              error.code === 'ETIMEDOUT' ||
-                              error.code === 'ECONNRESET' ||
-                              error.message.includes('timeout');
-    
-    if (isConnectionError) {
-      log(`🚨 Erro de conexão detectado - verificando portas do projeto...`);
-      
-      // Tentar recuperação automática
-      log(`🔄 Tentando recuperação automática...`);
-      const recovered = await checkAndRecoverEndpoints();
-      
-      if (recovered) {
-        log(`✅ Recuperação bem-sucedida, tentando novamente...`);
-        // Tentar novamente após recuperação
-        return await fetchUserIds();
-      } else {
-        log(`❌ Falha na recuperação após múltiplas tentativas`);
-        throw new Error(`Não foi possível se conectar à API após tentativa de recuperação. Erro: ${error.message}`);
-      }
-    }
-    
-    // Outros tipos de erro, não tentar recuperação
     throw error;
   }
 }

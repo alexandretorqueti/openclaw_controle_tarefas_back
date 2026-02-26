@@ -1,0 +1,35 @@
+require('dotenv').config();
+const path = require('path');
+
+// Caminhos baseados no seu ambiente
+const BASE_DIR = '/home/alexandrebragatorqueti/projetos';
+const TASKS_DIR = path.join(BASE_DIR, 'pending-tasks');
+const PROCESSED_DIR = path.join(TASKS_DIR, 'processed');
+const ERROR_DIR = path.join(TASKS_DIR, 'error');
+
+const API_URL = process.env.API_URL || 'http://127.0.0.1:3001';
+const STATE_FILE = path.join(BASE_DIR, 'tarefas-server', 'monitor-state.json');
+const LOG_FILE = process.env.LOG_FILE || path.join(BASE_DIR, 'jarbas-monitor.log');
+const MY_USER_ID = process.env.MY_USER_ID || '6bdbe73b-8178-4fd5-987d-50f3b73beb2b';
+
+const MAX_LOG_LINES = 1000;
+const TASK_TIMEOUT_MS = 60 * 60 * 1000; // 1 hora
+const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
+
+const STATUS = {
+  IN_PROGRESS: '28a4201d-272e-4e53-8c91-4cd5bf5ea516',
+  COMPLETED: 'd9bc0336-0a16-48eb-8fc7-0c5ebec06f97',
+  BLOCKED: 'status-blocked-id' // ID do seu status de bloqueado
+};
+
+// Garante que as pastas físicas existam
+const fs = require('fs');
+[TASKS_DIR, PROCESSED_DIR, ERROR_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+module.exports = {
+  BASE_DIR, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, API_URL, 
+  STATE_FILE, LOG_FILE, MY_USER_ID, MAX_LOG_LINES, 
+  TASK_TIMEOUT_MS, servicesConfig, STATUS
+};

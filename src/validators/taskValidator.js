@@ -6,7 +6,6 @@ const taskSchema = z.object({
     .max(200, 'Task title must be at most 200 characters'),
   description: z.string()
     .min(10, 'Description must be at least 10 characters')
-    .max(1000, 'Description must be at most 1000 characters')
     .optional()
     .or(z.literal('')),
   deadline: z.string()
@@ -47,7 +46,6 @@ const updateTaskSchema = z.object({
     .optional(),
   description: z.string()
     .min(10, 'Description must be at least 10 characters')
-    .max(1000, 'Description must be at most 1000 characters')
     .optional(),
   deadline: z.string()
     .refine(date => {

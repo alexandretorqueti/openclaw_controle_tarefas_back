@@ -1,5 +1,10 @@
 {
   "failure_counts": {},
   "active_pids": {},
-  "blocked_tasks": {}
+  "blocked_tasks": {},
+  "active_tasks": {
+    "c8c0adfe-2b01-4714-928a-ab73d98f1440": {
+      "startTime": 1772115981792
+    }
+  }
 }
