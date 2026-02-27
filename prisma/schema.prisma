@@ -22,6 +22,7 @@ model User {
   taskHistory     TaskHistory[]
   assignedTasks   Task[]        @relation("TaskAssignee")
   createdTasks    Task[]        @relation("TaskCreator")
+  logs            Log[]
 
   @@map("users")
 }
@@ -162,4 +163,30 @@ model TaskHistory {
   task        Task     @relation(fields: [taskId], references: [id])
 
   @@map("task_history")
+}
+
+model Log {
+  id             String   @id @default(uuid())
+  timestamp      DateTime @default(now())
+  level          String   // ERROR, WARN, INFO, DEBUG
+  endpoint       String?
+  method         String?
+  statusCode     Int?
+  message        String?
+  errorType      String?
+  stackTrace     String?
+  requestBody    String?
+  requestQuery   String?
+  requestParams  String?
+  headers        String?
+  clientIp       String?
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+  correlationId  String?
+  parentLogId    String?
+  parentLog      Log?     @relation("LogHierarchy", fields: [parentLogId], references: [id])
+  childLogs      Log[]    @relation("LogHierarchy")
+  responseTime   Int?     // milliseconds
+
+  @@map("logs")
 }

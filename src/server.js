@@ -176,46 +176,7 @@ app.get('/api/ia-test', (req, res) => {
   });
 });
 
-// Logs endpoint for debugging (protected in production)
-if (process.env.NODE_ENV === 'development') {
-  app.get('/api/logs', async (req, res, next) => {
-    try {
-      const { limit = 50, level, endpoint, startDate, endDate } = req.query;
-      
-      const logs = await Logger.getLogs({
-        limit: parseInt(limit),
-        level,
-        endpoint,
-        startDate,
-        endDate
-      });
-      
-      res.json({
-        count: logs.length,
-        logs
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-  
-  app.get('/api/logs/:id', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const log = await Logger.getLogById(id);
-      
-      if (!log) {
-        return res.status(404).json({
-          error: 'Log not found'
-        });
-      }
-      
-      res.json(log);
-    } catch (error) {
-      next(error);
-    }
-  });
-}
+// Logs endpoints moved to dedicated route (see logRoutes.js)
 
 // 404 handler
 app.use(ErrorMiddleware.notFoundHandler());

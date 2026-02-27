@@ -15,7 +15,31 @@ function snakeToCamel(obj) {
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
         const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-        newObj[camelKey] = snakeToCamel(obj[key]);
+        const value = obj[key];
+        
+        // Special handling for JSON strings that should be arrays
+        if ((camelKey === 'recurrenceTimes' || camelKey === 'recurrenceDays') && 
+            typeof value === 'string') {
+          // Handle empty string, "null", or "[]" as null/empty array
+          const trimmedValue = value.trim();
+          if (trimmedValue === '' || trimmedValue === 'null') {
+            newObj[camelKey] = null;
+          } else if (trimmedValue === '[]') {
+            newObj[camelKey] = [];
+          } else if (trimmedValue.startsWith('[')) {
+            try {
+              newObj[camelKey] = JSON.parse(value);
+            } catch (error) {
+              console.warn(`Failed to parse ${camelKey} as JSON:`, value, error);
+              newObj[camelKey] = null; // Fallback to null instead of keeping invalid string
+            }
+          } else {
+            // If it's a string but not JSON array, treat as null
+            newObj[camelKey] = null;
+          }
+        } else {
+          newObj[camelKey] = snakeToCamel(value);
+        }
       }
     }
     return newObj;

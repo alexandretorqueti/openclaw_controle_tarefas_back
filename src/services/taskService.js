@@ -75,8 +75,13 @@ class TaskService {
     await this.validateReferences(data);
     
     // Process recurrence fields
-    const recurrenceTimes = data.recurrenceTimes ? JSON.stringify(data.recurrenceTimes) : null;
-    const recurrenceDays = data.recurrenceDays ? JSON.stringify(data.recurrenceDays) : null;
+    // Handle both arrays and already stringified JSON
+    const recurrenceTimes = data.recurrenceTimes ? 
+      (typeof data.recurrenceTimes === 'string' ? data.recurrenceTimes : JSON.stringify(data.recurrenceTimes)) : 
+      null;
+    const recurrenceDays = data.recurrenceDays ? 
+      (typeof data.recurrenceDays === 'string' ? data.recurrenceDays : JSON.stringify(data.recurrenceDays)) : 
+      null;
     
     // Calculate next execution time if task is recurring
     let nextExecutionAt = null;
@@ -473,11 +478,15 @@ class TaskService {
     }
     
     if (data.recurrenceTimes !== undefined) {
-      updateData.recurrenceTimes = data.recurrenceTimes ? JSON.stringify(data.recurrenceTimes) : null;
+      updateData.recurrenceTimes = data.recurrenceTimes ? 
+        (typeof data.recurrenceTimes === 'string' ? data.recurrenceTimes : JSON.stringify(data.recurrenceTimes)) : 
+        null;
     }
     
     if (data.recurrenceDays !== undefined) {
-      updateData.recurrenceDays = data.recurrenceDays ? JSON.stringify(data.recurrenceDays) : null;
+      updateData.recurrenceDays = data.recurrenceDays ? 
+        (typeof data.recurrenceDays === 'string' ? data.recurrenceDays : JSON.stringify(data.recurrenceDays)) : 
+        null;
     }
     
     // Recalculate next execution if recurrence fields changed
@@ -899,57 +908,113 @@ class TaskService {
 
     const statusIds = aiVisibleStatuses.map(status => status.id);
 
-    // 3. Buscar a primeira tarefa que atenda aos critérios, ordenada pela sua regra de negócio
-    // Critério principal: tarefas com status visível para IA
-    const nextTask = await prisma.task.findFirst({
+    // 3. PRIMEIRO: Buscar tarefas recorrentes atrasadas (prioridade)
+    // conforme especificação: caso a data da próxima execução seja diferente de nulo,
+    // e a data atual seja maior que ela, e a data da última execução seja anterior
+    // a data da próxima execução, no caso de isCompleted seja false
+    const now = new Date();
+    
+    // Buscar tarefas recorrentes atrasadas (nextExecutionAt < now)
+    // MODIFICAÇÃO: Para tarefas recorrentes, a prioridade principal é a data de execução,
+    // mas também consideramos a prioridade dos status como critério secundário
+    const overdueRecurringTasks = await prisma.task.findMany({
       where: {
-        assignedToId: user.id,            // Atribuída ao Jarbas
-        isCompleted: false,               // Não pode estar concluída
-        statusId: { in: statusIds }       // O status atual permite ação da IA
+        assignedToId: user.id,
+        isCompleted: false,
+        nextExecutionAt: {
+          not: null,
+          lt: now  // Data atual é maior que nextExecutionAt (está atrasada)
+        }
       },
-      orderBy: [
-        { position: 'asc' },              // Prioriza quem está no topo do Kanban/Lista
-        { deadline: 'asc' }               // Desempata por quem vence primeiro
-      ],
       include: {
         project: {
           select: {
             id: true,
             name: true,
             description: true,
-            regras: true                  // Crucial para o contexto da IA
+            regras: true
           }
         },
         status: {
-          select: { name: true }
+          select: { 
+            id: true,
+            name: true,
+            order: true,
+            colorCode: true,
+            isFinalState: true,
+            visible_to_ai: true
+          }
         },
         priority: {
-          select: { name: true }
+          select: { 
+            id: true,
+            name: true,
+            weight: true
+          }
         }
       }
     });
 
-    // 4. Se não encontrou tarefa com status visível, verificar tarefas recorrentes atrasadas
-    // conforme especificação: caso a data da próxima execução seja diferente de nulo,
-    // e a data atual seja maior que ela, e a data da última execução seja anterior
-    // a data da próxima execução, no caso de isCompleted seja false
-    if (!nextTask) {
-      const now = new Date();
+    // Ordenar manualmente: primeiro por nextExecutionAt, depois por order do status
+    overdueRecurringTasks.sort((a, b) => {
+      // 1. Por data de execução (mais atrasada primeiro)
+      if (a.nextExecutionAt < b.nextExecutionAt) return -1;
+      if (a.nextExecutionAt > b.nextExecutionAt) return 1;
       
-      // Primeiro, buscar tarefas recorrentes atrasadas (nextExecutionAt < now)
-      const overdueRecurringTasks = await prisma.task.findMany({
+      // 2. Por prioridade do status (menor order = maior prioridade)
+      if (a.status.order < b.status.order) return -1;
+      if (a.status.order > b.status.order) return 1;
+      
+      // 3. Por posição no Kanban
+      if (a.position < b.position) return -1;
+      if (a.position > b.position) return 1;
+      
+      // 4. Por prazo
+      if (a.deadline < b.deadline) return -1;
+      if (a.deadline > b.deadline) return 1;
+      
+      return 0;
+    });
+    
+    // Filtrar tarefas onde lastExecutedAt é anterior a nextExecutionAt
+    // Isso inclui tarefas nunca executadas (lastExecutedAt === null)
+    const validOverdueTasks = overdueRecurringTasks.filter(task => {
+      if (task.lastExecutedAt === null) {
+        return true; // Nunca executada, certamente lastExecutedAt < nextExecutionAt
+      }
+      // Garantir que nextExecutionAt não é null (já filtrado, mas por segurança)
+      if (!task.nextExecutionAt) {
+        return false;
+      }
+      // Comparar datas: lastExecutedAt < nextExecutionAt
+      return task.lastExecutedAt < task.nextExecutionAt;
+    });
+    
+    // Se encontrou tarefas recorrentes atrasadas válidas, retornar a primeira
+    if (validOverdueTasks.length > 0) {
+      return validOverdueTasks[0];
+    }
+
+    // 4. SEGUNDO: Se não encontrou tarefas recorrentes atrasadas, buscar tarefas normais
+    // MODIFICAÇÃO: Agora considera a priorização dos status pelo campo 'order'
+    // Buscar todos os status visíveis para IA, ordenados por prioridade (menor order = maior prioridade)
+    const orderedStatuses = await prisma.status.findMany({
+      where: { visible_to_ai: true },
+      select: { id: true, order: true },
+      orderBy: { order: 'asc' }
+    });
+
+    // Para cada status na ordem de prioridade, buscar a primeira tarefa
+    for (const status of orderedStatuses) {
+      const task = await prisma.task.findFirst({
         where: {
           assignedToId: user.id,
           isCompleted: false,
-          nextExecutionAt: {
-            not: null,
-            lt: now  // Data atual é maior que nextExecutionAt (está atrasada)
-          }
+          statusId: status.id
         },
         orderBy: [
-          { nextExecutionAt: 'asc' },     // Prioriza as mais atrasadas
-          { position: 'asc' },
-          { deadline: 'asc' }
+          { position: 'asc' },      // Desempata: posição no Kanban
+          { deadline: 'asc' }       // Desempata: prazo mais próximo
         ],
         include: {
           project: {
@@ -961,33 +1026,32 @@ class TaskService {
             }
           },
           status: {
-            select: { name: true }
+            select: { 
+              id: true,
+              name: true,
+              order: true,
+              colorCode: true,
+              isFinalState: true,
+              visible_to_ai: true
+            }
           },
           priority: {
-            select: { name: true }
+            select: { 
+              id: true,
+              name: true,
+              weight: true
+            }
           }
         }
       });
-      
-      // Filtrar tarefas onde lastExecutedAt é anterior a nextExecutionAt
-      // Isso inclui tarefas nunca executadas (lastExecutedAt === null)
-      const validOverdueTasks = overdueRecurringTasks.filter(task => {
-        if (task.lastExecutedAt === null) {
-          return true; // Nunca executada, certamente lastExecutedAt < nextExecutionAt
-        }
-        // Garantir que nextExecutionAt não é null (já filtrado, mas por segurança)
-        if (!task.nextExecutionAt) {
-          return false;
-        }
-        // Comparar datas: lastExecutedAt < nextExecutionAt
-        return task.lastExecutedAt < task.nextExecutionAt;
-      });
-      
-      // Retornar a primeira tarefa válida
-      return validOverdueTasks.length > 0 ? validOverdueTasks[0] : null;
+
+      if (task) {
+        return task;
+      }
     }
 
-    return nextTask;
+    // Se não encontrou nenhuma tarefa em nenhum status
+    return null;
   }
 
   // Finalize task - find first final status and update task
