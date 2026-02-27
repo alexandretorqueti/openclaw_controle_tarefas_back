@@ -26,13 +26,13 @@ async function reconcileActiveTasks(state) {
     
     // Se ele vir que a IA já marcou como concluída
     if (taskData.statusId === STATUS.COMPLETED) {
-      log(`✅ Tarefa ${taskId} foi concluída pelo DeepSeek/Qwen! Gerando comentário...`);
+      log(`✅ Tarefa ${taskId} foi concluída pela IA Gerando comentário...`);
       
       // 1. LÊ O ARQUIVO DE LOG DA IA ANTES DE MOVER
       if (fs.existsSync(logFile)) {
         try {
           const logContent = fs.readFileSync(logFile, 'utf8');
-          // Limita a 3000 caracteres para não estourar o banco de dados se a IA falar demais
+          
           const safeLogContent = logContent;
 
           // Atualiza o campo lastExecutedAt com a data e hora atuais

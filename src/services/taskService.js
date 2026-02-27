@@ -930,6 +930,85 @@ class TaskService {
 
     return nextTask;
   }
+
+  // Finalize task - find first final status and update task
+  async finalizeTask(taskId) {
+    // 1. Find the first status marked as 'final' (isFinalState = true)
+    const finalStatus = await prisma.status.findFirst({
+      where: {
+        isFinalState: true
+      },
+      orderBy: {
+        order: 'asc'
+      }
+    });
+
+    if (!finalStatus) {
+      throw new Error('No final status found in the system');
+    }
+
+    // 2. Check if task exists
+    const existingTask = await prisma.task.findUnique({
+      where: { id: taskId }
+    });
+
+    if (!existingTask) {
+      throw new Error(`Task with ID ${taskId} not found`);
+    }
+
+    // 3. Update task to the final status and update last execution date
+    const updatedTask = await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        statusId: finalStatus.id,
+        updatedAt: new Date() // Update last execution date to current date
+      },
+      include: {
+        project: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        status: true,
+        priority: true,
+        createdBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true
+          }
+        }
+      }
+    });
+
+    // 4. Create history record for status change
+    if (existingTask.statusId !== finalStatus.id) {
+      await prisma.taskHistory.create({
+        data: {
+          taskId: taskId,
+          userId: existingTask.createdById,
+          oldStatusId: existingTask.statusId,
+          newStatusId: finalStatus.id,
+          notes: 'Task finalized via finalize endpoint'
+        }
+      });
+    }
+
+    return {
+      task: updatedTask,
+      finalStatus: finalStatus
+    };
+  }
 }
 
 module.exports = new TaskService();

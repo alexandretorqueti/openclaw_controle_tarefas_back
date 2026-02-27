@@ -32,5 +32,8 @@ router.patch('/:id/toggle-completion', taskController.toggleTaskCompletion);
 // GET /api/tasks/project/:projectId - Get tasks by project
 router.get('/project/:projectId', taskController.getTasksByProject);
 
+// PATCH /api/tasks/:id/finalize - Finalize task (mark as final status)
+router.patch('/:id/finalize', taskController.finalizeTask);
+
 module.exports = router;
 

@@ -231,6 +231,20 @@ class TaskController {
     });
   });
 
+  // Finalize task (mark as final status)
+  finalizeTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    
+    const result = await taskService.finalizeTask(id);
+    
+    res.json({
+      message: 'Task finalized successfully',
+      task: result.task,
+      finalStatus: result.finalStatus,
+      correlationId: req.correlationId
+    });
+  });
+
 }
 
 
