@@ -947,22 +947,51 @@ class TaskService {
       throw new Error('No final status found in the system');
     }
 
-    // 2. Check if task exists
+    // 2. Check if task exists and get recurrence data
     const existingTask = await prisma.task.findUnique({
-      where: { id: taskId }
+      where: { id: taskId },
+      select: {
+        id: true,
+        statusId: true,
+        createdById: true,
+        isRecurring: true,
+        recurrenceType: true,
+        recurrenceTimes: true,
+        recurrenceDays: true,
+        lastExecutedAt: true
+      }
     });
 
     if (!existingTask) {
       throw new Error(`Task with ID ${taskId} not found`);
     }
 
-    // 3. Update task to the final status and update last execution date
+    // 3. Prepare update data
+    const updateData = {
+      statusId: finalStatus.id,
+      updatedAt: new Date(),
+      lastExecutedAt: new Date() // Update last execution date to current date
+    };
+
+    // 4. Calculate next execution if task is recurring
+    if (existingTask.isRecurring && existingTask.recurrenceType) {
+      const taskData = {
+        isRecurring: existingTask.isRecurring,
+        recurrenceType: existingTask.recurrenceType,
+        recurrenceTimes: existingTask.recurrenceTimes ? JSON.parse(existingTask.recurrenceTimes) : null,
+        recurrenceDays: existingTask.recurrenceDays ? JSON.parse(existingTask.recurrenceDays) : null,
+        lastExecutedAt: new Date() // Use current time as last executed
+      };
+      
+      updateData.nextExecutionAt = this.calculateNextExecution(taskData);
+    } else {
+      updateData.nextExecutionAt = null;
+    }
+
+    // 5. Update task to the final status with recurrence data
     const updatedTask = await prisma.task.update({
       where: { id: taskId },
-      data: {
-        statusId: finalStatus.id,
-        updatedAt: new Date() // Update last execution date to current date
-      },
+      data: updateData,
       include: {
         project: {
           select: {
@@ -991,7 +1020,7 @@ class TaskService {
       }
     });
 
-    // 4. Create history record for status change
+    // 6. Create history record for status change
     if (existingTask.statusId !== finalStatus.id) {
       await prisma.taskHistory.create({
         data: {
