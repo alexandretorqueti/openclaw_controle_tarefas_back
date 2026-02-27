@@ -900,6 +900,7 @@ class TaskService {
     const statusIds = aiVisibleStatuses.map(status => status.id);
 
     // 3. Buscar a primeira tarefa que atenda aos critérios, ordenada pela sua regra de negócio
+    // Critério principal: tarefas com status visível para IA
     const nextTask = await prisma.task.findFirst({
       where: {
         assignedToId: user.id,            // Atribuída ao Jarbas
@@ -927,6 +928,64 @@ class TaskService {
         }
       }
     });
+
+    // 4. Se não encontrou tarefa com status visível, verificar tarefas recorrentes atrasadas
+    // conforme especificação: caso a data da próxima execução seja diferente de nulo,
+    // e a data atual seja maior que ela, e a data da última execução seja anterior
+    // a data da próxima execução, no caso de isCompleted seja false
+    if (!nextTask) {
+      const now = new Date();
+      
+      // Primeiro, buscar tarefas recorrentes atrasadas (nextExecutionAt < now)
+      const overdueRecurringTasks = await prisma.task.findMany({
+        where: {
+          assignedToId: user.id,
+          isCompleted: false,
+          nextExecutionAt: {
+            not: null,
+            lt: now  // Data atual é maior que nextExecutionAt (está atrasada)
+          }
+        },
+        orderBy: [
+          { nextExecutionAt: 'asc' },     // Prioriza as mais atrasadas
+          { position: 'asc' },
+          { deadline: 'asc' }
+        ],
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              regras: true
+            }
+          },
+          status: {
+            select: { name: true }
+          },
+          priority: {
+            select: { name: true }
+          }
+        }
+      });
+      
+      // Filtrar tarefas onde lastExecutedAt é anterior a nextExecutionAt
+      // Isso inclui tarefas nunca executadas (lastExecutedAt === null)
+      const validOverdueTasks = overdueRecurringTasks.filter(task => {
+        if (task.lastExecutedAt === null) {
+          return true; // Nunca executada, certamente lastExecutedAt < nextExecutionAt
+        }
+        // Garantir que nextExecutionAt não é null (já filtrado, mas por segurança)
+        if (!task.nextExecutionAt) {
+          return false;
+        }
+        // Comparar datas: lastExecutedAt < nextExecutionAt
+        return task.lastExecutedAt < task.nextExecutionAt;
+      });
+      
+      // Retornar a primeira tarefa válida
+      return validOverdueTasks.length > 0 ? validOverdueTasks[0] : null;
+    }
 
     return nextTask;
   }
