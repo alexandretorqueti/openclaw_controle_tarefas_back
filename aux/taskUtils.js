@@ -33,7 +33,7 @@ async function reconcileActiveTasks(state) {
         try {
           const logContent = fs.readFileSync(logFile, 'utf8');
           // Limita a 3000 caracteres para não estourar o banco de dados se a IA falar demais
-          const safeLogContent = logContent.length > 3000 ? logContent.substring(0, 3000) + '\n...[Log truncado]' : logContent;
+          const safeLogContent = logContent;
 
           // Atualiza o campo lastExecutedAt com a data e hora atuais
           await axios.put(`${API_URL}/api/tasks/${taskId}`, {
