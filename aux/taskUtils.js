@@ -167,8 +167,7 @@ Ao terminar as alterações no código, VOCÊ DEVE EXECUTAR ESTES 2 PASSOS ANTES
    Comando esperado: echo "Seu relatorio técnico aqui..." > ${logFile}
 
 2. Marque a tarefa como CONCLUÍDA na nossa API.
-   Faça um PUT para: ${API_URL}/api/tasks/${task.id}
-   JSON Body: { "statusId": "${STATUS.COMPLETED}" }
+   Faça um PATCH para: ${API_URL}/api/tasks/${task.id}/finalize
 `;
 
   // Salva fisicamente o contexto para auditoria e leitura
