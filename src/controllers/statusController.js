@@ -39,7 +39,7 @@ class StatusController {
 
   // Create a new status
   createStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { name, color_code = '#666666', is_final_state = false, visible_to_ai = true, order = 0 } = req.body;
+    const { name, colorCode = '#666666', isFinalState = false, visibleToAi = true, order = 0 } = req.body;
     
     if (!name) {
       const error = new Error('Name is required');
@@ -50,9 +50,9 @@ class StatusController {
     const status = await prisma.status.create({
       data: {
         name,
-        colorCode: color_code,
-        isFinalState: is_final_state,
-        visible_to_ai,
+        colorCode: colorCode,
+        isFinalState: isFinalState,
+        visibleToAi,
         order
       }
     });

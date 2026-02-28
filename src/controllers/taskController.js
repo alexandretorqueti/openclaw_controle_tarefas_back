@@ -255,16 +255,27 @@ class TaskController {
     });
   });
 
-  // Finalize task (mark as final status)
+  // Finalize task (mark as final status or reset if recurring)
   finalizeTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
     
-    const result = await taskService.finalizeTask(id);
+    // Pega as anotações específicas da execução do corpo da requisição
+    const { executionNotes } = req.body; 
     
+    // Idealmente você pega o ID de quem está executando do seu middleware de autenticação
+    // Exemplo: const userId = req.user.id; 
+    const userId = req.body.userId || null; 
+
+    const result = await taskService.finalizeTask(id, userId, executionNotes);
+    
+    // Resposta dinâmica dependendo do que aconteceu com a tarefa
     res.json({
-      message: 'Task finalized successfully',
+      message: result.isRecurringReset 
+        ? 'Rotina executada, histórico salvo e agendada para o próximo ciclo.' 
+        : 'Tarefa finalizada com sucesso.',
       task: result.task,
-      finalStatus: result.finalStatus,
+      status: result.status,
+      historyNotesSaved: result.history.notes, // Retorna para confirmar que salvou
       correlationId: req.correlationId
     });
   });

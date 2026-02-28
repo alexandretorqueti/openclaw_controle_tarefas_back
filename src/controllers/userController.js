@@ -304,7 +304,7 @@ class UserController {
         assignedToId: user.id,
         isCompleted: false,
         status: {
-          visible_to_ai: true
+          visibleToAi: true
         }
       },
       include: {

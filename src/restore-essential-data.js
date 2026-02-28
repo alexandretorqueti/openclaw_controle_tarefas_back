@@ -80,21 +80,21 @@ async function restoreStatuses() {
       name: 'Pendente',
       colorCode: '#FFA726', // Laranja
       isFinalState: false,
-      visible_to_ai: true,
+      visibleToAi: true,
       order: 1
     },
     {
       name: 'Em Andamento',
       colorCode: '#29B6F6', // Azul
       isFinalState: false,
-      visible_to_ai: true,
+      visibleToAi: true,
       order: 2
     },
     {
       name: 'Concluído',
       colorCode: '#66BB6A', // Verde
       isFinalState: true,
-      visible_to_ai: false,
+      visibleToAi: false,
       order: 3
     }
   ];
@@ -207,7 +207,7 @@ async function finalVerification() {
   
   // Status visíveis para IA (CRÍTICO para task-processor)
   const aiStatuses = await prisma.status.findMany({
-    where: { visible_to_ai: true },
+    where: { visibleToAi: true },
     select: { name: true, id: true }
   });
   

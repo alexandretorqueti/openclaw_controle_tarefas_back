@@ -1,3 +1,5 @@
+// This is your Prisma schema file,
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -55,7 +57,7 @@ model Status {
   name         String
   colorCode    String  @default("#666666")
   isFinalState Boolean @default(false)
-  visible_to_ai Boolean @default(true)
+  visibleToAi Boolean @default(true) @map("visible_to_ai")
   order        Int     @default(0)
   tasks        Task[]
 
@@ -190,3 +192,4 @@ model Log {
 
   @@map("logs")
 }
+

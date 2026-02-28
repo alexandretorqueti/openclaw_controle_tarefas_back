@@ -3,7 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { log } = require('./logger');
 const { save_state } = require('./state');
-const { API_URL, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, MY_USER_ID, STATUS, TASK_TIMEOUT_MS } = require('./config');
+const { API_URL, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, MY_USER_ID, STATUS, TASK_TIMEOUT_MS, MINUTOS } = require('./config');
 
 /**
  * Verifica se a tarefa ativa terminou ou travou
@@ -68,7 +68,7 @@ async function reconcileActiveTasks(state) {
     // Se ainda não concluiu, verifica se deu Timeout (1 hora)
     const timeElapsed = Date.now() - taskState.startTime;
     if (timeElapsed > TASK_TIMEOUT_MS) {
-      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de 1h. Devolvendo para Alexandre...`);
+      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de ${MINUTOS} minutos. Devolvendo para Alexandre...`);
       
       try {
         let alexandreId = null;
@@ -88,7 +88,7 @@ async function reconcileActiveTasks(state) {
         await axios.post(`${API_URL}/api/comments`, {
           taskId: taskId,
           userId: MY_USER_ID,
-          content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de uma hora e não houve retorno da IA. A execução foi abortada.`
+          content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de ${MINUTOS} minutos e não houve retorno da IA. A execução foi abortada.`
         });
         
       } catch (timeoutError) {

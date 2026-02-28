@@ -8,7 +8,7 @@ class CronScheduler {
 
   // Initialize the scheduler
   init() {
-    console.log('🕐 Initializing cron scheduler for recurring tasks...');
+    /*console.log('🕐 Initializing cron scheduler for recurring tasks...');
     
     // Schedule task to check for due recurring tasks every minute
     const checkJob = cron.schedule('* * * * *', async () => {
@@ -18,6 +18,7 @@ class CronScheduler {
     this.jobs.push(checkJob);
     
     console.log('✅ Cron scheduler initialized. Checking for due tasks every minute.');
+    */
   }
 
   // Stop all scheduled jobs

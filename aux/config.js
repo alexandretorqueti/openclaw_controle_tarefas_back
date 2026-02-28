@@ -13,7 +13,7 @@ const LOG_FILE = process.env.LOG_FILE || path.join(BASE_DIR, 'jarbas-monitor.log
 const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527f2';
 
 const MAX_LOG_LINES = 1000;
-const MINUTOS = 30;
+const MINUTOS = 60; // Defina o número de minutos para o timeout
 const TASK_TIMEOUT_MS = MINUTOS * 60 * 1000; // 
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 
@@ -32,5 +32,5 @@ const fs = require('fs');
 module.exports = {
   BASE_DIR, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, API_URL, 
   STATE_FILE, LOG_FILE, MY_USER_ID, MAX_LOG_LINES, 
-  TASK_TIMEOUT_MS, servicesConfig, STATUS
+  TASK_TIMEOUT_MS, servicesConfig, STATUS, MINUTOS
 };

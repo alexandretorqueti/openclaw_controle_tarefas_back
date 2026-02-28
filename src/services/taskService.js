@@ -885,282 +885,169 @@ class TaskService {
 
   // === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
   async getNextTaskForUser(nickname) {
-    // 1. Encontrar o usuário pelo nickname
-    const user = await prisma.user.findFirst({
-      where: { nickname: nickname }
-    });
-
-    if (!user) {
-      console.warn(`[TaskService] Usuário com nickname '${nickname}' não encontrado.`);
-      return null;
-    }
-
-    // 2. Buscar todos os IDs de status que são visíveis para a IA
-    const aiVisibleStatuses = await prisma.status.findMany({
-      where: { visible_to_ai: true },
-      select: { id: true }
-    });
-
-    if (!aiVisibleStatuses || aiVisibleStatuses.length === 0) {
-      console.warn(`[TaskService] Nenhum status visível para IA encontrado no banco.`);
-      return null;
-    }
-
-    const statusIds = aiVisibleStatuses.map(status => status.id);
-
-    // 3. PRIMEIRO: Buscar tarefas recorrentes atrasadas (prioridade)
-    // conforme especificação: caso a data da próxima execução seja diferente de nulo,
-    // e a data atual seja maior que ela, e a data da última execução seja anterior
-    // a data da próxima execução, no caso de isCompleted seja false
     const now = new Date();
-    
-    // Buscar tarefas recorrentes atrasadas (nextExecutionAt < now)
-    // MODIFICAÇÃO: Para tarefas recorrentes, a prioridade principal é a data de execução,
-    // mas também consideramos a prioridade dos status como critério secundário
-    const overdueRecurringTasks = await prisma.task.findMany({
+
+    const [user, aiStatuses] = await Promise.all([
+      prisma.user.findUnique({ where: { nickname } }),
+      prisma.status.findMany({ where: { visibleToAi: true }, select: { id: true } })
+    ]);
+
+    if (!user || aiStatuses.length === 0) return null;
+    const statusIds = aiStatuses.map(s => s.id);
+
+    // MÁGICA AQUI: A query já filtra recursivas que estão no futuro!
+    const tasks = await prisma.task.findMany({
       where: {
         assignedToId: user.id,
         isCompleted: false,
-        nextExecutionAt: {
-          not: null,
-          lt: now  // Data atual é maior que nextExecutionAt (está atrasada)
-        }
+        statusId: { in: statusIds },
+        // A tarefa tem que ser: Normal OU (Recursiva E já passou do horário previsto)
+        OR: [
+          { isRecurring: false },
+          { 
+            isRecurring: true, 
+            nextExecutionAt: { lte: now } // Traz só o que venceu ou é null (primeira vez)
+          },
+          {
+             isRecurring: true,
+             nextExecutionAt: null
+          }
+        ]
       },
       include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            regras: true
-          }
-        },
-        status: {
-          select: { 
-            id: true,
-            name: true,
-            order: true,
-            colorCode: true,
-            isFinalState: true,
-            visible_to_ai: true
-          }
-        },
-        priority: {
-          select: { 
-            id: true,
-            name: true,
-            weight: true
-          }
-        }
+        priority: true,
+        dependencies: { include: { task: true } }
       }
     });
 
-    // Ordenar manualmente: primeiro por nextExecutionAt, depois por order do status
-    overdueRecurringTasks.sort((a, b) => {
-      // 1. Por data de execução (mais atrasada primeiro)
-      if (a.nextExecutionAt < b.nextExecutionAt) return -1;
-      if (a.nextExecutionAt > b.nextExecutionAt) return 1;
-      
-      // 2. Por prioridade do status (menor order = maior prioridade)
-      if (a.status.order < b.status.order) return -1;
-      if (a.status.order > b.status.order) return 1;
-      
-      // 3. Por posição no Kanban
-      if (a.position < b.position) return -1;
-      if (a.position > b.position) return 1;
-      
-      // 4. Por prazo
-      if (a.deadline < b.deadline) return -1;
-      if (a.deadline > b.deadline) return 1;
-      
-      return 0;
-    });
-    
-    // Filtrar tarefas onde lastExecutedAt é anterior a nextExecutionAt
-    // Isso inclui tarefas nunca executadas (lastExecutedAt === null)
-    const validOverdueTasks = overdueRecurringTasks.filter(task => {
-      if (task.lastExecutedAt === null) {
-        return true; // Nunca executada, certamente lastExecutedAt < nextExecutionAt
-      }
-      // Garantir que nextExecutionAt não é null (já filtrado, mas por segurança)
-      if (!task.nextExecutionAt) {
-        return false;
-      }
-      // Comparar datas: lastExecutedAt < nextExecutionAt
-      return task.lastExecutedAt < task.nextExecutionAt;
-    });
-    
-    // Se encontrou tarefas recorrentes atrasadas válidas, retornar a primeira
-    if (validOverdueTasks.length > 0) {
-      return validOverdueTasks[0];
-    }
+    const playableTasks = tasks.filter(t => t.dependencies.every(dep => dep.task.isCompleted));
 
-    // 4. SEGUNDO: Se não encontrou tarefas recorrentes atrasadas, buscar tarefas normais
-    // MODIFICAÇÃO: Agora considera a priorização dos status pelo campo 'order'
-    // Buscar todos os status visíveis para IA, ordenados por prioridade (menor order = maior prioridade)
-    const orderedStatuses = await prisma.status.findMany({
-      where: { visible_to_ai: true },
-      select: { id: true, order: true },
-      orderBy: { order: 'asc' }
+    if (playableTasks.length === 0) return null;
+
+    playableTasks.sort((a, b) => {
+      // Como a query só trouxe recursivas vencidas, se ela é recursiva, ela DEVE ir pro topo.
+      if (a.isRecurring && !b.isRecurring) return -1;
+      if (!a.isRecurring && b.isRecurring) return 1;
+
+      // Se ambas são recursivas, a mais atrasada ganha
+      if (a.isRecurring && b.isRecurring) {
+        const dateA = a.nextExecutionAt || a.createdAt;
+        const dateB = b.nextExecutionAt || b.createdAt;
+        return dateA.getTime() - dateB.getTime();
+      }
+
+      // Se nenhuma é recursiva, vai por peso e depois criação
+      if (a.priority.weight !== b.priority.weight) {
+        return b.priority.weight - a.priority.weight;
+      }
+      return (a.deadline || a.createdAt).getTime() - (b.deadline || b.createdAt).getTime();
     });
 
-    // Para cada status na ordem de prioridade, buscar a primeira tarefa
-    for (const status of orderedStatuses) {
-      const task = await prisma.task.findFirst({
-        where: {
-          assignedToId: user.id,
-          isCompleted: false,
-          statusId: status.id
-        },
-        orderBy: [
-          { position: 'asc' },      // Desempata: posição no Kanban
-          { deadline: 'asc' }       // Desempata: prazo mais próximo
-        ],
-        include: {
-          project: {
-            select: {
-              id: true,
-              name: true,
-              description: true,
-              regras: true
-            }
-          },
-          status: {
-            select: { 
-              id: true,
-              name: true,
-              order: true,
-              colorCode: true,
-              isFinalState: true,
-              visible_to_ai: true
-            }
-          },
-          priority: {
-            select: { 
-              id: true,
-              name: true,
-              weight: true
-            }
-          }
-        }
-      });
-
-      if (task) {
-        return task;
-      }
-    }
-
-    // Se não encontrou nenhuma tarefa em nenhum status
-    return null;
+    return playableTasks[0];
   }
 
   // Finalize task - find first final status and update task
-  async finalizeTask(taskId) {
-    // 1. Find the first status marked as 'final' (isFinalState = true)
-    const finalStatus = await prisma.status.findFirst({
-      where: {
-        isFinalState: true
-      },
-      orderBy: {
-        order: 'asc'
-      }
-    });
-
-    if (!finalStatus) {
-      throw new Error('No final status found in the system');
-    }
-
-    // 2. Check if task exists and get recurrence data
+// Finalize task - Lida com finalização de normais e reinício de recursivas
+  async finalizeTask(taskId, userId, executionNotes = null) {
+    // 1. Busca a tarefa atual
     const existingTask = await prisma.task.findUnique({
-      where: { id: taskId },
-      select: {
-        id: true,
-        statusId: true,
-        createdById: true,
-        isRecurring: true,
-        recurrenceType: true,
-        recurrenceTimes: true,
-        recurrenceDays: true,
-        lastExecutedAt: true
-      }
+      where: { id: taskId }
     });
 
     if (!existingTask) {
       throw new Error(`Task with ID ${taskId} not found`);
     }
 
-    // 3. Prepare update data
-    const updateData = {
-      statusId: finalStatus.id,
-      updatedAt: new Date(),
-      lastExecutedAt: new Date() // Update last execution date to current date
-    };
+    // Fallback para o userId caso não venha na requisição (ideal pegar do token de auth)
+    const actionUserId = userId || existingTask.assignedToId || existingTask.createdById;
 
-    // 4. Calculate next execution if task is recurring
-    if (existingTask.isRecurring && existingTask.recurrenceType) {
-      const taskData = {
-        isRecurring: existingTask.isRecurring,
-        recurrenceType: existingTask.recurrenceType,
-        recurrenceTimes: existingTask.recurrenceTimes ? JSON.parse(existingTask.recurrenceTimes) : null,
-        recurrenceDays: existingTask.recurrenceDays ? JSON.parse(existingTask.recurrenceDays) : null,
-        lastExecutedAt: new Date() // Use current time as last executed
+    // ==========================================
+    // FLUXO A: TAREFA RECURSIVA (O RESET)
+    // ==========================================
+    if (existingTask.isRecurring) {
+      // Pega o status inicial (o de menor 'order' - ex: "To Do" / "Backlog")
+      const firstStatus = await prisma.status.findFirst({
+        orderBy: { order: 'asc' }
+      });
+
+      if (!firstStatus) throw new Error('Nenhum status configurado no sistema.');
+
+      // Calcula a próxima data de execução com base no horário de AGORA
+      const taskDataForCalc = { ...existingTask, lastExecutedAt: new Date() };
+      const nextExecutionAt = this.calculateNextExecution(taskDataForCalc);
+
+      // Executa a atualização e o registro de histórico na mesma transação
+      const [updatedTask, historyRecord] = await prisma.$transaction([
+        prisma.task.update({
+          where: { id: taskId },
+          data: {
+            statusId: firstStatus.id, // Volta pro início do quadro
+            lastExecutedAt: new Date(),
+            nextExecutionAt: nextExecutionAt,
+            isCompleted: false // Garante que a tarefa continua viva
+          },
+          include: { project: true, status: true, priority: true }
+        }),
+        prisma.taskHistory.create({
+          data: {
+            taskId: taskId,
+            userId: actionUserId,
+            oldStatusId: existingTask.statusId,
+            newStatusId: firstStatus.id,
+            // Aqui entra o pulo do gato: o campo text que você pediu!
+            notes: executionNotes || 'Execução de rotina concluída. Tarefa reiniciada.'
+          }
+        })
+      ]);
+
+      return {
+        task: updatedTask,
+        status: firstStatus,
+        history: historyRecord,
+        isRecurringReset: true
       };
-      
-      updateData.nextExecutionAt = this.calculateNextExecution(taskData);
-    } else {
-      updateData.nextExecutionAt = null;
     }
 
-    // 5. Update task to the final status with recurrence data
-    const updatedTask = await prisma.task.update({
-      where: { id: taskId },
-      data: updateData,
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true
-          }
-        },
-        status: true,
-        priority: true,
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        },
-        assignedTo: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        }
-      }
+    // ==========================================
+    // FLUXO B: TAREFA NORMAL (FINALIZAÇÃO REAL)
+    // ==========================================
+    const finalStatus = await prisma.status.findFirst({
+      where: { isFinalState: true },
+      orderBy: { order: 'asc' }
     });
 
-    // 6. Create history record for status change
-    if (existingTask.statusId !== finalStatus.id) {
-      await prisma.taskHistory.create({
+    if (!finalStatus) throw new Error('Nenhum status final configurado no sistema.');
+
+    const [updatedTask, historyRecord] = await prisma.$transaction([
+      prisma.task.update({
+        where: { id: taskId },
+        data: {
+          statusId: finalStatus.id,
+          isCompleted: true, // Marca como finalizada de fato
+          lastExecutedAt: new Date(),
+          nextExecutionAt: null
+        },
+        include: { project: true, status: true, priority: true }
+      }),
+      prisma.taskHistory.create({
         data: {
           taskId: taskId,
-          userId: existingTask.createdById,
+          userId: actionUserId,
           oldStatusId: existingTask.statusId,
           newStatusId: finalStatus.id,
-          notes: 'Task finalized via finalize endpoint'
+          notes: executionNotes || 'Tarefa finalizada.'
         }
-      });
-    }
+      })
+    ]);
 
     return {
       task: updatedTask,
-      finalStatus: finalStatus
+      status: finalStatus,
+      history: historyRecord,
+      isRecurringReset: false
     };
   }
 }
 
 module.exports = new TaskService();
+
