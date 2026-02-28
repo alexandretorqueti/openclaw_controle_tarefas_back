@@ -887,6 +887,8 @@ class TaskService {
   async getNextTaskForUser(nickname) {
     const now = new Date();
 
+    console.log(`DEBUG: Buscando próxima tarefa para usuário ${nickname} às ${now.toISOString()}`);
+
     const [user, aiStatuses] = await Promise.all([
       prisma.user.findUnique({ where: { nickname } }),
       prisma.status.findMany({ where: { visibleToAi: true }, select: { id: true } })
@@ -921,7 +923,11 @@ class TaskService {
     });
 
     const playableTasks = tasks.filter(t => t.dependencies.every(dep => dep.task.isCompleted));
-
+    console.log(`
+      
+      DEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}
+      Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${playableTasks.length}
+      `);
     if (playableTasks.length === 0) return null;
 
     playableTasks.sort((a, b) => {
@@ -933,16 +939,29 @@ class TaskService {
       if (a.isRecurring && b.isRecurring) {
         const dateA = a.nextExecutionAt || a.createdAt;
         const dateB = b.nextExecutionAt || b.createdAt;
+        console.log(`
+          DEBUG: Comparando recursivas ${a.title} (next: ${dateA.toISOString()}) e ${b.title} (next: ${dateB.toISOString()})
+          `);
         return dateA.getTime() - dateB.getTime();
       }
 
       // Se nenhuma é recursiva, vai por peso e depois criação
       if (a.priority.weight !== b.priority.weight) {
+        console.log(`
+          DEBUG: Comparando prioridades ${a.priority.name} (peso: ${a.priority.weight}) e ${b.priority.name} (peso: ${b.priority.weight})
+          `);
         return b.priority.weight - a.priority.weight;
       }
+
+      console.log(`
+        DEBUG: Comparando por deadline ${a.title} (deadline: ${a.deadline.toISOString()}) e ${b.title} (deadline: ${b.deadline.toISOString()})
+        `);
       return (a.deadline || a.createdAt).getTime() - (b.deadline || b.createdAt).getTime();
     });
-
+   
+    console.log(`
+      DEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}
+      `);
     return playableTasks[0];
   }
 

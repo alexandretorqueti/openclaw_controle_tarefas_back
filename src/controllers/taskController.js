@@ -3,50 +3,7 @@
 const taskService = require('../services/taskService');
 const { validateTask, validateTaskUpdate, validateTaskFilters } = require('../validators/taskValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
-
-// Helper function to convert snake_case to camelCase
-function snakeToCamel(obj) {
-  if (Array.isArray(obj)) {
-    return obj.map(item => snakeToCamel(item));
-  }
-  
-  if (obj !== null && typeof obj === 'object') {
-    const newObj = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-        const value = obj[key];
-        
-        // Special handling for JSON strings that should be arrays
-        if ((camelKey === 'recurrenceTimes' || camelKey === 'recurrenceDays') && 
-            typeof value === 'string') {
-          // Handle empty string, "null", or "[]" as null/empty array
-          const trimmedValue = value.trim();
-          if (trimmedValue === '' || trimmedValue === 'null') {
-            newObj[camelKey] = null;
-          } else if (trimmedValue === '[]') {
-            newObj[camelKey] = [];
-          } else if (trimmedValue.startsWith('[')) {
-            try {
-              newObj[camelKey] = JSON.parse(value);
-            } catch (error) {
-              console.warn(`Failed to parse ${camelKey} as JSON:`, value, error);
-              newObj[camelKey] = null; // Fallback to null instead of keeping invalid string
-            }
-          } else {
-            // If it's a string but not JSON array, treat as null
-            newObj[camelKey] = null;
-          }
-        } else {
-          newObj[camelKey] = snakeToCamel(value);
-        }
-      }
-    }
-    return newObj;
-  }
-  
-  return obj;
-}
+const { snakeToCamel } = require('../utils/caseConverter');
 
 class TaskController {
   // Create a new task
@@ -98,15 +55,15 @@ class TaskController {
   getTaskById = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
     const task = await taskService.getTaskById(id);
-    
+
     if (!task) {
-      const error = new Error(`Task with ID ${id} not found`);
+      const error = new Error('Task not found');
       error.statusCode = 404;
       throw error;
     }
-    
+
     res.json({
-      ...task,
+      task,
       correlationId: req.correlationId
     });
   });
@@ -127,19 +84,17 @@ class TaskController {
       throw error;
     }
 
-    // Check if task exists
-    const existingTask = await taskService.getTaskById(id);
-    if (!existingTask) {
-      const error = new Error(`Task with ID ${id} not found`);
+    const task = await taskService.updateTask(id, validation.data);
+
+    if (!task) {
+      const error = new Error('Task not found');
       error.statusCode = 404;
       throw error;
     }
 
-    const updatedTask = await taskService.updateTask(id, validation.data);
-    
     res.json({
       message: 'Task updated successfully',
-      task: updatedTask,
+      task,
       correlationId: req.correlationId
     });
   });
@@ -147,78 +102,25 @@ class TaskController {
   // Delete task
   deleteTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    
-    // Check if task exists
-    const existingTask = await taskService.getTaskById(id);
-    if (!existingTask) {
-      const error = new Error(`Task with ID ${id} not found`);
+    const task = await taskService.deleteTask(id);
+
+    if (!task) {
+      const error = new Error('Task not found');
       error.statusCode = 404;
       throw error;
     }
 
-    await taskService.deleteTask(id);
-    
     res.json({
       message: 'Task deleted successfully',
+      task,
       correlationId: req.correlationId
     });
   });
 
-  // Update task position
-  updateTaskPosition = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { id } = req.params;
-    const { position } = req.body;
-    
-    if (position === undefined || typeof position !== 'number' || position < 0) {
-      const error = new Error('Invalid position value. Position must be a non-negative number.');
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // Check if task exists
-    const existingTask = await taskService.getTaskById(id);
-    if (!existingTask) {
-      const error = new Error(`Task with ID ${id} not found`);
-      error.statusCode = 404;
-      throw error;
-    }
-
-    const updatedTask = await taskService.updateTaskPosition(id, position);
-    
-    res.json({
-      message: 'Task position updated successfully',
-      task: updatedTask,
-      correlationId: req.correlationId
-    });
-  });
-
-  // Toggle task completion
-  toggleTaskCompletion = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { id } = req.params;
-    
-    // Check if task exists
-    const existingTask = await taskService.getTaskById(id);
-    if (!existingTask) {
-      const error = new Error(`Task with ID ${id} not found`);
-      error.statusCode = 404;
-      throw error;
-    }
-
-    const updatedTask = await taskService.toggleTaskCompletion(id);
-    
-    res.json({
-      message: `Task marked as ${updatedTask.isCompleted ? 'completed' : 'incomplete'}`,
-      task: updatedTask,
-      correlationId: req.correlationId
-    });
-  });
-
-  // Get tasks by project
+  // Get tasks by project (using getAllTasks with project filter)
   getTasksByProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { projectId } = req.params;
-    const filters = req.query;
-    
-    const tasks = await taskService.getTasksByProject(projectId, filters);
+    const tasks = await taskService.getTasksByProject(projectId);
     
     res.json({
       count: tasks.length,
@@ -227,27 +129,151 @@ class TaskController {
     });
   });
 
-    // Get next priority task for a user by nickname
-  getNextTaskForUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { nickname } = req.params;
+  // Get tasks by status (using getAllTasks with status filter)
+  getTasksByStatus = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { status } = req.params;
+    // Note: This would need to be implemented in taskService
+    // For now, we'll use getAllTasks with a custom filter
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get tasks by priority (using getAllTasks with priority filter)
+  getTasksByPriority = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { priority } = req.params;
+    // Note: This would need to be implemented in taskService
+    // For now, we'll use getAllTasks with a custom filter
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get tasks by user ID (using getAllTasks with user filter)
+  getTasksByUserId = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { userId } = req.params;
+    // Note: This would need to be implemented in taskService
+    // For now, we'll use getAllTasks with a custom filter
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get tasks with recurrence
+  getTasksWithRecurrence = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get overdue tasks
+  getOverdueTasks = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get upcoming tasks
+  getUpcomingTasks = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Search tasks
+  searchTasks = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { q } = req.query;
     
-    // O service será responsável por buscar o ID do usuário pelo nickname,
-    // filtrar as tarefas não concluídas, checar os status visíveis para IA
-    // e ordenar pela prioridade/posição, retornando apenas a primeira.
-    const task = await taskService.getNextTaskForUser(nickname);
-    
-    // Se não encontrou nenhuma tarefa elegível
-    if (!task) {
-      return res.status(200).json({
-        success: false,
-        message: 'Nenhuma tarefa elegível para IA no momento.',
-        task: null,
-        correlationId: req.correlationId
-      });
+    if (!q || q.trim() === '') {
+      const error = new Error('Search query is required');
+      error.statusCode = 400;
+      throw error;
     }
 
-    // Se encontrou a tarefa
-    res.status(200).json({
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Bulk update tasks
+  bulkUpdateTasks = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { taskIds, updates } = req.body;
+    
+    if (!taskIds || !Array.isArray(taskIds) || taskIds.length === 0) {
+      const error = new Error('Task IDs array is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!updates || typeof updates !== 'object') {
+      const error = new Error('Updates object is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Get task statistics
+  getTaskStatistics = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    // Note: This would need to be implemented in taskService
+    const error = new Error('Method not implemented yet');
+    error.statusCode = 501;
+    throw error;
+  });
+
+  // Export tasks
+  exportTasks = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const tasks = await taskService.getAllTasks({});
+    
+    // Set headers for CSV export
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=tasks_export.csv');
+    
+    // Simple CSV generation
+    const csvRows = [];
+    
+    // Add header
+    if (tasks.length > 0) {
+      const headers = Object.keys(tasks[0]);
+      csvRows.push(headers.join(','));
+      
+      // Add data rows
+      tasks.forEach(task => {
+        const row = headers.map(header => {
+          const value = task[header];
+          // Escape commas and quotes in CSV
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value || '';
+        });
+        csvRows.push(row.join(','));
+      });
+    }
+    
+    res.send(csvRows.join('\n'));
+  });
+
+  // Get next task for user by nickname
+  getNextTaskForUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { nickname } = req.params;
+    const task = await taskService.getNextTaskForUser(nickname);
+
+    if (!task) {
+      const error = new Error('No pending tasks found for user');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.json({
       success: true,
       message: 'Próxima tarefa encontrada com sucesso',
       task: task,
@@ -255,35 +281,75 @@ class TaskController {
     });
   });
 
-  // Finalize task (mark as final status or reset if recurring)
-  finalizeTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
+  // Update task position
+  updateTaskPosition = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    
-    // Pega as anotações específicas da execução do corpo da requisição
-    const { executionNotes } = req.body; 
-    
-    // Idealmente você pega o ID de quem está executando do seu middleware de autenticação
-    // Exemplo: const userId = req.user.id; 
-    const userId = req.body.userId || null; 
+    const { position } = req.body;
 
-    const result = await taskService.finalizeTask(id, userId, executionNotes);
-    
-    // Resposta dinâmica dependendo do que aconteceu com a tarefa
+    if (typeof position !== 'number') {
+      const error = new Error('Position must be a number');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const task = await taskService.updateTaskPosition(id, position);
+
+    if (!task) {
+      const error = new Error('Task not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
     res.json({
-      message: result.isRecurringReset 
-        ? 'Rotina executada, histórico salvo e agendada para o próximo ciclo.' 
-        : 'Tarefa finalizada com sucesso.',
-      task: result.task,
-      status: result.status,
-      historyNotesSaved: result.history.notes, // Retorna para confirmar que salvou
+      message: 'Task position updated successfully',
+      task,
       correlationId: req.correlationId
     });
   });
 
+  // Toggle task completion
+  toggleTaskCompletion = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const task = await taskService.toggleTaskCompletion(id);
+
+    if (!task) {
+      const error = new Error('Task not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.json({
+      message: 'Task completion toggled successfully',
+      task,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Finalize task
+  finalizeTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const { userId, executionNotes } = req.body;
+
+    if (!userId) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const task = await taskService.finalizeTask(id, userId, executionNotes);
+
+    if (!task) {
+      const error = new Error('Task not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.json({
+      message: 'Task finalized successfully',
+      task,
+      correlationId: req.correlationId
+    });
+  });
 }
 
-
-
-
 module.exports = new TaskController();
-

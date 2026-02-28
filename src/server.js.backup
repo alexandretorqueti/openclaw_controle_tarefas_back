@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-const path = require("path");
 
 const projectRoutes = require('./routes/projectRoutes');
 const taskRoutes = require('./routes/taskRoutes');
@@ -61,10 +60,6 @@ if (process.env.CORS_ORIGIN) {
 }
 
 app.use(cors(corsOptions));
-
-// Static files
-app.use(express.static("public"));
-app.use("/logs", express.static("public"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -161,11 +156,6 @@ app.get('/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/callback', require('./routes/callbackProxy'));
 
-
-// Logs interface
-app.get("/logs", (req, res) => {
-  res.sendFile(path.join(__dirname, "../public/error-logs.html"));
-});
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);

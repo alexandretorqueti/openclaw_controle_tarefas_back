@@ -1,3 +1,5 @@
+// taskUtils.js
+
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
@@ -10,134 +12,180 @@ const { API_URL, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, MY_USER_ID, STATUS, TASK_T
  */
 async function reconcileActiveTasks(state) {
   const activeTaskIds = Object.keys(state.active_tasks);
-  if (activeTaskIds.length === 0) return false; // Nenhuma rodando
+  if (activeTaskIds.length === 0) return false;
 
   const taskId = activeTaskIds[0];
   const taskState = state.active_tasks[taskId];
   const promptFile = path.join(TASKS_DIR, `prompt-${taskId}.txt`);
   const logFile = path.join(TASKS_DIR, `result-${taskId}.log`);
+  const doneFile = path.join(TASKS_DIR, `result-${taskId}.done`); // Novo marcador de fim
 
   log(`🔎 Reconciliando tarefa em andamento: ${taskId}`);
 
   try {
-    // Consulta a API para ver a "verdade"
     const taskRes = await axios.get(`${API_URL}/api/tasks/${taskId}`);
-    const taskData = taskRes.data; // <-- Correção: a tarefa vem direto no data!
+    const taskData = taskRes.data.task || taskRes.data;
     
-    // Se ele vir que a IA já marcou como concluída
-    if (taskData.statusId === STATUS.COMPLETED) {
-      log(`✅ Tarefa ${taskId} foi concluída pela IA Gerando comentário...`);
-      
-      // 1. LÊ O ARQUIVO DE LOG DA IA ANTES DE MOVER
-      if (fs.existsSync(logFile)) {
-        try {
-          const logContent = fs.readFileSync(logFile, 'utf8');
-          
-          const safeLogContent = logContent;
-
-          // Atualiza o campo lastExecutedAt com a data e hora atuais
-          await axios.put(`${API_URL}/api/tasks/${taskId}`, {
-            lastExecutedAt: new Date().toISOString()
-          });
-
-          // 2. POSTA O COMENTÁRIO NA API
-          await axios.post(`${API_URL}/api/comments`, {
-            taskId: taskId,
-            userId: MY_USER_ID,
-            content: `🤖 **Relatório de Execução do Jarbas:**\n\n\`\`\`text\n${safeLogContent}\n\`\`\``
-          });
-          log(`✅ Comentário com o relatório adicionado à tarefa ${taskId}.`);
-        } catch (commentError) {
-          const detail = commentError.response?.data ? JSON.stringify(commentError.response.data) : commentError.message;
-          log(`❌ Erro ao postar comentário do relatório: ${detail}`);
-        }
-      } else {
-        log(`⚠️ O arquivo de log não foi encontrado. A IA finalizou sem gerar o relatório físico.`);
-      }
-
-      // 3. Move os arquivos para a pasta de processados
-      if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(PROCESSED_DIR, `prompt-${taskId}.txt`));
-      if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(PROCESSED_DIR, `result-${taskId}.log`));
-      
-      // 4. Limpa a VRAM e o estado
-      delete state.active_tasks[taskId];
-      save_state(state);
-      return false; // Liberou a VRAM
+    // 1. VERIFICAÇÃO: Backend já considera finalizada (isFinalState)
+    if (taskData.status?.isFinalState === true) {
+      await handleCompletedTask(taskId, taskData, promptFile, logFile, doneFile, state);
+      return false; 
     }
-
-    // Se ainda não concluiu, verifica se deu Timeout (1 hora)
+    
+    // 2. VERIFICAÇÃO: Status alterado manualmente no Kanban
+    // (Assumindo que STATUS.IN_PROGRESS é o ID do status 'Em Andamento')
+    if (taskData.statusId !== STATUS.IN_PROGRESS) {
+      log(`📝 Tarefa ${taskId} não está mais "Em Andamento". Considerando como abandonada.`);
+      await handleAbandonedTask(taskId, promptFile, logFile, doneFile, state, 'Status alterado manualmente no painel');
+      return false; 
+    }
+    
+    // 3. VERIFICAÇÃO: Marcador físico criado pela IA
+    if (fs.existsSync(doneFile)) {
+      log(`📄 Arquivo .done encontrado. A IA concluiu a execução física com sucesso.`);
+      await handleCompletedTask(taskId, taskData, promptFile, logFile, doneFile, state);
+      return false; 
+    }
+    
+    // 4. VERIFICAÇÃO: Timeout
     const timeElapsed = Date.now() - taskState.startTime;
     if (timeElapsed > TASK_TIMEOUT_MS) {
-      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de ${MINUTOS} minutos. Devolvendo para Alexandre...`);
-      
-      try {
-        let alexandreId = null;
-        try {
-          const usersRes = await axios.get(`${API_URL}/api/users`);
-          const alexandre = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
-          if (alexandre) alexandreId = alexandre.id;
-        } catch (e) {
-          log(`⚠️ Aviso: Falha ao buscar usuários da API.`);
-        }
-
-        const updatePayload = { };
-        if (alexandreId) updatePayload.assignedToId = alexandreId;
-
-        await axios.put(`${API_URL}/api/tasks/${taskId}`, updatePayload);
-        
-        await axios.post(`${API_URL}/api/comments`, {
-          taskId: taskId,
-          userId: MY_USER_ID,
-          content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de ${MINUTOS} minutos e não houve retorno da IA. A execução foi abortada.`
-        });
-        
-      } catch (timeoutError) {
-        // Pega o erro detalhado da API (Zod/Prisma) para sabermos o que falhou
-        const errorDetail = timeoutError.response?.data ? JSON.stringify(timeoutError.response.data) : timeoutError.message;
-        log(`❌ Erro ao atualizar tarefa no timeout (API recusou): ${errorDetail}`);
-      } finally {
-        // O BLOCO FINALLY É A SALVAÇÃO: Ele roda DANDO ERRO OU NÃO.
-        // Assim, limpamos o sistema de arquivos e a memória obrigatóriamente.
-        try {
-          if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
-          if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
-        } catch(e) {} // ignora se o arquivo já sumiu
-
-        delete state.active_tasks[taskId];
-        save_state(state);
-      }
-      
-      return false; // Libera a VRAM para a próxima!
+      log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de ${MINUTOS} minutos.`);
+      await handleTimeoutTask(taskId, promptFile, logFile, doneFile, state);
+      return false; 
     }
-
-    log(`⏳ Tarefa ${taskId} ainda em processamento (${Math.round(timeElapsed/60000)}m). Retendo novos spawns.`);
-    return true; // Continua ocupado
+    
+    log(`⏳ Tarefa ${taskId} em processamento (${Math.round(timeElapsed/60000)}m). Retendo fila.`);
+    return true; 
 
   } catch (error) {
     log(`❌ Erro ao reconciliar tarefa ${taskId}: ${error.message}`);
-    return true; // Assume ocupado por segurança
+    return true; // Assume ocupado em caso de falha de rede
   }
 }
 
 /**
- * Monta o arquivo físico e retorna o texto puro do prompt para o OpenClaw
+ * Processa tarefa concluída e envia o relatório para o Histórico
+ */
+async function handleCompletedTask(taskId, taskData, promptFile, logFile, doneFile, state) {
+  log(`✅ Finalizando tarefa ${taskId} na API...`);
+  
+  let executionNotes = "Execução concluída sem relatório em texto.";
+
+  if (fs.existsSync(logFile)) {
+    try {
+      executionNotes = fs.readFileSync(logFile, 'utf8');
+    } catch (e) {
+      log(`⚠️ Não foi possível ler o arquivo de log: ${e.message}`);
+    }
+  }
+
+  try {
+    // A mágica acontece aqui: Chamamos o endpoint que trata tanto normais quanto recursivas
+    // Ele vai atualizar lastExecutedAt, nextExecutionAt, mudar o status e salvar o history
+    await axios.patch(`${API_URL}/api/tasks/${taskId}/finalize`, {
+      userId: MY_USER_ID,
+      executionNotes: executionNotes
+    });
+    log(`✅ Tarefa finalizada no banco. Histórico salvo.`);
+  } catch (apiError) {
+    const detail = apiError.response?.data ? JSON.stringify(apiError.response.data) : apiError.message;
+    log(`❌ Erro fatal ao finalizar tarefa na API: ${detail}`);
+  }
+
+  // Limpeza de arquivos e estado
+  try {
+    if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(PROCESSED_DIR, `prompt-${taskId}.txt`));
+    if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(PROCESSED_DIR, `result-${taskId}.log`));
+    if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile); // Apaga o marcador
+  } catch(e) {}
+
+  delete state.active_tasks[taskId];
+  save_state(state);
+}
+
+/**
+ * Processa tarefa abandonada
+ */
+async function handleAbandonedTask(taskId, promptFile, logFile, doneFile, state, reason) {
+  log(`🔄 Tarefa ${taskId} abandonada: ${reason}. Limpando recursos...`);
+  
+  try {
+    await axios.post(`${API_URL}/api/comments`, {
+      taskId: taskId,
+      userId: MY_USER_ID,
+      content: `🔄 **Execução local interrompida:** ${reason}. O monitor liberou a GPU.`
+    });
+  } catch (e) {
+    log(`⚠️ Não foi possível postar comentário de abandono: ${e.message}`);
+  }
+  
+  try {
+    if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
+    if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+    if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile);
+  } catch(e) {}
+
+  delete state.active_tasks[taskId];
+  save_state(state);
+}
+
+/**
+ * Processa timeout
+ */
+async function handleTimeoutTask(taskId, promptFile, logFile, doneFile, state) {
+  try {
+    let devId = null;
+    try {
+      const usersRes = await axios.get(`${API_URL}/api/users`);
+      // O ideal aqui seria buscar pelo nickname dinâmico e não hardcoded, 
+      // mas mantive a sua lógica original
+      const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
+      if (dev) devId = dev.id;
+    } catch (e) {}
+
+    const updatePayload = { };
+    if (devId) updatePayload.assignedToId = devId;
+
+    await axios.put(`${API_URL}/api/tasks/${taskId}`, updatePayload);
+    
+    await axios.post(`${API_URL}/api/comments`, {
+      taskId: taskId,
+      userId: MY_USER_ID,
+      content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de ${MINUTOS} minutos. Execução abortada.`
+    });
+    
+  } catch (timeoutError) {
+    log(`❌ Erro ao atualizar tarefa no timeout: ${timeoutError.message}`);
+  } finally {
+    try {
+      if (fs.existsSync(promptFile)) fs.renameSync(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
+      if (fs.existsSync(logFile)) fs.renameSync(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+      if (fs.existsSync(doneFile)) fs.unlinkSync(doneFile);
+    } catch(e) {}
+
+    delete state.active_tasks[taskId];
+    save_state(state);
+  }
+}
+
+/**
+ * Monta o arquivo físico e retorna o texto puro do prompt para a IA
  */
 async function prepareTaskPrompt(task) {
   const promptFile = path.join(TASKS_DIR, `prompt-${task.id}.txt`);
   const logFile = path.join(TASKS_DIR, `result-${task.id}.log`);
+  const doneFile = path.join(TASKS_DIR, `result-${task.id}.done`); // Caminho para a IA usar
 
-  // Busca regras do projeto
   let projetoRegras = "Nenhuma regra específica definida.";
   try {
     const projRes = await axios.get(`${API_URL}/api/projects/${task.projectId}`);
     projetoRegras = projRes.data?.regras || projetoRegras;
   } catch (e) { log(`Aviso: Sem regras do projeto.`); }
 
-  // === NOVA BUSCA: Pega os comentários da tarefa ===
   let taskComments = "Nenhum comentário adicional.";
   try {
     const commentsRes = await axios.get(`${API_URL}/api/comments/task/${task.id}`);
-    // Ajuste o '.comments' abaixo se o seu backend devolver o array direto no data
     const commentsArray = commentsRes.data.comments || commentsRes.data || []; 
     
     if (commentsArray.length > 0) {
@@ -147,7 +195,7 @@ async function prepareTaskPrompt(task) {
     }
   } catch (e) { log(`Aviso: Falha ao buscar comentários.`); }
 
-  // === MONTAGEM FINAL DO PROMPT ===
+  // === MONTAGEM FINAL DO PROMPT (INSTRUÇÕES SIMPLIFICADAS PARA A IA) ===
   const promptContent = `### CONTEXTO DA TAREFA ###
 TÍTULO: ${task.title}
 DESCRIÇÃO: ${task.description}
@@ -159,22 +207,19 @@ ${taskComments}
 ${projetoRegras}
 
 ### INSTRUÇÕES OBRIGATÓRIAS PARA O AGENTE ###
-Você é o Jarbas. Seu objetivo é analisar o problema e editar os arquivos de código necessários.
-Ao terminar as alterações no código, VOCÊ DEVE EXECUTAR ESTES 2 PASSOS ANTES DE ENCERRAR:
+Seu objetivo é analisar o problema e editar os arquivos de código necessários.
+Ao terminar as alterações, VOCÊ DEVE EXECUTAR ESTES 2 PASSOS EXATAMENTE NESTA ORDEM ANTES DE ENCERRAR:
 
-1. Use a ferramenta de terminal para criar um log físico do que você fez.
-   Acrescente o nome do modelo que executou a tarefa no final do seu log.
+1. Use a ferramenta de terminal para criar um log detalhado do que você fez.
    Comando esperado: echo "Seu relatorio técnico aqui..." > ${logFile}
 
-2. Marque a tarefa como CONCLUÍDA na nossa API.
-   Faça um PATCH para: ${API_URL}/api/tasks/${task.id}/finalize
+2. Use a ferramenta de terminal para criar o marcador de conclusão. ISSO É VITAL PARA LIBERAR O SISTEMA.
+   Comando esperado: touch ${doneFile}
 `;
 
-  // Salva fisicamente o contexto para auditoria e leitura
   fs.writeFileSync(promptFile, promptContent);
 
-  // Retorna a instrução que vai dentro do JSON do cron
-  return `Leia as instruções detalhadas no arquivo físico: ${promptFile}. Siga o passo a passo com rigor.`;
+  return `Leia as instruções detalhadas no arquivo físico: ${promptFile}. Execute a tarefa e não esqueça de criar o arquivo .done ao finalizar.`;
 }
 
 module.exports = { reconcileActiveTasks, prepareTaskPrompt };

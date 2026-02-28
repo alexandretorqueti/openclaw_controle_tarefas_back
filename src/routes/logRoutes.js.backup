@@ -10,13 +10,10 @@ router.get('/monitor', logController.getMonitorLogs);
 // GET /api/logs/errors - Get error logs from database
 router.get('/errors', logController.getErrorLogs);
 
-// GET /api/logs/errors/:id/details - Get detailed error information (must come before /:id)
-router.get('/errors/:id/details', logController.getErrorDetails);
-
 // GET /api/logs - Get all logs with filters
 router.get('/', logController.getAllLogs);
 
-// GET /api/logs/:id - Get log by ID (catch-all, must come last)
+// GET /api/logs/:id - Get log by ID
 router.get('/:id', logController.getLogById);
 
 module.exports = router;

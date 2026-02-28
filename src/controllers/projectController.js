@@ -1,26 +1,7 @@
 const projectService = require('../services/projectService');
 const { validateProject, validateProjectUpdate } = require('../validators/projectValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
-
-// Helper function to convert snake_case to camelCase
-function snakeToCamel(obj) {
-  if (Array.isArray(obj)) {
-    return obj.map(item => snakeToCamel(item));
-  }
-  
-  if (obj !== null && typeof obj === 'object') {
-    const newObj = {};
-    for (const key in obj) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-        newObj[camelKey] = snakeToCamel(obj[key]);
-      }
-    }
-    return newObj;
-  }
-  
-  return obj;
-}
+const { snakeToCamel } = require('../utils/caseConverter');
 
 class ProjectController {
   // Create a new project
@@ -62,15 +43,15 @@ class ProjectController {
   getProjectById = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
     const project = await projectService.getProjectById(id);
-    
+
     if (!project) {
-      const error = new Error(`Project with ID ${id} not found`);
+      const error = new Error('Project not found');
       error.statusCode = 404;
       throw error;
     }
-    
+
     res.json({
-      ...project,
+      project,
       correlationId: req.correlationId
     });
   });
@@ -91,19 +72,17 @@ class ProjectController {
       throw error;
     }
 
-    // Check if project exists
-    const existingProject = await projectService.getProjectById(id);
-    if (!existingProject) {
-      const error = new Error(`Project with ID ${id} not found`);
+    const project = await projectService.updateProject(id, validation.data);
+
+    if (!project) {
+      const error = new Error('Project not found');
       error.statusCode = 404;
       throw error;
     }
 
-    const updatedProject = await projectService.updateProject(id, validation.data);
-    
     res.json({
       message: 'Project updated successfully',
-      project: updatedProject,
+      project,
       correlationId: req.correlationId
     });
   });
@@ -111,39 +90,105 @@ class ProjectController {
   // Delete project
   deleteProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    
-    // Check if project exists
-    const existingProject = await projectService.getProjectById(id);
-    if (!existingProject) {
-      const error = new Error(`Project with ID ${id} not found`);
+    const project = await projectService.deleteProject(id);
+
+    if (!project) {
+      const error = new Error('Project not found');
       error.statusCode = 404;
       throw error;
     }
 
-    await projectService.deleteProject(id);
-    
     res.json({
       message: 'Project deleted successfully',
+      project,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Get projects by user ID
+  getProjectsByUserId = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { userId } = req.params;
+    const projects = await projectService.getProjectsByUserId(userId);
+    
+    res.json({
+      count: projects.length,
+      projects,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Search projects
+  searchProjects = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { q } = req.query;
+    
+    if (!q || q.trim() === '') {
+      const error = new Error('Search query is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const projects = await projectService.searchProjects(q.trim());
+    
+    res.json({
+      count: projects.length,
+      projects,
       correlationId: req.correlationId
     });
   });
 
   // Get project statistics
   getProjectStatistics = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const { id } = req.params;
+    const statistics = await projectService.getProjectStatistics();
     
-    // Check if project exists
-    const existingProject = await projectService.getProjectById(id);
-    if (!existingProject) {
-      const error = new Error(`Project with ID ${id} not found`);
+    res.json({
+      statistics,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Archive project
+  archiveProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const project = await projectService.archiveProject(id);
+
+    if (!project) {
+      const error = new Error('Project not found');
       error.statusCode = 404;
       throw error;
     }
 
-    const statistics = await projectService.getProjectStatistics(id);
+    res.json({
+      message: 'Project archived successfully',
+      project,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Restore archived project
+  restoreProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const project = await projectService.restoreProject(id);
+
+    if (!project) {
+      const error = new Error('Project not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    res.json({
+      message: 'Project restored successfully',
+      project,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Get archived projects
+  getArchivedProjects = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const projects = await projectService.getArchivedProjects();
     
     res.json({
-      ...statistics,
+      count: projects.length,
+      projects,
       correlationId: req.correlationId
     });
   });
