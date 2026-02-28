@@ -104,3 +104,5 @@ public
 task-processor-state.json
 
 .pending-tasks/
+.bak
+.backup
