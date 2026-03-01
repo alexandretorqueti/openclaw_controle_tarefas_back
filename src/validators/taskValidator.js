@@ -36,7 +36,15 @@ const taskSchema = z.object({
   createdById: z.string().uuid('Invalid creator ID format'),
   assignedToId: z.string().uuid('Invalid assignee ID format'),
   
-  parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable(),
+  parentTaskId: z.string()
+    .refine(id => {
+      // Aceita UUIDs no formato padrão ou strings de 32 caracteres hexadecimais (como MD5)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const hexStringRegex = /^[0-9a-f]{32}$/i;
+      return uuidRegex.test(id) || hexStringRegex.test(id);
+    }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
+    .optional()
+    .nullable(),
   model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable()
 });
 
@@ -72,7 +80,15 @@ const updateTaskSchema = z.object({
   statusId: z.string().uuid('Invalid status ID format').optional(),
   priorityId: z.string().uuid('Invalid priority ID format').optional(),
   assignedToId: z.string().uuid('Invalid assignee ID format').optional(),
-  parentTaskId: z.string().uuid('Invalid parent task ID format').optional().nullable(),
+  parentTaskId: z.string()
+    .refine(id => {
+      // Aceita UUIDs no formato padrão ou strings de 32 caracteres hexadecimais (como MD5)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const hexStringRegex = /^[0-9a-f]{32}$/i;
+      return uuidRegex.test(id) || hexStringRegex.test(id);
+    }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
+    .optional()
+    .nullable(),
   model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable(),
   statusChangeNotes: z.string().max(500).optional(),
   userId: z.string().uuid('Invalid user ID format').optional()
