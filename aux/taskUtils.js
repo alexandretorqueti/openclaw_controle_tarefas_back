@@ -180,7 +180,8 @@ async function prepareTaskPrompt(task) {
   let projetoRegras = "Nenhuma regra específica definida.";
   try {
     const projRes = await axios.get(`${API_URL}/api/projects/${task.projectId}`);
-    projetoRegras = projRes.data?.regras || projetoRegras;
+    const projData = projRes.data.project || projRes.data;
+    projetoRegras = projData?.regras || projetoRegras;
   } catch (e) { log(`Aviso: Sem regras do projeto.`); }
 
   let taskComments = "Nenhum comentário adicional.";

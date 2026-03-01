@@ -1042,7 +1042,7 @@ class TaskService {
         where: { id: taskId },
         data: {
           statusId: finalStatus.id,
-          isCompleted: true, // Marca como finalizada de fato
+          isCompleted: false, // Marca como finalizada de fato
           lastExecutedAt: new Date(),
           nextExecutionAt: null
         },

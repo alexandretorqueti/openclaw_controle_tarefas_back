@@ -120,20 +120,7 @@ class TaskController {
   // Get tasks by project (using getAllTasks with project filter)
   getTasksByProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { projectId } = req.params;
-    
-    // Validate filters from query string
-    const validation = validateTaskFilters(req.query);
-    
-    if (!validation.success) {
-      const error = new Error('Validation failed');
-      error.name = 'ZodError';
-      error.errors = validation.error.errors;
-      error.statusCode = 400;
-      throw error;
-    }
-
-    // Pass both projectId and filters to service
-    const tasks = await taskService.getTasksByProject(projectId, validation.data);
+    const tasks = await taskService.getTasksByProject(projectId);
     
     res.json({
       count: tasks.length,

@@ -189,7 +189,7 @@ app.get('/api/ia-test', (req, res) => {
 // Logs endpoints moved to dedicated route (see logRoutes.js)
 
 // 404 handler
-app.use(ErrorMiddleware.notFoundHandler());
+// app.use(ErrorMiddleware.notFoundHandler());
 
 // Global error handler
 app.use(ErrorMiddleware.handler());
