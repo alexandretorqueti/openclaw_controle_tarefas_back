@@ -13,13 +13,23 @@ async function log(message) {
   
   try {
     let lines = [];
-    
+
+    // helper que substitui o antigo fs.promises.exists
+    async function fileExists(path) {
+      try {
+        await fs.promises.access(path, fs.constants.F_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     // 1. Lê o arquivo atual (se existir) e transforma em um array de linhas
-    if (fs.existsSync(LOG_FILE)) {
-      const currentContent = fs.readFileSync(LOG_FILE, 'utf8');
+    if (await fileExists(LOG_FILE)) {
+      const currentContent = await fs.promises.readFile(LOG_FILE, 'utf8');
       lines = currentContent.split('\n').filter(l => l.trim() !== '');
     }
-    
+
     // 2. Lógica "De trás pra frente": Adiciona a nova linha no TOPO do array (índice 0)
     lines.unshift(newLine);
     

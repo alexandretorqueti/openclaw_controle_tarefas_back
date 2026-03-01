@@ -4,9 +4,19 @@ const { STATE_FILE } = require('./config');
 
 async function get_state() {
   await lockfile.lock(STATE_FILE);
-  if (fs.existsSync(STATE_FILE)) {
+  // helper for existence check
+  async function fileExists(path) {
     try {
-      const state = JSON.parse(fs.readFileSync(STATE_FILE));
+      await fs.promises.access(path, fs.constants.F_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (await fileExists(STATE_FILE)) {
+    try {
+      const state = JSON.parse(await fs.promises.readFile(STATE_FILE, 'utf8'));
       state.active_tasks = state.active_tasks || {};
       return state;
     } catch (e) { return { active_tasks: {} }; }

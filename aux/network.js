@@ -33,8 +33,8 @@ function isPortOpen(port) {
   });
 }
 
-function startService(service) {
-  log(`🚀 Iniciando ${service.name} na porta ${service.port}...`);
+async function startService(service) {
+  await log(`🚀 Iniciando ${service.name} na porta ${service.port}...`);
   
   try {
     // Cria log na pasta do projeto para sabermos POR QUE ele não sobe
@@ -49,41 +49,41 @@ function startService(service) {
     });
 
     child.unref(); 
-    log(`✅ Comando enviado. Se a porta não abrir, leia o log: ${logFilePath}`);
+    await log(`✅ Comando enviado. Se a porta não abrir, leia o log: ${logFilePath}`);
     
   } catch (err) {
-    log(`❌ Falha ao tentar rodar o comando do ${service.name}: ${err.message}`);
+    await log(`❌ Falha ao tentar rodar o comando do ${service.name}: ${err.message}`);
   }
 }
 
 async function verifyEnvironmentHealth() {
-  log('--- VERIFICANDO SAÚDE DO AMBIENTE ---');
+  await log('--- VERIFICANDO SAÚDE DO AMBIENTE ---');
   let environmentHealthy = true;
 
   // Proteção: Se a variável de ambiente estiver mal formatada, avisa.
   if (!Array.isArray(servicesConfig)) {
-    log("A configuração PROJECT_SERVICES no .env é inválida ou não é um Array.");
+    await log("A configuração PROJECT_SERVICES no .env é inválida ou não é um Array.");
     return false;
   }
 
   for (const service of servicesConfig) {
     if (!service.port || !service.path) {
-      log(`⚠️ Serviço mal configurado no .env: ${JSON.stringify(service)}`);
+      await log(`⚠️ Serviço mal configurado no .env: ${JSON.stringify(service)}`);
       continue;
     }
 
     const isOpen = await isPortOpen(service.port);
     if (isOpen) {
-      log(`✅ ${service.name} (Porta ${service.port}) OK.`);
+      await log(`✅ ${service.name} (Porta ${service.port}) OK.`);
     } else {
-      log(`🔴 ${service.name} (Porta ${service.port}) OFFLINE. Iniciando...`);
-      startService(service);
+      await log(`🔴 ${service.name} (Porta ${service.port}) OFFLINE. Iniciando...`);
+      await startService(service);
       environmentHealthy = false;
     }
   }
 
   if (!environmentHealthy) {
-    log('⏳ Aguardando 5 segundos para os serviços subirem...');
+    await log('⏳ Aguardando 5 segundos para os serviços subirem...');
     await new Promise(resolve => setTimeout(resolve, 30000)); // Espera 30 segundos para dar tempo dos serviços iniciarem
   }
   return true;
