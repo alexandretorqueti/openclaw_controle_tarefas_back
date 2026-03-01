@@ -7,7 +7,7 @@ async function main() {
   // Evita que o Axios trave o script para sempre.
   axios.defaults.timeout = 10000; 
 
-  const { API_URL, STATUS, MY_USER_ID } = require('./aux/config');
+  const { API_URL, STATUS, STATE_FILE } = require('./aux/config');
   const { log } = require('./aux/logger');
   const { verifyEnvironmentHealth } = require('./aux/network');
   const { get_state, save_state } = require('./aux/state');
@@ -29,13 +29,12 @@ async function main() {
 
       if (await fileExists(LOCK_FILE)) {
         await log('Outra instância já está rodando');
-        // Garantia de limpeza do lock mesmo em caso de falhas
-        try {
-          await fs.promises.unlink(LOCK_FILE);
-        } catch (e) {
-          // Se o arquivo de lock não existir, ignora o erro
-        }
         process.exit(0);
+      }
+      try {
+        await lockfile.unlock(STATE_FILE);
+      } catch (e) {
+        // Se o arquivo de lock não existir, ignora o erro
       }
       await fs.promises.writeFile(LOCK_FILE, process.pid.toString());
       await verifyEnvironmentHealth();

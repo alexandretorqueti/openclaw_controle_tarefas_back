@@ -109,9 +109,9 @@ async function handleCompletedTask(taskId, taskData, promptFile, logFile, doneFi
 
   // Limpeza de arquivos e estado
   try {
-    if (await fileExists(promptFile)) await fs.rename(promptFile, path.join(PROCESSED_DIR, `prompt-${taskId}.txt`));
-    if (await fileExists(logFile)) await fs.rename(logFile, path.join(PROCESSED_DIR, `result-${taskId}.log`));
-    if (await fileExists(doneFile)) await fs.unlink(doneFile); // Apaga o marcador
+    if (await fileExists(promptFile)) await fs.promises.rename(promptFile, path.join(PROCESSED_DIR, `prompt-${taskId}.txt`));
+    if (await fileExists(logFile)) await fs.promises.rename(logFile, path.join(PROCESSED_DIR, `result-${taskId}.log`));
+    if (await fileExists(doneFile)) await fs.promises.unlink(doneFile); // Apaga o marcador
   } catch(e) {}
 
   delete state.active_tasks[taskId];

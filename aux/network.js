@@ -6,7 +6,7 @@ const { servicesConfig } = require('./config');
 const { log } = require('./logger');
 
 function isPortOpen(port) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     socket.on('error', () => { socket.destroy(); reject(); });
     socket.on('timeout', () => { socket.destroy(); reject(); });

@@ -3,7 +3,7 @@ const lockfile = require('proper-lockfile');
 const { STATE_FILE } = require('./config');
 
 async function get_state() {
-  await lockfile.lock(STATE_FILE);
+  
   // helper for existence check
   async function fileExists(path) {
     try {
@@ -16,12 +16,20 @@ async function get_state() {
 
   if (await fileExists(STATE_FILE)) {
     try {
+      await lockfile.lock(STATE_FILE);
       const state = JSON.parse(await fs.promises.readFile(STATE_FILE, 'utf8'));
       state.active_tasks = state.active_tasks || {};
       return state;
     } catch (e) { return { active_tasks: {} }; }
+    finally {
+      try {
+        await lockfile.unlock(STATE_FILE);
+      } catch (e) {
+        // Se o arquivo de lock não existir, ignora o erro
+      }
+    }
   }
-  await lockfile.unlock(STATE_FILE);
+  
   return { active_tasks: {} };
 }
 
