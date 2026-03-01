@@ -171,10 +171,10 @@ class TaskService {
     // Default to excluding completed tasks unless explicitly requested
     console.log('DEBUG getAllTasks filters:', filters);
     console.log('DEBUG getAllTasks filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getAllTasks filters keys:', Object.keys(filters));
-    console.log('DEBUG getAllTasks filters type of isCompleted:', typeof filters.isCompleted);
     if (filters.isCompleted !== undefined) {
       where.isCompleted = filters.isCompleted === 'true';
+    } else {
+      where.isCompleted = false;
     }
     console.log('DEBUG getAllTasks where:', JSON.stringify(where));
 
@@ -644,10 +644,10 @@ class TaskService {
     // Default to excluding completed tasks unless explicitly requested
     console.log('DEBUG getTasksByProject filters:', filters);
     console.log('DEBUG getTasksByProject filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getTasksByProject filters keys:', Object.keys(filters));
-    console.log('DEBUG getTasksByProject filters type of isCompleted:', typeof filters.isCompleted);
     if (filters.isCompleted !== undefined) {
       where.isCompleted = filters.isCompleted === 'true';
+    } else {
+      where.isCompleted = false;
     }
     console.log('DEBUG getTasksByProject where:', JSON.stringify(where));
 

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const lockfile = require('proper-lockfile');
 const { STATE_FILE } = require('./config');
+const { fi } = require('zod/v4/locales');
 
 async function get_state() {
   
@@ -34,9 +35,13 @@ async function get_state() {
 }
 
 async function save_state(state) {
-  await lockfile.lock(STATE_FILE);
-  await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2));
-  await lockfile.unlock(STATE_FILE);
+  let release;
+  try {
+    release = await lockfile.lock(STATE_FILE);
+    await fs.promises.writeFile(STATE_FILE, JSON.stringify(state, null, 2));
+  } finally {
+    if (release) await release();
+  }
 }
 
 module.exports = { get_state, save_state };

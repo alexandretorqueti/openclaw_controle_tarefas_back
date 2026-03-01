@@ -5,7 +5,7 @@ const path = require('path');
 const axios = require('axios');
 const { log } = require('./logger');
 const { save_state } = require('./state');
-const { API_URL, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, MY_USER_ID, STATUS, TASK_TIMEOUT_MS, MINUTOS } = require('./config');
+const { API_URL, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, MY_USER_ID, STATUS, TASK_TIMEOUT_MS, MINUTOS, LOCK_FILE } = require('./config');
 
 // substitui fs.promises.exists
 async function fileExists(pathToCheck) {
@@ -66,6 +66,11 @@ async function reconcileActiveTasks(state) {
     if (timeElapsed > TASK_TIMEOUT_MS) {
       await log(`⚠️ TIMEOUT! Tarefa ${taskId} rodando há mais de ${MINUTOS} minutos.`);
       await handleTimeoutTask(taskId, promptFile, logFile, doneFile, state);
+      try {
+        await fs.promises.unlink(LOCK_FILE);
+      } catch (e) {
+        // Se o arquivo de lock não existir, ignora o erro
+      }
       return false; 
     }
     
@@ -102,6 +107,11 @@ async function handleCompletedTask(taskId, taskData, promptFile, logFile, doneFi
       executionNotes: executionNotes
     });
     await log(`✅ Tarefa finalizada no banco. Histórico salvo.`);
+    try {
+        await fs.promises.unlink(LOCK_FILE);
+      } catch (e) {
+        // Se o arquivo de lock não existir, ignora o erro
+      }
   } catch (apiError) {
     const detail = apiError.response?.data ? JSON.stringify(apiError.response.data) : apiError.message;
     await log(`❌ Erro fatal ao finalizar tarefa na API: ${detail}`);
@@ -130,14 +140,19 @@ async function handleAbandonedTask(taskId, promptFile, logFile, doneFile, state,
       userId: MY_USER_ID,
       content: `🔄 **Execução local interrompida:** ${reason}. O monitor liberou a GPU.`
     });
+    try {
+      await fs.promises.unlink(LOCK_FILE);
+    } catch (e) {
+      // Se o arquivo de lock não existir, ignora o erro
+    }
   } catch (e) {
     await log(`⚠️ Não foi possível postar comentário de abandono: ${e.message}`);
   }
   
   try {
-    if (await fileExists(promptFile)) await fs.rename(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
-    if (await fileExists(logFile)) await fs.rename(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
-    if (await fileExists(doneFile)) await fs.unlink(doneFile);
+    if (await fileExists(promptFile)) await fs.promises.rename(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
+    if (await fileExists(logFile)) await fs.promises.rename(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+    if (await fileExists(doneFile)) await fs.promises.unlink(doneFile);
   } catch(e) {}
 
   delete state.active_tasks[taskId];
@@ -168,14 +183,18 @@ async function handleTimeoutTask(taskId, promptFile, logFile, doneFile, state) {
       userId: MY_USER_ID,
       content: `⚠️ **FALHA (TIMEOUT)**\nTarefa processou por mais de ${MINUTOS} minutos. Execução abortada.`
     });
-    
+    try {
+      await fs.promises.unlink(LOCK_FILE);
+    } catch (e) {
+      // Se o arquivo de lock não existir, ignora o erro
+    }
   } catch (timeoutError) {
     await log(`❌ Erro ao atualizar tarefa no timeout: ${timeoutError.message}`);
   } finally {
     try {
-      if (await fileExists(promptFile)) await fs.rename(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
-      if (await fileExists(logFile)) await fs.rename(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
-      if (await fileExists(doneFile)) await fs.unlink(doneFile);
+      if (await fileExists(promptFile)) await fs.promises.rename(promptFile, path.join(ERROR_DIR, `prompt-${taskId}.txt`));
+      if (await fileExists(logFile)) await fs.promises.rename(logFile, path.join(ERROR_DIR, `result-${taskId}.log`));
+      if (await fileExists(doneFile)) await fs.promises.unlink(doneFile);
     } catch(e) {}
 
     delete state.active_tasks[taskId];

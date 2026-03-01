@@ -174,6 +174,7 @@ app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/recurrence', recurrenceRoutes);
 app.use('/api/comments', commentRoutes);
+app.use('/api/task-history', require('./routes/taskHistoryRoutes'));
 app.use('/api/logs', logRoutes);
 app.use('/api/models', require('./routes/modelRoutes'));
 

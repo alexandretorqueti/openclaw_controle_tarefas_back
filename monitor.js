@@ -1,4 +1,3 @@
-const { fi } = require('zod/v4/locales');
 
 async function main() {
   const axios = require('axios');
@@ -7,13 +6,12 @@ async function main() {
   // Evita que o Axios trave o script para sempre.
   axios.defaults.timeout = 10000; 
 
-  const { API_URL, STATUS, STATE_FILE } = require('./aux/config');
+  const { API_URL, STATUS, STATE_FILE, LOCK_FILE } = require('./aux/config');
   const { log } = require('./aux/logger');
   const { verifyEnvironmentHealth } = require('./aux/network');
   const { get_state, save_state } = require('./aux/state');
   const { reconcileActiveTasks, prepareTaskPrompt } = require('./aux/taskUtils');
-  const LOCK_FILE = '/home/alexandrebragatorqueti/tmp/.monitor.lock';
-
+  
   async function run() {
     console.log('🚀 Iniciando monitor de tarefas para IA...');
     try {
@@ -30,11 +28,6 @@ async function main() {
       if (await fileExists(LOCK_FILE)) {
         await log('Outra instância já está rodando');
         process.exit(0);
-      }
-      try {
-        await lockfile.unlock(STATE_FILE);
-      } catch (e) {
-        // Se o arquivo de lock não existir, ignora o erro
       }
       await fs.promises.writeFile(LOCK_FILE, process.pid.toString());
       await verifyEnvironmentHealth();
@@ -99,6 +92,11 @@ async function main() {
       // Agora capturamos a STACK inteira, e não só a message (que estava vindo vazia)
       await log(`💥 Erro Fatal: ${error.stack || error.message || error}`);
       console.log("Nenhuma tarefa elegível para IA"); 
+      try {
+        await fs.promises.unlink(LOCK_FILE);
+      } catch (e) {
+        // Se o arquivo de lock não existir, ignora o erro
+      }
       process.exit(1); // Saída de erro
     } finally {
       // Garantia de limpeza do lock mesmo em caso de falhas
