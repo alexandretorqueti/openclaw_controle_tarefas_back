@@ -8,7 +8,8 @@ const { log } = require('./logger');
 function isPortOpen(port) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
-    
+    socket.on('error', () => { socket.destroy(); reject(); });
+    socket.on('timeout', () => { socket.destroy(); reject(); });
     // O VERDADEIRO TIMEOUT: Se em 2 segundos a porta não falar nada, matamos.
     const timer = setTimeout(() => {
       socket.destroy();

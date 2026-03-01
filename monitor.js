@@ -9,9 +9,15 @@ const { log } = require('./aux/logger');
 const { verifyEnvironmentHealth } = require('./aux/network');
 const { get_state, save_state } = require('./aux/state');
 const { reconcileActiveTasks, prepareTaskPrompt } = require('./aux/taskUtils');
+const LOCK_FILE = '/tmp/.monitor.lock';
 
 async function run() {
   try {
+    if (fs.existsSync(LOCK_FILE)) {
+      console.log('Outra instância já está rodando');
+      process.exit(0);
+    }
+    fs.writeFileSync(LOCK_FILE, process.pid.toString());
     await verifyEnvironmentHealth();
     let state = get_state();
 

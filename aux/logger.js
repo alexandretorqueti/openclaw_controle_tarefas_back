@@ -4,7 +4,7 @@ const { LOG_FILE } = require('./config');
 // Nova regra: Limite fixo de 500 linhas
 const MAX_LOG_LINES = 500; 
 
-function log(message) {
+async function log(message) {
   const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
   const newLine = `[${timestamp}] ${message}`;
   
@@ -29,7 +29,7 @@ function log(message) {
     }
     
     // 4. Salva de volta no arquivo
-    fs.writeFileSync(LOG_FILE, lines.join('\n') + '\n');
+    await fs.promises.writeFile(LOG_FILE, lines.join('\n') + '\n');
     
   } catch (e) { 
     console.error(`Erro crítico no logger: ${e.message}`); 
