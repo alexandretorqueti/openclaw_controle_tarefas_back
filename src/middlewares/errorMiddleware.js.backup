@@ -178,12 +178,8 @@ class ErrorMiddleware {
         // Set response status code
         res.status(statusCode);
         
-        // Log the error to database (skip 404 errors in production)
-        let logEntry = null;
-        const shouldLog404 = process.env.NODE_ENV === 'development';
-        if (errorType !== ERROR_TYPES.NOT_FOUND || shouldLog404) {
-          logEntry = await Logger.logError(error, req, res, errorType, req.correlationId);
-        }
+        // Log the error to database
+        const logEntry = await Logger.logError(error, req, res, errorType, req.correlationId);
         
         // Prepare response
         const response = {
@@ -243,10 +239,8 @@ class ErrorMiddleware {
       const error = new Error(`Route not found: ${req.method} ${req.originalUrl}`);
       error.statusCode = 404;
       
-      // Log 404 errors only in development
-      if (process.env.NODE_ENV === 'development') {
-        await Logger.logError(error, req, res, ERROR_TYPES.NOT_FOUND, req.correlationId);
-      }
+      // Log the 404 error
+      await Logger.logError(error, req, res, ERROR_TYPES.NOT_FOUND, req.correlationId);
       
       res.status(404).json({
         error: 'The requested resource was not found',

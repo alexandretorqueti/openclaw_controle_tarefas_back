@@ -25,7 +25,6 @@ const LOCK_FILE = '/home/alexandrebragatorqueti/tmp/.monitor.lock';
 const STATUS = {
   IN_PROGRESS: '28a4201d-272e-4e53-8c91-4cd5bf5ea516',
   COMPLETED: 'd9bc0336-0a16-48eb-8fc7-0c5ebec06f97',
-  BLOCKED: 'status-blocked-id' // ID do seu status de bloqueado
 };
 
 // Garante que as pastas físicas existam

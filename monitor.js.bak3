@@ -2,8 +2,6 @@ const { tr } = require('zod/v4/locales');
 
 // monitor.js (Arquitetura Híbrida Definitiva)
 async function main() {
-
-  // return null; // Para evitar execução acidental durante desenvolvimento. Remova esta linha para ativar o monitor.
   const axios = require('axios');
   const fs = require('fs');
   const path = require('path');
@@ -58,40 +56,14 @@ async function main() {
             const taskId = taskIds[0];
             const startTime = state.active_tasks[taskId].startTime;
             const elapsed = now - startTime;
-            
-            await log(`⏱️ Tarefa ${taskId} em execução por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
-
-            // --- LÓGICA DO CEIFADOR (SELF-HEALING) ---
-            // Se o tempo da tarefa passou do timeout + 30 segundos de tolerância
-            if (elapsed > TASK_TIMEOUT_MS + 30000) {
-              await log(`🧟 ZUMBIFICADO: A instância anterior travou completamente. Forçando limpeza de emergência!`);
-              
-              try {
-                // Lê o PID do processo travado que gravamos no LOCK_FILE e mata no SO
-                const pidZumbi = await fs.promises.readFile(LOCK_FILE, 'utf8');
-                if (pidZumbi) process.kill(parseInt(pidZumbi), 'SIGKILL');
-              } catch (killErr) {
-                // Ignora se o processo já não existir mais no SO
-              }
-              
-              // Quebra o cadeado para o script poder assumir no próximo minuto
-              await fs.promises.unlink(LOCK_FILE);
-              await log(`🧹 Cadeado quebrado à força. O próximo ciclo do Cron assumirá a fila.`);
-            }
-            // ----------------------------------------
+            await log(`⏱️ Tarefa ${taskId} em execução por ${(elapsed / 1000).toFixed(2)} segundos.`);
           }
         }
       } catch (e) {
         await log(`❌ Erro ao incrementar o tempo da tarefa: ${e.message}`);
       }
-    }
-  }
-
-  function segundosToMinutos_Segundos(segundos) {
-    const minutos = Math.floor(segundos / 60);
-    const segundosRestantes = segundos % 60;
-    return `${minutos}m ${segundosRestantes.toFixed(2)}s`;
-  }
+    } // <--- Faltava essa chave (fecha o if fileExists)
+  } // <--- Faltava essa chave (fecha a function)
 
   async function run() {
     console.error('🚀 Iniciando Orquestrador Node.js para o Jarbas...');
@@ -183,15 +155,7 @@ async function main() {
         // --- CORREÇÃO DA VARIÁVEL DE TIMEOUT ---
         const timeoutTimer = setTimeout(() => {
           log(`⏰ TIMEOUT ALCANÇADO: A IA demorou mais de ${TASK_TIMEOUT_MS / 60000} minutos. Abortando processo à força!`);
-          
-          child.kill('SIGKILL'); // Atira no processo
-          
-          // O PULO DO GATO: Destruímos os canos de comunicação manualmente
-          // para evitar que processos órfãos segurem a Promise aberta
-          if (child.stdout) child.stdout.destroy();
-          if (child.stderr) child.stderr.destroy();
-          
-          resolve(); // Força a saída do bloqueio IMEDIATAMENTE!
+          child.kill('SIGKILL'); 
         }, TASK_TIMEOUT_MS);
 
         child.on('close', (code) => {
@@ -279,7 +243,6 @@ async function main() {
   }
 
   await run();
-
 }
 
 main();

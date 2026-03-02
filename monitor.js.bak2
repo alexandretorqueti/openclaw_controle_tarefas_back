@@ -2,8 +2,6 @@ const { tr } = require('zod/v4/locales');
 
 // monitor.js (Arquitetura Híbrida Definitiva)
 async function main() {
-
-  // return null; // Para evitar execução acidental durante desenvolvimento. Remova esta linha para ativar o monitor.
   const axios = require('axios');
   const fs = require('fs');
   const path = require('path');
@@ -17,26 +15,6 @@ async function main() {
   
   const fileExists = async (pathToCheck) => fs.promises.access(pathToCheck, fs.constants.F_OK).then(() => true).catch(() => false);
 
-  async function manageState(taskId) {
-    const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
-    let monitorState = { active_tasks: {} };
-    
-    if (await fileExists(stateFilePath)) {
-      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
-      try {
-        monitorState = JSON.parse(stateContent);
-      } catch (e) {
-        await log(`⚠️ Erro ao fazer parse do estado anterior. Criando novo.`);
-      }
-    }
-    
-    // Garante que a estrutura existe e salva a hora de início da tarefa atual
-    if (!monitorState.active_tasks) monitorState.active_tasks = {};
-    monitorState.active_tasks[taskId] = { startTime: Date.now() };
-    
-    await fs.promises.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
-  }
-
   async function incrementTaskTimerandReturnValue() {
     const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
     if (await fileExists(stateFilePath)) {
@@ -48,50 +26,34 @@ async function main() {
         console.error(`Erro ao ler o arquivo de estado: ${e.message}`);
         return;
       }
-      
       const now = Date.now();
-      
+      /*
+      Exemplo de estrutura do monitor-state.json:
+        {
+          "active_tasks": {
+            "24e14185-b154-4fc4-ad86-2f02072a6f62": {
+              "startTime": 1772413792725
+            }
+          }
+        }
+      */
       try {
+        // Preciso primeiro pegar o id da task, que é o nome da chave de active_tasks, e depois acessar o startTime para calcular o tempo decorrido
         if (state.active_tasks) {
           const taskIds = Object.keys(state.active_tasks);
           if (taskIds.length > 0) {
             const taskId = taskIds[0];
             const startTime = state.active_tasks[taskId].startTime;
             const elapsed = now - startTime;
-            
-            await log(`⏱️ Tarefa ${taskId} em execução por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
-
-            // --- LÓGICA DO CEIFADOR (SELF-HEALING) ---
-            // Se o tempo da tarefa passou do timeout + 30 segundos de tolerância
-            if (elapsed > TASK_TIMEOUT_MS + 30000) {
-              await log(`🧟 ZUMBIFICADO: A instância anterior travou completamente. Forçando limpeza de emergência!`);
-              
-              try {
-                // Lê o PID do processo travado que gravamos no LOCK_FILE e mata no SO
-                const pidZumbi = await fs.promises.readFile(LOCK_FILE, 'utf8');
-                if (pidZumbi) process.kill(parseInt(pidZumbi), 'SIGKILL');
-              } catch (killErr) {
-                // Ignora se o processo já não existir mais no SO
-              }
-              
-              // Quebra o cadeado para o script poder assumir no próximo minuto
-              await fs.promises.unlink(LOCK_FILE);
-              await log(`🧹 Cadeado quebrado à força. O próximo ciclo do Cron assumirá a fila.`);
-            }
-            // ----------------------------------------
+            await log(`⏱️ Tarefa ${taskId} em execução por ${(elapsed / 1000).toFixed(2)} segundos.`);
           }
         }
-      } catch (e) {
-        await log(`❌ Erro ao incrementar o tempo da tarefa: ${e.message}`);
-      }
+    } catch (e) {
+      await log(`❌ Erro ao incrementar o tempo da tarefa: ${e.message}`);
     }
-  }
+  } 
 
-  function segundosToMinutos_Segundos(segundos) {
-    const minutos = Math.floor(segundos / 60);
-    const segundosRestantes = segundos % 60;
-    return `${minutos}m ${segundosRestantes.toFixed(2)}s`;
-  }
+  
 
   async function run() {
     console.error('🚀 Iniciando Orquestrador Node.js para o Jarbas...');
@@ -117,8 +79,6 @@ async function main() {
       const task = response.data.task;
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}. Assumindo o controle...`);
       
-      await manageState(task.id); // Salva o estado estruturado da tarefa atual
-      
       // Atualiza painel para "Em Andamento"
       await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.IN_PROGRESS });
 
@@ -127,6 +87,7 @@ async function main() {
       const relatorioFile = path.join(TASKS_DIR, `relatorio-${task.id}.txt`);
       const doneFile = path.join(TASKS_DIR, `done-${task.id}.done`);
 
+      // (Aqui você chama sua função que monta o texto que te passei acima e salva em promptFile)
       await prepareTaskPrompt(task, promptFile, relatorioFile, doneFile);
 
       // 1. Lemos o conteúdo do prompt para injetar na CLI
@@ -137,38 +98,47 @@ async function main() {
 
       await new Promise((resolve) => {
         const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
-        const outLog = fs.openSync(terminalLogPath, 'w'); 
+        const outLog = fs.openSync(terminalLogPath, 'w'); // 'w' garante um log limpo por execução
 
+        // Sintaxe exata baseada no seu --help
         const childArgs = [
           'agent', 
-          '--session-id', task.id, 
-          '-m', promptContent      
+          '--session-id', task.id, // Isola o contexto de memória da IA para esta tarefa
+          '-m', promptContent      // Entrega o texto completo do prompt
+          // '--local'             // Descomente esta linha se você roda o agente embutido sem o Gateway
         ];
 
         const child = spawn('openclaw', childArgs, {
           cwd: TASKS_DIR,
           env: { ...process.env, OPENCLAW_MODEL: task.model }, 
           shell: false, 
-          stdio: ['ignore', 'pipe', 'pipe'] 
+          stdio: ['ignore', 'pipe', 'pipe'] // CRÍTICO: 'pipe' liga o microfone!
         });
 
-        // Ouvindo a saída padrão (stdout)
+        // Ouvindo a saída padrão (stdout) em tempo real
         child.stdout.on('data', (data) => {
           const texto = data.toString();
+          
+          // 1. Continuamos gravando no arquivo físico para o histórico
           fs.appendFileSync(terminalLogPath, texto);
 
+          // 2. MONITORAMENTO ATIVO: Lemos o que a IA está pensando/fazendo!
           if (texto.includes('<thinking>')) {
             log(`🧠 [Live] Jarbas está raciocinando sobre o problema...`);
           }
+          
           if (texto.includes('toolCall') || texto.includes('"name": "exec"')) {
             log(`🛠️ [Live] Jarbas disparou um comando no terminal do projeto.`);
+            // Ideia avançada: Você pode disparar um Webhook ou WebSocket aqui 
+            // para atualizar o frontend do seu Kanban em tempo real!
           }
         });
 
-        // Ouvindo os erros (stderr)
+        // Ouvindo os erros (stderr) em tempo real
         child.stderr.on('data', (data) => {
           const textoError = data.toString();
           fs.appendFileSync(terminalLogPath, textoError);
+          // Se cuspir erro de VRAM ou API, você já sabe no mesmo milissegundo
         });
 
         child.on('error', (err) => {
@@ -179,33 +149,27 @@ async function main() {
           fs.closeSync(outLog);
           resolve(); 
         });
-
-        // --- CORREÇÃO DA VARIÁVEL DE TIMEOUT ---
         const timeoutTimer = setTimeout(() => {
-          log(`⏰ TIMEOUT ALCANÇADO: A IA demorou mais de ${TASK_TIMEOUT_MS / 60000} minutos. Abortando processo à força!`);
+          log(`⏰ TIMEOUT ALCANÇADO: A IA demorou mais de ${TEMPO_MAXIMO_MS / 60000} minutos. Abortando processo à força!`);
           
-          child.kill('SIGKILL'); // Atira no processo
-          
-          // O PULO DO GATO: Destruímos os canos de comunicação manualmente
-          // para evitar que processos órfãos segurem a Promise aberta
-          if (child.stdout) child.stdout.destroy();
-          if (child.stderr) child.stderr.destroy();
-          
-          resolve(); // Força a saída do bloqueio IMEDIATAMENTE!
+          // Envia um sinal de morte bruta para o processo filho
+          child.kill('SIGKILL'); 
         }, TASK_TIMEOUT_MS);
-
         child.on('close', (code) => {
           clearTimeout(timeoutTimer);
           fs.closeSync(outLog);
           log(`🛑 Processo do OpenClaw encerrado com código de saída ${code}.`);
           resolve(); 
         });
+
+        
       });
 
       // 5. Verificação do Contrato (Marker File)
       await log(`🔍 Verificando contrato de entrega para a tarefa ${task.id}...`);
       
       if (await fileExists(doneFile)) {
+        // Sucesso Absoluto!
         let executionNotes = "Concluído. Relatório vazio ou não gerado.";
         if (await fileExists(relatorioFile)) {
           executionNotes = await fs.promises.readFile(relatorioFile, 'utf8');
@@ -213,23 +177,27 @@ async function main() {
 
         await log(`✅ IA cumpriu o contrato! Atualizando banco de dados...`);
         
+        // Substitui a API call pelo seu endpoint real
         await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
           userId: MY_USER_ID,
           executionNotes: executionNotes
         });
 
+        // Limpeza dos arquivos da tarefa concluída
         await fs.promises.unlink(doneFile);
         if (await fileExists(relatorioFile)) await fs.promises.unlink(relatorioFile);
         if (await fileExists(promptFile)) await fs.promises.unlink(promptFile);
 
       } else {
+        // Falha! A IA morreu, abortou ou se perdeu antes de criar o .done
         await log(`⚠️ ALERTA: Arquivo .done não encontrado. A IA falhou na execução.`);
         
+        // Verificamos se a ia criou o arquivo de log
         const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
         let terminalOutput = "";
         if (await fileExists(terminalLogPath)) {
           terminalOutput = await fs.promises.readFile(terminalLogPath, 'utf8');
-          await log(`📜 Saída do Terminal da IA (Preview enviada p/ BD)`);
+          await log(`📜 Saída do Terminal da IA:\n${terminalOutput}`);
         }
 
         await axios.post(`${API_URL}/api/comments`, {
@@ -238,17 +206,23 @@ async function main() {
           content: `⚠️ **FALHA DE EXECUÇÃO LOCAL**\nA IA não conseguiu finalizar a tarefa ou não assinou o contrato de entrega.\n\nSaída do Terminal:\n${terminalOutput}`
         });
         
+        // --- LÓGICA DE REATRIBUIÇÃO (Fallback para o Alexandre) ---
         try {
           let devId = null;
           const usersRes = await axios.get(`${API_URL}/api/users`);
+          
+          // Busca dinamicamente o ID do usuário alexandre
           const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
           
           if (dev) {
             devId = dev.id;
             await log(`👤 Reatribuindo tarefa ${task.id} para o usuário alexandre.`);
+            
+            // Enviamos apenas assignedToId. Como não mandamos o statusId, 
+            // a API mantém a tarefa na mesma coluna do Kanban.
             await axios.put(`${API_URL}/api/tasks/${task.id}`, { assignedToId: devId });
           } else {
-            await log(`⚠️ Usuário 'alexandre' não encontrado na API.`);
+            await log(`⚠️ Usuário 'alexandre' não encontrado na API. Tarefa mantida com a atribuição atual.`);
           }
         } catch (assignError) {
           await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
@@ -256,10 +230,12 @@ async function main() {
       }
 
     } catch (error) {
+      // Extrai o payload de erro real da API, se existir
       const detail = error.response?.data 
         ? JSON.stringify(error.response.data) 
         : (error.stack || error.message);
         
+      // Se for um erro do Axios, loga também qual URL e Método falharam
       const requestInfo = error.config 
         ? `[${error.config.method.toUpperCase()} ${error.config.url}]` 
         : '';
@@ -267,6 +243,7 @@ async function main() {
       await log(`💥 Erro Fatal no Orquestrador ${requestInfo}: ${detail}`);
       process.exitCode = 1;
     } finally {
+      // 6. Limpeza sagrada do Lock (Libera para o próximo ciclo do cron)
       try {
         if (await fileExists(LOCK_FILE)) {
           await fs.promises.unlink(LOCK_FILE);
@@ -279,7 +256,6 @@ async function main() {
   }
 
   await run();
-
 }
 
 main();
