@@ -11,11 +11,44 @@ async function main() {
   
   axios.defaults.timeout = 10000; 
 
-  const { API_URL, STATUS, TASKS_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
+  const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
   const { prepareTaskPrompt } = require('./aux/taskUtils');
   
   const fileExists = async (pathToCheck) => fs.promises.access(pathToCheck, fs.constants.F_OK).then(() => true).catch(() => false);
+
+  async function moveTaskFiles(taskId, destinationDir) {
+    const files = [
+      `prompt-${taskId}.txt`,
+      `relatorio-${taskId}.txt`,
+      `terminal-${taskId}.log`,
+      `done-${taskId}.done`
+    ];
+    
+    for (const file of files) {
+      const src = path.join(TASKS_DIR, file);
+      const dest = path.join(destinationDir, file);
+      if (await fileExists(src)) {
+        await fs.promises.rename(src, dest);
+      }
+    }
+  }
+
+  async function cleanupMonitorState(taskId) {
+    const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
+    if (await fileExists(stateFilePath)) {
+      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
+      try {
+        const monitorState = JSON.parse(stateContent);
+        if (monitorState.active_tasks && monitorState.active_tasks[taskId]) {
+          delete monitorState.active_tasks[taskId];
+          await fs.promises.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
+        }
+      } catch (e) {
+        await log(`⚠️ Erro ao limpar monitor-state.json: ${e.message}`);
+      }
+    }
+  }
 
   async function manageState(taskId) {
     const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
@@ -76,6 +109,7 @@ async function main() {
               
               // Quebra o cadeado para o script poder assumir no próximo minuto
               await fs.promises.unlink(LOCK_FILE);
+              await cleanupMonitorState(taskId);
               await log(`🧹 Cadeado quebrado à força. O próximo ciclo do Cron assumirá a fila.`);
             }
             // ----------------------------------------
@@ -219,8 +253,8 @@ async function main() {
         });
 
         await fs.promises.unlink(doneFile);
-        if (await fileExists(relatorioFile)) await fs.promises.unlink(relatorioFile);
-        if (await fileExists(promptFile)) await fs.promises.unlink(promptFile);
+        await moveTaskFiles(task.id, PROCESSED_DIR);
+        await cleanupMonitorState(task.id);
 
       } else {
         await log(`⚠️ ALERTA: Arquivo .done não encontrado. A IA falhou na execução.`);
@@ -253,6 +287,9 @@ async function main() {
         } catch (assignError) {
           await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
         }
+        
+        await moveTaskFiles(task.id, ERROR_DIR);
+        await cleanupMonitorState(task.id);
       }
 
     } catch (error) {
