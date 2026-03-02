@@ -1,3 +1,5 @@
+const { tr } = require('zod/v4/locales');
+
 // monitor.js (Arquitetura Híbrida Definitiva)
 async function main() {
   const axios = require('axios');
@@ -7,17 +9,58 @@ async function main() {
   
   axios.defaults.timeout = 10000; 
 
-  const { API_URL, STATUS, TASKS_DIR, LOCK_FILE, MY_USER_ID } = require('./aux/config');
+  const { API_URL, STATUS, TASKS_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
   const { prepareTaskPrompt } = require('./aux/taskUtils');
   
   const fileExists = async (pathToCheck) => fs.promises.access(pathToCheck, fs.constants.F_OK).then(() => true).catch(() => false);
+
+  async function incrementTaskTimerandReturnValue() {
+    const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
+    if (await fileExists(stateFilePath)) {
+      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
+      let state = {};
+      try {
+        state = JSON.parse(stateContent);
+      } catch (e) {
+        console.error(`Erro ao ler o arquivo de estado: ${e.message}`);
+        return;
+      }
+      const now = Date.now();
+      /*
+      Exemplo de estrutura do monitor-state.json:
+        {
+          "active_tasks": {
+            "24e14185-b154-4fc4-ad86-2f02072a6f62": {
+              "startTime": 1772413792725
+            }
+          }
+        }
+      */
+      try {
+        // Preciso primeiro pegar o id da task, que é o nome da chave de active_tasks, e depois acessar o startTime para calcular o tempo decorrido
+        if (state.active_tasks) {
+          const taskIds = Object.keys(state.active_tasks);
+          if (taskIds.length > 0) {
+            const taskId = taskIds[0];
+            const startTime = state.active_tasks[taskId].startTime;
+            const elapsed = now - startTime;
+            await log(`⏱️ Tarefa ${taskId} em execução por ${(elapsed / 1000).toFixed(2)} segundos.`);
+          }
+        }
+    } catch (e) {
+      await log(`❌ Erro ao incrementar o tempo da tarefa: ${e.message}`);
+    }
+  } 
+
+  
 
   async function run() {
     console.error('🚀 Iniciando Orquestrador Node.js para o Jarbas...');
 
     // 1. Controle de Concorrência (Lock)
     if (await fileExists(LOCK_FILE)) {
+      await incrementTaskTimerandReturnValue();
       await log('⏳ Outra instância já está rodando. Omitindo execução.');
       return; 
     }
@@ -35,7 +78,7 @@ async function main() {
 
       const task = response.data.task;
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}. Assumindo o controle...`);
-
+      
       // Atualiza painel para "Em Andamento"
       await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.IN_PROGRESS });
 
@@ -81,12 +124,20 @@ async function main() {
           fs.closeSync(outLog);
           resolve(); 
         });
-
+        const timeoutTimer = setTimeout(() => {
+          log(`⏰ TIMEOUT ALCANÇADO: A IA demorou mais de ${TEMPO_MAXIMO_MS / 60000} minutos. Abortando processo à força!`);
+          
+          // Envia um sinal de morte bruta para o processo filho
+          child.kill('SIGKILL'); 
+        }, TASK_TIMEOUT_MS);
         child.on('close', (code) => {
+          clearTimeout(timeoutTimer);
           fs.closeSync(outLog);
           log(`🛑 Processo do OpenClaw encerrado com código de saída ${code}.`);
           resolve(); 
         });
+
+        
       });
 
       // 5. Verificação do Contrato (Marker File)
