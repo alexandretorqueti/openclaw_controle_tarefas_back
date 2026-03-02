@@ -50,7 +50,8 @@ Assim que você finalizar as alterações e testes necessários no código, voc�
 
 1. Gere o relatório de execução:
 Crie ou sobrescreva o arquivo abaixo detalhando as ações tomadas, os arquivos modificados e as eventuais pendências.
-Comando esperado: echo "Seu relatorio técnico aqui..." > ${relatorioFile}
+Escreva o nome do seu modelo no início do relatório para fins de rastreabilidade, no formato: "Modelo utilizado: [NOME_DO_MODELO]" + "\n\n" + Relatório detalhado.
+Comando esperado: echo "Seu relatorio técnico aqui..." > ${relatorioFile} 
 
 2. Assine o contrato de finalização:
 Crie um arquivo vazio no caminho abaixo. ISSO É VITAL. O orquestrador do sistema está aguardando a existência deste arquivo para liberar a GPU e marcar a tarefa como concluída.
