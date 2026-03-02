@@ -25,6 +25,7 @@ model User {
   assignedTasks   Task[]        @relation("TaskAssignee")
   createdTasks    Task[]        @relation("TaskCreator")
   logs            Log[]
+  taskExecutionLogs TaskExecutionLog[]
 
   @@map("users")
 }
@@ -107,6 +108,7 @@ model Task {
   parentTask      Task?         @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
   subtasks        Task[]        @relation("TaskHierarchy")
   project         Project       @relation(fields: [projectId], references: [id])
+  executionLogs   TaskExecutionLog[]
 
   @@map("tasks")
 }
@@ -193,3 +195,26 @@ model Log {
   @@map("logs")
 }
 
+
+model TaskExecutionLog {
+  id              String   @id @default(uuid())
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  startedAt       DateTime @default(now())
+  finishedAt      DateTime?
+  model           String
+  executionNotes  String?
+  success         Boolean  @default(false)
+  durationMs      Int?
+  exitCode        Int?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([taskId])
+  @@index([startedAt])
+  @@index([userId])
+  @@map("task_execution_logs")
+}

@@ -1,21 +1,23 @@
-const { tr } = require('zod/v4/locales');
-
-// monitor.js (Arquitetura Híbrida Definitiva)
+// monitor.js (Arquitetura Refatorada - Worker Leve)
 async function main() {
-
-  // return null; // Para evitar execução acidental durante desenvolvimento. Remova esta linha para ativar o monitor.
   const axios = require('axios');
-  const fs = require('fs');
+  const fs = require('fs').promises;
   const path = require('path');
-  const { spawn } = require('child_process');
   
-  axios.defaults.timeout = 10000; 
+  axios.defaults.timeout = 10000;
 
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
-  const { prepareTaskPrompt } = require('./aux/taskUtils');
-  
-  const fileExists = async (pathToCheck) => fs.promises.access(pathToCheck, fs.constants.F_OK).then(() => true).catch(() => false);
+  const TaskExecutionService = require('./src/services/taskExecutionService');
+
+  const fileExists = async (pathToCheck) => {
+    try {
+      await fs.access(pathToCheck);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   async function moveTaskFiles(taskId, destinationDir) {
     const files = [
@@ -29,7 +31,7 @@ async function main() {
       const src = path.join(TASKS_DIR, file);
       const dest = path.join(destinationDir, file);
       if (await fileExists(src)) {
-        await fs.promises.rename(src, dest);
+        await fs.rename(src, dest);
       }
     }
   }
@@ -37,12 +39,12 @@ async function main() {
   async function cleanupMonitorState(taskId) {
     const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
     if (await fileExists(stateFilePath)) {
-      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
+      const stateContent = await fs.readFile(stateFilePath, 'utf8');
       try {
         const monitorState = JSON.parse(stateContent);
         if (monitorState.active_tasks && monitorState.active_tasks[taskId]) {
           delete monitorState.active_tasks[taskId];
-          await fs.promises.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
+          await fs.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
         }
       } catch (e) {
         await log(`⚠️ Erro ao limpar monitor-state.json: ${e.message}`);
@@ -55,7 +57,7 @@ async function main() {
     let monitorState = { active_tasks: {} };
     
     if (await fileExists(stateFilePath)) {
-      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
+      const stateContent = await fs.readFile(stateFilePath, 'utf8');
       try {
         monitorState = JSON.parse(stateContent);
       } catch (e) {
@@ -63,17 +65,16 @@ async function main() {
       }
     }
     
-    // Garante que a estrutura existe e salva a hora de início da tarefa atual
     if (!monitorState.active_tasks) monitorState.active_tasks = {};
     monitorState.active_tasks[taskId] = { startTime: Date.now() };
     
-    await fs.promises.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
+    await fs.writeFile(stateFilePath, JSON.stringify(monitorState, null, 2));
   }
 
   async function incrementTaskTimerandReturnValue() {
     const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
     if (await fileExists(stateFilePath)) {
-      const stateContent = await fs.promises.readFile(stateFilePath, 'utf8');
+      const stateContent = await fs.readFile(stateFilePath, 'utf8');
       let state = {};
       try {
         state = JSON.parse(stateContent);
@@ -94,25 +95,21 @@ async function main() {
             
             await log(`⏱️ Tarefa ${taskId} em execução por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
 
-            // --- LÓGICA DO CEIFADOR (SELF-HEALING) ---
-            // Se o tempo da tarefa passou do timeout + 30 segundos de tolerância
+            // Lógica do ceifador (self-healing)
             if (elapsed > TASK_TIMEOUT_MS + 30000) {
               await log(`🧟 ZUMBIFICADO: A instância anterior travou completamente. Forçando limpeza de emergência!`);
               
               try {
-                // Lê o PID do processo travado que gravamos no LOCK_FILE e mata no SO
-                const pidZumbi = await fs.promises.readFile(LOCK_FILE, 'utf8');
+                const pidZumbi = await fs.readFile(LOCK_FILE, 'utf8');
                 if (pidZumbi) process.kill(parseInt(pidZumbi), 'SIGKILL');
               } catch (killErr) {
-                // Ignora se o processo já não existir mais no SO
+                // Ignora se o processo já não existir mais
               }
               
-              // Quebra o cadeado para o script poder assumir no próximo minuto
-              await fs.promises.unlink(LOCK_FILE);
+              await fs.unlink(LOCK_FILE);
               await cleanupMonitorState(taskId);
               await log(`🧹 Cadeado quebrado à força. O próximo ciclo do Cron assumirá a fila.`);
             }
-            // ----------------------------------------
           }
         }
       } catch (e) {
@@ -127,16 +124,67 @@ async function main() {
     return `${minutos}m ${segundosRestantes.toFixed(2)}s`;
   }
 
+  async function handleTaskFailure(task, error) {
+    await log(`⚠️ ALERTA: Falha na execução da tarefa ${task.id}: ${error.message}`);
+    
+    const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
+    let terminalOutput = "";
+    if (await fileExists(terminalLogPath)) {
+      terminalOutput = await fs.readFile(terminalLogPath, 'utf8');
+    }
+
+    // Adiciona comentário sobre a falha
+    await axios.post(`${API_URL}/api/comments`, {
+      taskId: task.id,
+      userId: MY_USER_ID,
+      content: `⚠️ **FALHA DE EXECUÇÃO LOCAL**\nErro: ${error.message}\n\nSaída do Terminal:\n${terminalOutput.substring(0, 1000)}`
+    });
+    
+    // Tenta reatribuir para o desenvolvedor
+    try {
+      let devId = null;
+      const usersRes = await axios.get(`${API_URL}/api/users`);
+      const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
+      
+      if (dev) {
+        devId = dev.id;
+        await log(`👤 Reatribuindo tarefa ${task.id} para o usuário alexandre.`);
+        await axios.put(`${API_URL}/api/tasks/${task.id}`, { assignedToId: devId });
+      } else {
+        await log(`⚠️ Usuário 'alexandre' não encontrado na API.`);
+      }
+    } catch (assignError) {
+      await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
+    }
+    
+    await moveTaskFiles(task.id, ERROR_DIR);
+    await cleanupMonitorState(task.id);
+  }
+
+  async function handleTaskSuccess(task, executionResult) {
+    await log(`✅ Tarefa ${task.id} executada com sucesso!`);
+    
+    // Atualiza status da tarefa
+    await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
+      userId: MY_USER_ID,
+      executionNotes: executionResult.executionNotes
+    });
+
+    await moveTaskFiles(task.id, PROCESSED_DIR);
+    await cleanupMonitorState(task.id);
+  }
+
   async function run() {
-    console.error('🚀 Iniciando Orquestrador Node.js para o Jarbas...');
+    console.error('🚀 Iniciando Orquestrador Node.js (Arquitetura Refatorada)...');
 
     // 1. Controle de Concorrência (Lock)
     if (await fileExists(LOCK_FILE)) {
       await incrementTaskTimerandReturnValue();
       await log('⏳ Outra instância já está rodando. Omitindo execução.');
-      return; 
+      return;
     }
-    await fs.promises.writeFile(LOCK_FILE, process.pid.toString());
+    
+    await fs.writeFile(LOCK_FILE, process.pid.toString());
     await log(`🔓 Lock trancado com sucesso.`);
 
     try {
@@ -145,151 +193,31 @@ async function main() {
       
       if (!response.data.success || !response.data.task) {
         console.error("😴 Nenhuma tarefa nova na fila.");
-        return; 
+        return;
       }
 
       const task = response.data.task;
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}. Assumindo o controle...`);
       
-      await manageState(task.id); // Salva o estado estruturado da tarefa atual
+      await manageState(task.id);
       
-      // Atualiza painel para "Em Andamento"
+      // Atualiza status para "Em Andamento"
       await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.IN_PROGRESS });
 
-      // 3. Prepara os caminhos do Contrato Físico
-      const promptFile = path.join(TASKS_DIR, `prompt-${task.id}.txt`);
-      const relatorioFile = path.join(TASKS_DIR, `relatorio-${task.id}.txt`);
-      const doneFile = path.join(TASKS_DIR, `done-${task.id}.done`);
+      // 3. Executa a tarefa usando o serviço
+      const config = {
+        TASKS_DIR,
+        TASK_TIMEOUT_MS
+      };
 
-      await prepareTaskPrompt(task, promptFile, relatorioFile, doneFile);
+      await log(`🤖 Executando tarefa via TaskExecutionService...`);
+      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
 
-      // 1. Lemos o conteúdo do prompt para injetar na CLI
-      const promptContent = await fs.promises.readFile(promptFile, 'utf8');
-
-      // 4. O Coração da Solução Híbrida: Spawn aguardando o Close
-      await log(`🤖 Invocando OpenClaw via CLI (openclaw agent)...`);
-
-      await new Promise((resolve) => {
-        const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
-        const outLog = fs.openSync(terminalLogPath, 'w'); 
-
-        const childArgs = [
-          'agent', 
-          '--session-id', task.id, 
-          '-m', promptContent      
-        ];
-
-        const child = spawn('openclaw', childArgs, {
-          cwd: TASKS_DIR,
-          env: { ...process.env, OPENCLAW_MODEL: task.model }, 
-          shell: false, 
-          stdio: ['ignore', 'pipe', 'pipe'] 
-        });
-
-        // Ouvindo a saída padrão (stdout)
-        child.stdout.on('data', (data) => {
-          const texto = data.toString();
-          fs.appendFileSync(terminalLogPath, texto);
-
-          if (texto.includes('<thinking>')) {
-            log(`🧠 [Live] Jarbas está raciocinando sobre o problema...`);
-          }
-          if (texto.includes('toolCall') || texto.includes('"name": "exec"')) {
-            log(`🛠️ [Live] Jarbas disparou um comando no terminal do projeto.`);
-          }
-        });
-
-        // Ouvindo os erros (stderr)
-        child.stderr.on('data', (data) => {
-          const textoError = data.toString();
-          fs.appendFileSync(terminalLogPath, textoError);
-        });
-
-        child.on('error', (err) => {
-          log(`❌ Erro ao invocar a CLI do OpenClaw: ${err.message}`);
-          if (err.code === 'ENOENT') {
-            log(`💡 Dica: O Linux não encontrou o executável 'openclaw'. Tente usar 'npx' como primeiro argumento.`);
-          }
-          fs.closeSync(outLog);
-          resolve(); 
-        });
-
-        // --- CORREÇÃO DA VARIÁVEL DE TIMEOUT ---
-        const timeoutTimer = setTimeout(() => {
-          log(`⏰ TIMEOUT ALCANÇADO: A IA demorou mais de ${TASK_TIMEOUT_MS / 60000} minutos. Abortando processo à força!`);
-          
-          child.kill('SIGKILL'); // Atira no processo
-          
-          // O PULO DO GATO: Destruímos os canos de comunicação manualmente
-          // para evitar que processos órfãos segurem a Promise aberta
-          if (child.stdout) child.stdout.destroy();
-          if (child.stderr) child.stderr.destroy();
-          
-          resolve(); // Força a saída do bloqueio IMEDIATAMENTE!
-        }, TASK_TIMEOUT_MS);
-
-        child.on('close', (code) => {
-          clearTimeout(timeoutTimer);
-          fs.closeSync(outLog);
-          log(`🛑 Processo do OpenClaw encerrado com código de saída ${code}.`);
-          resolve(); 
-        });
-      });
-
-      // 5. Verificação do Contrato (Marker File)
-      await log(`🔍 Verificando contrato de entrega para a tarefa ${task.id}...`);
-      
-      if (await fileExists(doneFile)) {
-        let executionNotes = "Concluído. Relatório vazio ou não gerado.";
-        if (await fileExists(relatorioFile)) {
-          executionNotes = await fs.promises.readFile(relatorioFile, 'utf8');
-        }
-
-        await log(`✅ IA cumpriu o contrato! Atualizando banco de dados...`);
-        
-        await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
-          userId: MY_USER_ID,
-          executionNotes: executionNotes
-        });
-
-        await fs.promises.unlink(doneFile);
-        await moveTaskFiles(task.id, PROCESSED_DIR);
-        await cleanupMonitorState(task.id);
-
+      // 4. Processa resultado
+      if (executionResult.success) {
+        await handleTaskSuccess(task, executionResult);
       } else {
-        await log(`⚠️ ALERTA: Arquivo .done não encontrado. A IA falhou na execução.`);
-        
-        const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
-        let terminalOutput = "";
-        if (await fileExists(terminalLogPath)) {
-          terminalOutput = await fs.promises.readFile(terminalLogPath, 'utf8');
-          await log(`📜 Saída do Terminal da IA (Preview enviada p/ BD)`);
-        }
-
-        await axios.post(`${API_URL}/api/comments`, {
-          taskId: task.id,
-          userId: MY_USER_ID,
-          content: `⚠️ **FALHA DE EXECUÇÃO LOCAL**\nA IA não conseguiu finalizar a tarefa ou não assinou o contrato de entrega.\n\nSaída do Terminal:\n${terminalOutput}`
-        });
-        
-        try {
-          let devId = null;
-          const usersRes = await axios.get(`${API_URL}/api/users`);
-          const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
-          
-          if (dev) {
-            devId = dev.id;
-            await log(`👤 Reatribuindo tarefa ${task.id} para o usuário alexandre.`);
-            await axios.put(`${API_URL}/api/tasks/${task.id}`, { assignedToId: devId });
-          } else {
-            await log(`⚠️ Usuário 'alexandre' não encontrado na API.`);
-          }
-        } catch (assignError) {
-          await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
-        }
-        
-        await moveTaskFiles(task.id, ERROR_DIR);
-        await cleanupMonitorState(task.id);
+        await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
       }
 
     } catch (error) {
@@ -302,11 +230,21 @@ async function main() {
         : '';
 
       await log(`💥 Erro Fatal no Orquestrador ${requestInfo}: ${detail}`);
+      
+      // Tenta limpar o lock em caso de erro
+      try {
+        if (await fileExists(LOCK_FILE)) {
+          await fs.unlink(LOCK_FILE);
+        }
+      } catch (e) {
+        console.error(`Erro ao remover lock file: ${e.message}`);
+      }
+      
       process.exitCode = 1;
     } finally {
       try {
         if (await fileExists(LOCK_FILE)) {
-          await fs.promises.unlink(LOCK_FILE);
+          await fs.unlink(LOCK_FILE);
           await log(`🔓 Lock liberado com sucesso.`);
         }
       } catch (e) {
@@ -316,7 +254,11 @@ async function main() {
   }
 
   await run();
-
 }
 
-main();
+// Exporta para testes
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+module.exports = { main };

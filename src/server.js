@@ -177,6 +177,7 @@ app.use('/api/comments', commentRoutes);
 app.use('/api/task-history', require('./routes/taskHistoryRoutes'));
 app.use('/api/logs', logRoutes);
 app.use('/api/models', require('./routes/modelRoutes'));
+app.use('/api/task-executions', require('./routes/taskExecutionRoutes'));
 
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
