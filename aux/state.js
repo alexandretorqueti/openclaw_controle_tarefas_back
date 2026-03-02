@@ -1,3 +1,5 @@
+// aux/state.js
+
 const fs = require('fs');
 const lockfile = require('proper-lockfile');
 const { STATE_FILE } = require('./config');
@@ -45,3 +47,4 @@ async function save_state(state) {
 }
 
 module.exports = { get_state, save_state };
+

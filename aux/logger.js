@@ -1,3 +1,5 @@
+// aux/logger.js
+
 const fs = require('fs');
 const { LOG_FILE } = require('./config');
 
@@ -47,3 +49,4 @@ async function log(message) {
 }
 
 module.exports = { log };
+

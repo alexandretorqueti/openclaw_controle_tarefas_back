@@ -1,3 +1,5 @@
+// aux/network.js
+
 const net = require('net');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -90,3 +92,4 @@ async function verifyEnvironmentHealth() {
 }
 
 module.exports = { verifyEnvironmentHealth };
+

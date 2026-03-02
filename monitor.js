@@ -1,4 +1,4 @@
-
+// monitor.js
 async function main() {
   const axios = require('axios');
   const fs = require('fs');
@@ -14,6 +14,8 @@ async function main() {
   
   async function run() {
     console.log('🚀 Iniciando monitor de tarefas para IA...');
+    // Antes de tudo vamos travar o processo por 30 segundos para evitar que múltiplas instâncias sejam iniciadas ao mesmo tempo (ex: após um deploy)
+    await new Promise(resolve => setTimeout(resolve, 30000));
     try {
       // verifica existência de lock sem usar fs.promises.exists
       async function fileExists(path) {
@@ -115,3 +117,4 @@ main().catch(e => {
   console.log("Nenhuma tarefa elegível para IA");
   process.exit(1);
 });
+

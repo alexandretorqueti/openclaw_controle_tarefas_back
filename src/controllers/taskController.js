@@ -281,17 +281,20 @@ class TaskController {
     const task = await taskService.getNextTaskForUser(nickname);
 
     if (!task) {
-      const error = new Error('No pending tasks found for user');
-      error.statusCode = 404;
-      throw error;
+      res.json({
+        success: true,
+        message: 'Nenhuma tarefa pendente encontrada para o usuário',
+        task: null,
+        correlationId: req.correlationId
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Próxima tarefa encontrada com sucesso',
+        task: task,
+        correlationId: req.correlationId
+      });
     }
-
-    res.json({
-      success: true,
-      message: 'Próxima tarefa encontrada com sucesso',
-      task: task,
-      correlationId: req.correlationId
-    });
   });
 
   // Update task position
