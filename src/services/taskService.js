@@ -1,8 +1,49 @@
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
 // src/services/taskService.js
 
 const prisma = require('./prismaService');
 
 class TaskService {
+  // Função auxiliar para executar git
+  execGit(args, cwd) {
+    return new Promise((resolve, reject) => {
+      const child = spawn('git', args, { cwd, stdio: 'pipe' });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (data) => stdout += data.toString());
+      child.stderr.on('data', (data) => stderr += data.toString());
+      child.on('close', (code) => {
+        if (code === 0) resolve(stdout);
+        else reject(new Error(`git ${args[0]} failed: ${stderr}`));
+      });
+    });
+  }
+
+  // Função principal de commit
+  async checkAndCommit(projectPath, taskId, taskTitle) {
+    try {
+      // Verificar se path existe e tem .git
+      if (!fs.existsSync(projectPath) || !fs.existsSync(path.join(projectPath, '.git'))) {
+        return false;
+      }
+
+      // Verificar alterações
+      const status = await this.execGit(['status', '--porcelain'], projectPath);
+      if (!status.trim()) return false; // Sem alterações
+
+      // Fazer commit
+      await this.execGit(['add', '.'], projectPath);
+      const commitMessage = `${taskId}: ${taskTitle}`;
+      await this.execGit(['commit', '-m', commitMessage], projectPath);
+      return true;
+    } catch (error) {
+      console.error(`Git commit failed for ${projectPath}:`, error.message);
+      return false;
+    }
+  }
   // Validate referenced IDs exist before creating a task
   async validateReferences(data) {
     const errors = [];
@@ -1019,7 +1060,23 @@ class TaskService {
         })
       ]);
 
-      return {
+            // Controle de versão automático após finalização
+      try {
+        const project = await prisma.project.findUnique({
+          where: { id: existingTask.projectId },
+          select: { frontendPath: true, backendPath: true }
+        });
+        if (project?.frontendPath) {
+          await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
+        }
+        if (project?.backendPath) {
+          await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
+        }
+      } catch (gitError) {
+        console.error('Git automation failed:', gitError.message);
+      }
+
+return {
         task: updatedTask,
         status: firstStatus,
         history: historyRecord,
@@ -1059,7 +1116,23 @@ class TaskService {
       })
     ]);
 
-    return {
+          // Controle de versão automático após finalização
+      try {
+        const project = await prisma.project.findUnique({
+          where: { id: existingTask.projectId },
+          select: { frontendPath: true, backendPath: true }
+        });
+        if (project?.frontendPath) {
+          await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
+        }
+        if (project?.backendPath) {
+          await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
+        }
+      } catch (gitError) {
+        console.error('Git automation failed:', gitError.message);
+      }
+
+return {
       task: updatedTask,
       status: finalStatus,
       history: historyRecord,
