@@ -1,9 +1,10 @@
+// taskExecutionService.js
+
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
-const Logger = require('../utils/logger');
-
+const { Logger } = require('../utils/logger');
 const prisma = new PrismaClient();
 
 class TaskExecutionService {
@@ -410,3 +411,4 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
 }
 
 module.exports = TaskExecutionService;
+

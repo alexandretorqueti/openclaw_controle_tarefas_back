@@ -1,3 +1,5 @@
+// logger.js (Arquitetura Refatorada - Worker Leve)
+
 const prisma = require('../services/prismaService');
 
 /**
@@ -325,3 +327,4 @@ module.exports = {
   LOG_LEVELS,
   ERROR_TYPES
 };
+
