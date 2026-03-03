@@ -194,7 +194,15 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
    * @param {number} timeoutMs - Timeout em milissegundos (padrão: 300000)
    * @returns {Promise<Object>} Resultado da execução
    */
-  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 300000) {
+  static async executeOpenClaw(
+      taskId, 
+      promptContent, 
+      model, 
+      tasksDir, 
+      terminalLogFile, 
+      projectPath
+      , timeoutMs = 300000
+    ) {
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
@@ -206,7 +214,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       if (model) {
         env.OPENCLAW_MODEL = model;
       }
-      
+      const executionDirectory = projectPath || tasksDir; // Se o projeto tiver uma pasta base, use-a como diretório de execução. Caso contrário, use o diretório de tarefas.
       const child = spawn("openclaw", childArgs, {
         cwd: executionDirectory, // <-- MUDANÇA CHAVE: O agente "nasce" e indexa apenas a raiz deste projeto
         env,
@@ -445,7 +453,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
         TASKS_DIR,
         files.terminalLogFile,
         project?.pastaBase || null,
-            TASK_TIMEOUT_MS
+        TASK_TIMEOUT_MS
       );
 
       // NOVO: Sistema de Auto-cura para arquivos de lock zumbis
