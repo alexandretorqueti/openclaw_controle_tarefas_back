@@ -194,7 +194,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
    * @param {number} timeoutMs - Timeout em milissegundos (padrão: 300000)
    * @returns {Promise<Object>} Resultado da execução
    */
-  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, timeoutMs = 300000) {
+  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
@@ -208,7 +208,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       }
 
       const child = spawn('openclaw', childArgs, {
-        cwd: tasksDir,
+        cwd: executionDirectory, // <-- MUDANÇA CHAVE: O agente "nasce" e indexa apenas a raiz deste projeto
         env,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe']
@@ -216,7 +216,42 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
 
       let stdout = '';
       let stderr = '';
+// Criamos um controle para não tentar matar o mesmo PID 50 vezes no mesmo segundo
+      const zumbisAssassinados = new Set();
 
+      // Função interna de interceptação em tempo real
+      const cacaZumbisEmTempoReal = (textoDoTerminal) => {
+        if (!textoDoTerminal.includes('session file locked')) return;
+
+        const regex = /pid=(\d+)\s+(.+\.lock)/g;
+        let match;
+
+        while ((match = regex.exec(textoDoTerminal)) !== null) {
+          const pid = parseInt(match[1], 10);
+          const lockFilePath = match[2];
+
+          if (!zumbisAssassinados.has(pid)) {
+            zumbisAssassinados.add(pid);
+            console.log(`[Auto-Cura Real-Time] Zumbi detectado (PID: ${pid}). Agindo instantaneamente...`);
+
+            // 1. Mata o processo antigo
+            try {
+              process.kill(pid, 'SIGKILL');
+              console.log(`[Auto-Cura] Tiro de misericórdia no PID ${pid} executado.`);
+            } catch (err) {
+              if (err.code !== 'ESRCH') console.error(`Erro ao matar PID ${pid}:`, err.message);
+            }
+
+            // 2. Apaga o arquivo físico sem bloquear o fluxo (de forma assíncrona limpa)
+            const fs = require('fs').promises;
+            fs.unlink(lockFilePath)
+              .then(() => console.log(`[Auto-Cura] Arquivo ${lockFilePath} evaporado. O OpenClaw deve destravar nos próximos segundos!`))
+              .catch(err => {
+                if (err.code !== 'ENOENT') console.error(`Erro ao apagar arquivo:`, err.message);
+              });
+          }
+        }
+      };
       // Timeout
       const timeoutTimer = setTimeout(() => {
         child.kill('SIGKILL');
@@ -232,18 +267,21 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
         });
       }, timeoutMs);
 
+      
       // Captura stdout
       child.stdout.on('data', (data) => {
         const text = data.toString();
         stdout += text;
         fs.appendFile(terminalLogFile, text).catch(() => {});
+        cacaZumbisEmTempoReal(text); // <-- Injetamos o interceptador aqui
       });
 
-      // Captura stderr
+      // Captura stderr (que é por onde os erros diagnósticos geralmente saem)
       child.stderr.on('data', (data) => {
         const text = data.toString();
         stderr += text;
         fs.appendFile(terminalLogFile, text).catch(() => {});
+        cacaZumbisEmTempoReal(text); // <-- Injetamos o interceptador aqui também
       });
 
       child.on('error', (error) => {
@@ -394,13 +432,20 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       files = await this.prepareTaskFiles(task, TASKS_DIR);
 
       // 3. Executa OpenClaw com isolamento por tarefa
+            // Busca o projeto para obter a pasta base
+      const project = await prisma.project.findUnique({
+        where: { id: task.projectId },
+        select: { pastaBase: true }
+      });
+
       let executionResult = await this.executeOpenClaw(
         task.id, // Passando o ID da tarefa para isolamento de sessão
         files.promptContent,
         task.model,
         TASKS_DIR,
         files.terminalLogFile,
-        TASK_TIMEOUT_MS
+        project?.pastaBase || null,
+            TASK_TIMEOUT_MS
       );
 
       // NOVO: Sistema de Auto-cura para arquivos de lock zumbis
@@ -423,9 +468,9 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
             task.model,
             TASKS_DIR,
             files.terminalLogFile,
-            TASK_TIMEOUT_MS
-          );
-        }
+            project?.pastaBase || null,
+        project?.pastaBase || null,
+        project?.pastaBase || null,
       }
 
       // 4. Verifica contrato

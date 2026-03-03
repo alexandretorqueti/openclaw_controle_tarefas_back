@@ -18,7 +18,8 @@ const projectSchema = z.object({
   frontendPort: z.number().int().positive().max(65535).optional().nullable(),
   backendPath: z.string().optional().nullable(),
   backendPort: z.number().int().positive().max(65535).optional().nullable(),
-  repositoryUrl: z.string().url('Invalid URL format').optional().nullable()
+  repositoryUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
+  pastaBase: z.string().optional().nullable()
 });
 
 const updateProjectSchema = z.object({
@@ -38,7 +39,8 @@ const updateProjectSchema = z.object({
   frontendPort: z.number().int().positive().max(65535).optional().nullable(),
   backendPath: z.string().optional().nullable(),
   backendPort: z.number().int().positive().max(65535).optional().nullable(),
-  repositoryUrl: z.string().url('Invalid URL format').optional().nullable()
+  repositoryUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
+  pastaBase: z.string().optional().nullable()
 });
 
 const validateProject = (data) => {

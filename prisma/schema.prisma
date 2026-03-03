@@ -49,6 +49,7 @@ model Project {
   backendPath    String?  // Caminho absoluto do repositório backend
   backendPort    Int?     // Porta do backend (ex: 3001, 8081)
   repositoryUrl  String?  // URL do repositório principal (GitHub, GitLab, etc.)
+  pastaBase      String?  // Campo pasta base (não obrigatório)
 
   @@map("projects")
 }

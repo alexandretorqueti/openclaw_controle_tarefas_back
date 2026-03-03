@@ -8,7 +8,7 @@ async function main() {
 
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
-  const TaskExecutionService = require('./src/services/taskExecutionService');
+  const { prepareTaskPrompt } = require('./aux/taskUtils'); // Importe a função prepareTaskPrompt do arquivo taskUtils.js
 
   const fileExists = async (pathToCheck) => {
     try {
