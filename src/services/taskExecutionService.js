@@ -184,11 +184,21 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
    * @param {number} timeoutMs - Timeout em milissegundos
    * @returns {Promise<Object>} Resultado da execução
    */
-  static async executeOpenClaw(promptContent, model, tasksDir, terminalLogFile, timeoutMs = 300000) {
+  /**
+   * Executa o OpenClaw com isolamento por tarefa
+   * @param {string} taskId - ID da tarefa (usado como session-id para isolamento)
+   * @param {string} promptContent - Conteúdo do prompt
+   * @param {string} model - Modelo de IA a ser utilizado
+   * @param {string} tasksDir - Diretório de trabalho
+   * @param {string} terminalLogFile - Arquivo de log do terminal
+   * @param {number} timeoutMs - Timeout em milissegundos (padrão: 300000)
+   * @returns {Promise<Object>} Resultado da execução
+   */
+  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
-        '--session-id', 'task-execution',
+        '--session-id', taskId, // Usando o ID da tarefa como session-id para isolamento
         '-m', promptContent
       ];
 
@@ -258,6 +268,39 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
         });
       });
     });
+  }
+  /**
+   * Analisa a saída de erro em busca de arquivos de lock travados e os deleta.
+   * @param {string} errorOutput - O texto de erro retornado pelo OpenClaw
+   * @returns {Promise<boolean>} Retorna true se encontrou e limpou algum lock
+   */
+  static async resolveZombieLocks(errorOutput) {
+    if (!errorOutput || !errorOutput.includes('session file locked')) {
+      return false; // Não é um erro de lock
+    }
+
+    // Regex para extrair o caminho do arquivo .lock da mensagem de erro
+    // Exemplo de match: "pid=1501 /home/user/.openclaw/.../f4dae7e1.jsonl.lock"
+    const lockFileRegex = /pid=d+\s+(.+.lock)/g;
+    let match;
+    let locksCleared = false;
+
+    // Procura por todos os arquivos de lock mencionados no erro
+    while ((match = lockFileRegex.exec(errorOutput)) !== null) {
+      const lockFilePath = match[1];
+      try {
+        await fs.unlink(lockFilePath);
+        console.log(`[Auto-Cura] Arquivo zumbi removido com sucesso: ${lockFilePath}`);
+        locksCleared = true;
+      } catch (err) {
+        // Ignora se o arquivo já não existir
+        if (err.code !== 'ENOENT') {
+          console.error(`[Auto-Cura] Falha ao remover arquivo de lock: ${lockFilePath}`, err);
+        }
+      }
+    }
+
+    return locksCleared;
   }
 
   /**
@@ -350,14 +393,40 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       // 2. Prepara arquivos
       files = await this.prepareTaskFiles(task, TASKS_DIR);
 
-      // 3. Executa OpenClaw
-      const executionResult = await this.executeOpenClaw(
+      // 3. Executa OpenClaw com isolamento por tarefa
+      let executionResult = await this.executeOpenClaw(
+        task.id, // Passando o ID da tarefa para isolamento de sessão
         files.promptContent,
         task.model,
         TASKS_DIR,
         files.terminalLogFile,
         TASK_TIMEOUT_MS
       );
+
+      // NOVO: Sistema de Auto-cura para arquivos de lock zumbis
+      if (!executionResult.success && executionResult.errorOutput) {
+        const hasClearedLocks = await this.resolveZombieLocks(executionResult.errorOutput);
+        
+        // Se limpou algum lock, significa que o erro foi isso. Vamos tentar rodar só mais uma vez!
+        if (hasClearedLocks) {
+          await Logger.createLog({
+            level: 'WARN',
+            endpoint: 'TaskExecutionService',
+            method: 'executeTask',
+            message: `Retentando tarefa ${task.id} após limpar arquivos de lock zumbis.`
+          });
+
+          // Retentativa com isolamento garantido
+          executionResult = await this.executeOpenClaw(
+            task.id,
+            files.promptContent,
+            task.model,
+            TASKS_DIR,
+            files.terminalLogFile,
+            TASK_TIMEOUT_MS
+          );
+        }
+      }
 
       // 4. Verifica contrato
       const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile);
