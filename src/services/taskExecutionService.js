@@ -206,8 +206,8 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       if (model) {
         env.OPENCLAW_MODEL = model;
       }
-
-      const child = spawn('openclaw', childArgs, {
+      
+      const child = spawn("openclaw", childArgs, {
         cwd: executionDirectory, // <-- MUDANÇA CHAVE: O agente "nasce" e indexa apenas a raiz deste projeto
         env,
         shell: false,
@@ -469,8 +469,9 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
             TASKS_DIR,
             files.terminalLogFile,
             project?.pastaBase || null,
-        project?.pastaBase || null,
-        project?.pastaBase || null,
+            TASK_TIMEOUT_MS
+          );
+        }
       }
 
       // 4. Verifica contrato

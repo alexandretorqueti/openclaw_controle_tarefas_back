@@ -9,7 +9,7 @@ async function main() {
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
   const { prepareTaskPrompt } = require('./aux/taskUtils'); // Importe a função prepareTaskPrompt do arquivo taskUtils.js
-
+  const TaskExecutionService = require('./src/services/taskExecutionService'); // Importe o serviço de execução de tarefas
   const fileExists = async (pathToCheck) => {
     try {
       await fs.access(pathToCheck);
