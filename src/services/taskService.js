@@ -34,6 +34,11 @@ class TaskService {
       const status = await this.execGit(['status', '--porcelain'], projectPath);
       if (!status.trim()) return false; // Sem alterações
 
+      // Criar branch com o Id da tarefa e primeiras letras da tarefa, trocando espaços por hífens
+      const branchName = `${taskId}-${taskTitle.toLowerCase().replace(/\s+/g, '-').substring(0, 50)}`;
+      await this.execGit(['checkout', '-b', branchName], projectPath);
+      
+
       // Fazer commit
       await this.execGit(['add', '.'], projectPath);
       const commitMessage = `${taskId}: ${taskTitle}`;
