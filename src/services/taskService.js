@@ -8,16 +8,16 @@ const prisma = require('./prismaService');
 
 class TaskService {
   // Função auxiliar para executar git
-  execGit(args, cwd) {
+  exec(command, args, cwd) {
     return new Promise((resolve, reject) => {
-      const child = spawn('git', args, { cwd, stdio: 'pipe' });
+      const child = spawn(command, args, { cwd, stdio: 'pipe' });
       let stdout = '';
       let stderr = '';
       child.stdout.on('data', (data) => stdout += data.toString());
       child.stderr.on('data', (data) => stderr += data.toString());
       child.on('close', (code) => {
         if (code === 0) resolve(stdout);
-        else reject(new Error(`git ${args[0]} failed: ${stderr}`));
+        else reject(new Error(`${command} ${args[0]} failed: ${stderr}`));
       });
     });
   }
@@ -31,24 +31,38 @@ class TaskService {
       }
 
       // Verificar alterações
-      const status = await this.execGit(['status', '--porcelain'], projectPath);
+      const status = await this.exec('git', ['status', '--porcelain'], projectPath);
       if (!status.trim()) return false; // Sem alterações
 
       // Criar branch com o Id da tarefa e primeiras letras da tarefa, trocando espaços por hífens
       const branchName = `${taskId}-${taskTitle.toLowerCase().replace(/\s+/g, '-').substring(0, 50)}`;
-      await this.execGit(['checkout', '-b', branchName], projectPath);
-      
+      await this.exec('git', ['checkout', '-b', branchName], projectPath);
+
 
       // Fazer commit
-      await this.execGit(['add', '.'], projectPath);
+      /*
+      await this.exec('git', ['add', '.'], projectPath);
       const commitMessage = `${taskId}: ${taskTitle}`;
-      await this.execGit(['commit', '-m', commitMessage], projectPath);
+      await this.exec('git', ['commit', '-m', commitMessage], projectPath);
+      */
       return true;
     } catch (error) {
       console.error(`Git commit failed for ${projectPath}:`, error.message);
       return false;
     }
   }
+
+  // Faz build das aplicações e confere se há erros
+  async buildProject(projectPath) {
+    try {
+      // Build da branch atual
+      const buildResult = await this.exec('npm', (['run', 'build'], projectPath) );
+      return { success: true, output: buildResult };
+    } catch (error) {
+      return { success: false, output: error.message };
+    }
+  }
+
   // Validate referenced IDs exist before creating a task
   async validateReferences(data) {
     const errors = [];
