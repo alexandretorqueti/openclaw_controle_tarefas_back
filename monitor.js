@@ -4,7 +4,7 @@ async function main() {
   const fs = require('fs').promises;
   const path = require('path');
   
-  axios.defaults.timeout = 10000;
+  axios.defaults.timeout = 60000;
 
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');

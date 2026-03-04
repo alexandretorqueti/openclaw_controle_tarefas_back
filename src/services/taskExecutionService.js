@@ -207,7 +207,8 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       const childArgs = [
         'agent',
         '--session-id', taskId, // Usando o ID da tarefa como session-id para isolamento
-        '-m', promptContent
+        '-m', promptContent,
+        '--model', model || 'deepseek/deepseek-chat',
       ];
 
       const env = { ...process.env };
