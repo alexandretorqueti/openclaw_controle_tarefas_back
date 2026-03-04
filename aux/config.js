@@ -10,13 +10,13 @@ const TASKS_DIR = path.join(OPENCLAW_DIR, 'pending-tasks');
 const PROCESSED_DIR = path.join(TASKS_DIR, 'processed');
 const ERROR_DIR = path.join(TASKS_DIR, 'error');
 
-const API_URL = process.env.API_URL || 'http://127.0.0.1:3001';
+const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
 const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527f2';
 
 const MAX_LOG_LINES = 1000;
-const MINUTOS = 30; // Defina o número de minutos para o timeout
+const MINUTOS = 60; // Defina o número de minutos para o timeout
 const TASK_TIMEOUT_MS = MINUTOS * 60 * 1000; // 
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 const LOCK_FILE = '/home/alexandrebragatorqueti/tmp/.monitor.lock';
