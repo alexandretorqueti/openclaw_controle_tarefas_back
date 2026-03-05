@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // monitor.js (Arquitetura Refatorada - Worker Leve)
 async function main() {
   const axios = require('axios');
@@ -151,7 +152,7 @@ async function main() {
         await log(`👤 Reatribuindo tarefa ${task.id} para o usuário alexandre.`);
         await axios.put(`${API_URL}/api/tasks/${task.id}`, { assignedToId: devId });
       } else {
-        await log(`⚠️ Usuário 'alexandre' não encontrado na API.`);
+        await log(`⚠️ Usuário 'alexandre' não encontrado na API`);
       }
     } catch (assignError) {
       await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
@@ -189,7 +190,9 @@ async function main() {
 
     try {
       // 2. Busca nova tarefa
-      const response = await axios.get(`${API_URL}/api/tasks/next/Jarbas`);
+      const address = `${API_URL}/api/tasks/next/Jarbas`;
+      log(`🔍 Consultando próxima tarefa na fila: ${address}`);
+      const response = await axios.get(address);
       
       if (!response.data.success || !response.data.task) {
         console.error("😴 Nenhuma tarefa nova na fila.");
@@ -210,7 +213,7 @@ async function main() {
         TASK_TIMEOUT_MS
       };
 
-      await log(`🤖 Executando tarefa via TaskExecutionService...`);
+      await log(`🤖 Executando tarefa via TaskExecutionService passando ${JSON.stringify(task)}, ${JSON.stringify(config)}`);
       const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
 
       // 4. Processa resultado

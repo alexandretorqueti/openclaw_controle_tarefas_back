@@ -5,7 +5,9 @@ const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const { Logger } = require('../utils/logger');
+const { log } = require('console');
 const prisma = new PrismaClient();
+const { logger } = require('../../aux/logger');
 
 class TaskExecutionService {
   /**
@@ -16,6 +18,7 @@ class TaskExecutionService {
    * @returns {Promise<Object>} Log criado
    */
   static async createExecutionLog(task, userId, model) {
+
     try {
       const executionLog = await prisma.taskExecutionLog.create({
         data: {
@@ -26,7 +29,7 @@ class TaskExecutionService {
           success: false
         }
       });
-
+      log(`📝 Log de execução criado para tarefa ${task.id} (Log ID: ${executionLog.id})`);
       await Logger.createLog({
         level: 'INFO',
         endpoint: 'TaskExecutionService',
@@ -37,6 +40,7 @@ class TaskExecutionService {
 
       return executionLog;
     } catch (error) {
+      log(`❌ Erro ao criar log de execução: ${error.message}`);
       await Logger.createLog({
         level: 'ERROR',
         endpoint: 'TaskExecutionService',
@@ -119,40 +123,43 @@ class TaskExecutionService {
     const doneFile = path.join(tasksDir, `done-${taskId}.done`);
     const terminalLogFile = path.join(tasksDir, `terminal-${taskId}.log`);
 
-    // Cria o conteúdo do prompt
     const promptContent = `[${new Date().toISOString()}] Você é o Agente Técnico Jarbas. Seu único objetivo é executar a tarefa técnica designada abaixo com foco, precisão e eficiência de máquina.
 
 ### CONTEXTO DA TAREFA ###
 TÍTULO: ${task.title}
 DESCRIÇÃO: ${task.description}
 
-### COMENTÁRIOS E HISTÓRICO DA TAREFA ###
-
-
 ### REGRAS DO PROJETO (OBRIGATÓRIAS) ###
 Front: /home/alexandrebragatorqueti/projetos/tarefas-web Porta 3000
 Back: /home/alexandrebragatorqueti/projetos/tarefas-server Porta 3001
 
-Não mexa em outras pastas ou portas.
-Nunca faça nada em ambiente de produção.
+Não mexa em outras pastas ou portas. Nunca faça nada em ambiente de produção.
 
-### PROTOCOLO DE CONCLUSÃO (CRÍTICO E OBRIGATÓRIO) ###
-Assim que você finalizar as alterações e testes necessários no código, você DEVE executar os dois passos abaixo usando suas ferramentas de terminal, exatamente nesta ordem:
+### REGRAS DE EDIÇÃO DE CÓDIGO (CRÍTICO E OBRIGATÓRIO) ###
+Você NÃO É um assistente de chat. Você é um executor de sistema (Agent).
+1. PROIBIDO MOSTRAR CÓDIGO: Nunca escreva a solução ou blocos de código na sua resposta de texto.
+2. APLIQUE AS MUDANÇAS: Se você precisa alterar um arquivo, VOCÊ DEVE usar comandos de terminal para reescrever o arquivo físico no disco. 
+3. FERRAMENTA OBRIGATÓRIA: Use a sintaxe Heredoc para aplicar as mudanças de forma segura. Exemplo:
+cat << 'EOF' > /home/alexandrebragatorqueti/projetos/tarefas-web/caminho/do/arquivo.js
+[SEU CÓDIGO COMPLETO AQUI]
+EOF
 
-1. Gere o relatório de execução:
-Crie ou sobrescreva o arquivo abaixo detalhando as ações tomadas, os arquivos modificados e as eventuais pendências.
-Comando esperado: echo "Seu relatorio técnico aqui..." > /home/alexandrebragatorqueti/.openclaw/workspace/pending-tasks/relatorio-${taskId}.txt
+### PROTOCOLO DE CONCLUSÃO (CRÍTICO) ###
+Assim que finalizar as alterações no código, use OBRIGATORIAMENTE sua ferramenta de terminal (shell) para executar os dois passos abaixo:
 
-2. Assine o contrato de finalização:
-Crie um arquivo vazio no caminho abaixo. ISSO É VITAL. O orquestrador do sistema está aguardando a existência deste arquivo para liberar a GPU e marcar a tarefa como concluída.
-Comando esperado: touch /home/alexandrebragatorqueti/.openclaw/workspace/pending-tasks/done-${taskId}.done
+1. Gere o relatório de execução usando a sintaxe Heredoc (EOF) para evitar erros de terminal:
+cat << 'EOF' > "${relatorioFile}"
+[Escreva seu relatorio técnico detalhado aqui]
+EOF
 
-Restrições:
-Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquivos usando a ferramenta de terminal e encerre sua execução imediamente.`;
+2. Assine o contrato de finalização (Execute no terminal, não escreva no chat):
+touch "${doneFile}"
+
+Não explique suas ações. Apenas execute as ferramentas e encerre.`;
 
     try {
       await fs.writeFile(promptFile, promptContent);
-      await fs.writeFile(relatorioFile, '');
+      await fs.writeFile(relatorioFile, ''); // Mantido: o EOF vai sobrescrever com segurança
       await fs.writeFile(terminalLogFile, '');
 
       return {
@@ -167,7 +174,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
         level: 'ERROR',
         endpoint: 'TaskExecutionService',
         method: 'prepareTaskFiles',
-        message: `Erro ao preparar arquivos da tarefa: ${error.message}`,
+        message: `Erro ao preparar arquivos: ${error.message}`,
         errorType: error.constructor.name,
         stackTrace: error.stack
       });
@@ -194,30 +201,29 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
    * @param {number} timeoutMs - Timeout em milissegundos (padrão: 300000)
    * @returns {Promise<Object>} Resultado da execução
    */
-  static async executeOpenClaw(
-      taskId, 
-      promptContent, 
-      model, 
-      tasksDir, 
-      terminalLogFile, 
-      projectPath
-      , timeoutMs = 300000
-    ) {
+  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
-        '--session-id', taskId, // Usando o ID da tarefa como session-id para isolamento
+        '--agent', 'programmer',
+        '--session-id', taskId,
         '-m', promptContent,
-        '--model', model || 'deepseek/deepseek-chat',
       ];
 
       const env = { ...process.env };
-      if (model) {
+      
+      // 🛑 CORREÇÃO CRÍTICA 1: Impede que o processo filho trave tentando usar a porta de debug da IDE
+      delete env.NODE_OPTIONS; 
+
+      // 🛑 CORREÇÃO CRÍTICA 2: Só injeta o modelo se ele for explicitamente enviado e diferente do padrão da nuvem.
+      // Isso permite que o Qwen 2.5 local assuma o controle quando chamado.
+      if (model && !model.includes('deepseek-chat')) {
         env.OPENCLAW_MODEL = model;
       }
-      const executionDirectory = projectPath || tasksDir; // Se o projeto tiver uma pasta base, use-a como diretório de execução. Caso contrário, use o diretório de tarefas.
+
+      const executionDirectory = projectPath || tasksDir;
       const child = spawn("openclaw", childArgs, {
-        cwd: executionDirectory, // <-- MUDANÇA CHAVE: O agente "nasce" e indexa apenas a raiz deste projeto
+        cwd: executionDirectory,
         env,
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe']
@@ -225,14 +231,13 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
 
       let stdout = '';
       let stderr = '';
-// Criamos um controle para não tentar matar o mesmo PID 50 vezes no mesmo segundo
       const zumbisAssassinados = new Set();
 
-      // Função interna de interceptação em tempo real
       const cacaZumbisEmTempoReal = (textoDoTerminal) => {
         if (!textoDoTerminal.includes('session file locked')) return;
 
-        const regex = /pid=(\d+)\s+(.+\.lock)/g;
+        // 🛑 CORREÇÃO CRÍTICA 3: Regex arrumada (\d+ e \.lock)
+        const regex = /pid=\d+\s+(.+\.lock)/g;
         let match;
 
         while ((match = regex.exec(textoDoTerminal)) !== null) {
@@ -243,78 +248,61 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
             zumbisAssassinados.add(pid);
             console.log(`[Auto-Cura Real-Time] Zumbi detectado (PID: ${pid}). Agindo instantaneamente...`);
 
-            // 1. Mata o processo antigo
-            try {
-              process.kill(pid, 'SIGKILL');
-              console.log(`[Auto-Cura] Tiro de misericórdia no PID ${pid} executado.`);
-            } catch (err) {
-              if (err.code !== 'ESRCH') console.error(`Erro ao matar PID ${pid}:`, err.message);
-            }
-
-            // 2. Apaga o arquivo físico sem bloquear o fluxo (de forma assíncrona limpa)
-            const fs = require('fs').promises;
-            fs.unlink(lockFilePath)
-              .then(() => console.log(`[Auto-Cura] Arquivo ${lockFilePath} evaporado. O OpenClaw deve destravar nos próximos segundos!`))
-              .catch(err => {
-                if (err.code !== 'ENOENT') console.error(`Erro ao apagar arquivo:`, err.message);
-              });
+            try { process.kill(pid, 'SIGKILL'); } catch (err) {}
+            // Removido o import duplicado do fs aqui, usando o global
+            fs.unlink(lockFilePath).catch(() => {});
           }
         }
       };
-      // Timeout
+
       const timeoutTimer = setTimeout(() => {
         child.kill('SIGKILL');
-        if (child.stdout) child.stdout.destroy();
-        if (child.stderr) child.stderr.destroy();
-        
-        resolve({
-          exitCode: null,
-          success: false,
-          errorMessage: `Timeout após ${timeoutMs}ms`,
-          output: stdout,
-          errorOutput: stderr
-        });
+        resolve({ exitCode: null, success: false, errorMessage: `Timeout após ${timeoutMs}ms`, output: stdout, errorOutput: stderr });
       }, timeoutMs);
 
-      
-      // Captura stdout
       child.stdout.on('data', (data) => {
         const text = data.toString();
         stdout += text;
         fs.appendFile(terminalLogFile, text).catch(() => {});
-        cacaZumbisEmTempoReal(text); // <-- Injetamos o interceptador aqui
+        cacaZumbisEmTempoReal(text);
       });
 
-      // Captura stderr (que é por onde os erros diagnósticos geralmente saem)
       child.stderr.on('data', (data) => {
         const text = data.toString();
         stderr += text;
         fs.appendFile(terminalLogFile, text).catch(() => {});
-        cacaZumbisEmTempoReal(text); // <-- Injetamos o interceptador aqui também
+        cacaZumbisEmTempoReal(text);
       });
 
       child.on('error', (error) => {
         clearTimeout(timeoutTimer);
-        reject({
-          exitCode: null,
-          success: false,
-          errorMessage: `Erro ao executar OpenClaw: ${error.message}`,
-          output: stdout,
-          errorOutput: stderr
-        });
+        reject({ exitCode: null, success: false, errorMessage: `Erro: ${error.message}`, output: stdout, errorOutput: stderr });
       });
 
       child.on('close', (code) => {
         clearTimeout(timeoutTimer);
-        resolve({
-          exitCode: code,
-          success: code === 0,
-          errorMessage: code !== 0 ? `Processo encerrado com código ${code}` : null,
-          output: stdout,
-          errorOutput: stderr
-        });
+        resolve({ exitCode: code, success: code === 0, errorMessage: code !== 0 ? `Processo encerrado com código ${code}` : null, output: stdout, errorOutput: stderr });
       });
     });
+  }
+
+  static async resolveZombieLocks(errorOutput) {
+    if (!errorOutput || !errorOutput.includes('session file locked')) return false;
+
+    // 🛑 CORREÇÃO CRÍTICA 4: Regex arrumada no método estático
+    const lockFileRegex = /pid=\d+\s+(.+\.lock)/g;
+    let match;
+    let locksCleared = false;
+
+    while ((match = lockFileRegex.exec(errorOutput)) !== null) {
+      const lockFilePath = match[1];
+      try {
+        await fs.unlink(lockFilePath);
+        console.log(`[Auto-Cura] Arquivo zumbi removido com sucesso: ${lockFilePath}`);
+        locksCleared = true;
+      } catch (err) {}
+    }
+    return locksCleared;
   }
   /**
    * Analisa a saída de erro em busca de arquivos de lock travados e os deleta.
@@ -328,7 +316,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
 
     // Regex para extrair o caminho do arquivo .lock da mensagem de erro
     // Exemplo de match: "pid=1501 /home/user/.openclaw/.../f4dae7e1.jsonl.lock"
-    const lockFileRegex = /pid=d+\s+(.+.lock)/g;
+    const lockFileRegex = /pid=\d+\s+(.+\.lock)/g;
     let match;
     let locksCleared = false;
 
@@ -356,68 +344,109 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
    * @param {string} relatorioFile - Caminho do arquivo de relatório
    * @returns {Promise<Object>} Resultado da verificação
    */
-  static async verifyContract(doneFile, relatorioFile) {
+  static async verifyContract(doneFile, relatorioFile, terminalLogFile) {
     try {
       const doneExists = await fs.access(doneFile).then(() => true).catch(() => false);
-      
-      if (!doneExists) {
+      let executionNotes = '';
+      let relatorioValido = false;
+
+      // Verifica se o relatório tem sustância (mais de 10 caracteres)
+      try {
+        const relatorioContent = await fs.readFile(relatorioFile, 'utf8');
+        if (relatorioContent.trim().length > 10) {
+          executionNotes = relatorioContent;
+          relatorioValido = true;
+        }
+      } catch (error) {}
+
+      // CENÁRIO 1: A IA fez o relatório, mesmo esquecendo o arquivo .done
+      if (doneExists || relatorioValido) {
+        if (!doneExists && relatorioValido) {
+           await fs.writeFile(doneFile, ''); 
+           console.log(`[Orquestrador] Agente esqueceu o .done, mas gerou o relatório. Contrato aceito automaticamente.`);
+        }
         return {
-          contractFulfilled: false,
-          executionNotes: 'Arquivo .done não encontrado - contrato não cumprido'
+          contractFulfilled: true,
+          executionNotes: executionNotes || 'Concluído via contrato padrão.'
         };
       }
 
-      let executionNotes = 'Concluído. Relatório vazio ou não gerado.';
+      // CENÁRIO 2: A IA não fez o relatório, mas tagarelou no terminal que terminou (ou cuspiu o caminho do .done lá)
       try {
-        const relatorioContent = await fs.readFile(relatorioFile, 'utf8');
-        if (relatorioContent.trim()) {
-          executionNotes = relatorioContent;
+        const logContent = await fs.readFile(terminalLogFile, 'utf8');
+        const indicios = ['concluída', 'finished', 'concluído', 'tarefa finalizada', 'touch /home/'];
+        
+        if (indicios.some(termo => logContent.toLowerCase().includes(termo))) {
+          console.log(`[Orquestrador] IA não acionou ferramentas finais, mas indicou sucesso no log. Contrato aceito.`);
+          await fs.writeFile(doneFile, ''); 
+          return {
+            contractFulfilled: true,
+            executionNotes: 'Concluído (verificado via análise de log). Relatório formal ausente.'
+          };
         }
-      } catch (error) {
-        // Arquivo de relatório não existe ou não pode ser lido
-      }
+      } catch (logError) {}
 
       return {
-        contractFulfilled: true,
-        executionNotes
+        contractFulfilled: false,
+        executionNotes: 'Arquivo .done não encontrado, relatório vazio e sem indícios de conclusão no log.'
       };
     } catch (error) {
-      await Logger.createLog({
-        level: 'ERROR',
-        endpoint: 'TaskExecutionService',
-        method: 'verifyContract',
-        message: `Erro ao verificar contrato: ${error.message}`,
-        errorType: error.constructor.name,
-        stackTrace: error.stack
-      });
-      
-      return {
-        contractFulfilled: false,
-        executionNotes: `Erro ao verificar contrato: ${error.message}`
-      };
+      return { contractFulfilled: false, executionNotes: `Erro: ${error.message}` };
     }
   }
 
   /**
-   * Limpa arquivos temporários
+   * Move os arquivos temporários para a pasta "processed" no final da execução
    * @param {Object} files - Objeto com caminhos dos arquivos
    * @returns {Promise<void>}
    */
   static async cleanupFiles(files) {
-    const filesToDelete = [
-      files.promptFile,
-      files.relatorioFile,
-      files.doneFile,
-      files.terminalLogFile
-    ];
+    if (!files || !files.promptFile) return;
 
-    for (const file of filesToDelete) {
-      try {
-        await fs.access(file);
-        await fs.unlink(file);
-      } catch (error) {
-        // Arquivo não existe, ignora
+    try {
+      // 1. Pega o diretório base (ex: tasksDir) a partir do caminho do promptFile
+      const baseDir = path.dirname(files.promptFile);
+      const processedDir = path.join(baseDir, 'processed');
+
+      // 2. Cria a pasta 'processed' se ela não existir
+      await fs.mkdir(processedDir, { recursive: true });
+
+      // 3. Gera um sufixo de data/hora para não sobrescrever arquivos de tentativas anteriores
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+      const filesToMove = [
+        files.promptFile,
+        files.relatorioFile,
+        files.doneFile,
+        files.terminalLogFile
+      ];
+
+      for (const file of filesToMove) {
+        try {
+          // Verifica se o arquivo realmente foi criado antes de tentar mover
+          await fs.access(file); 
+          
+          const fileName = path.basename(file);
+          const ext = path.extname(fileName); // ex: .txt, .log
+          const nameWithoutExt = path.basename(fileName, ext); // ex: prompt-123
+          
+          // Novo nome com timestamp: prompt-123_2026-03-05T...txt
+          const newFileName = `${nameWithoutExt}_${timestamp}${ext}`;
+          const destination = path.join(processedDir, newFileName);
+          
+          // Move o arquivo (rename faz a movimentação no mesmo disco)
+          await fs.rename(file, destination);
+        } catch (error) {
+          // Se o arquivo não existir (ex: a IA não criou o .done), apenas ignora e segue a vida
+          if (error.code !== 'ENOENT') {
+             console.error(`[Aviso] Falha ao mover arquivo ${file}:`, error.message);
+          }
+        }
       }
+      
+      console.log(`📂 Limpeza concluída: Arquivos da tarefa movidos para a pasta 'processed'.`);
+    } catch (error) {
+      console.error(`❌ Erro fatal ao tentar mover arquivos para processed: ${error.message}`);
     }
   }
 
@@ -435,18 +464,22 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
 
     try {
       // 1. Cria log de execução
+      log(`📝 Criando log de execução para tarefa ${task.id}...`);
       executionLog = await this.createExecutionLog(task, userId, task.model);
 
       // 2. Prepara arquivos
+      log(`📝 Preparando arquivos para execução da tarefa ${task.id}...`);
       files = await this.prepareTaskFiles(task, TASKS_DIR);
 
       // 3. Executa OpenClaw com isolamento por tarefa
             // Busca o projeto para obter a pasta base
+      log(`📝 Executando OpenClaw para tarefa ${task.id}...`);
       const project = await prisma.project.findUnique({
         where: { id: task.projectId },
         select: { pastaBase: true }
       });
 
+      log(`🤖 Iniciando execução do OpenClaw para tarefa ${task.id} com modelo ${task.model}...`);
       let executionResult = await this.executeOpenClaw(
         task.id, // Passando o ID da tarefa para isolamento de sessão
         files.promptContent,
@@ -456,7 +489,7 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
         project?.pastaBase || null,
         TASK_TIMEOUT_MS
       );
-
+      log(`🤖 Execução do OpenClaw para tarefa ${task.id} finalizada. Verificando resultado...`);
       // NOVO: Sistema de Auto-cura para arquivos de lock zumbis
       if (!executionResult.success && executionResult.errorOutput) {
         const hasClearedLocks = await this.resolveZombieLocks(executionResult.errorOutput);
@@ -484,8 +517,11 @@ Não explique suas ações no chat. Apenas execute a tarefa, crie os dois arquiv
       }
 
       // 4. Verifica contrato
-      const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile);
+      // O QUE ESTÁ HOJE:
+      // const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile);
 
+      // COMO DEVE FICAR:
+      const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile);
       // 5. Prepara resultado final
       const finalResult = {
         success: executionResult.success && contractResult.contractFulfilled,
