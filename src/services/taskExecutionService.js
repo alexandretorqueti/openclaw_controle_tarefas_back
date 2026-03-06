@@ -208,6 +208,7 @@ Não explique suas ações. Apenas execute as ferramentas e encerre.`;
         '--agent', 'programmer',
         '--session-id', taskId,
         '-m', promptContent,
+        '--timeout', Math.floor(timeoutMs / 1000).toString(), // Converter ms para segundos
       ];
 
       const env = { ...process.env };
