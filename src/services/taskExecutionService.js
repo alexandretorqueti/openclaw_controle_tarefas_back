@@ -81,6 +81,10 @@ REGRAS: ${projetoRegras}
 Emita UM JSON estrito em uma nova linha com o formato:
 {"name": "nome_da_ferramenta", "arguments": {"parametro": "valor"}}
 
+### DICAS DE SOBREVIVÊNCIA NO TERMINAL (MUITO IMPORTANTE) ###
+1. ARQUIVOS GRANDES: Se você tentar usar "read" e receber o aviso de que o arquivo foi cortado por ser muito grande, NÃO tente ler de novo. Use a ferramenta "exec" com o comando [sed -n 'LINHA_INICIAL,LINHA_FINALp' /caminho/do/arquivo] para ler apenas as linhas ao redor de onde você precisa alterar.
+2. EDIÇÃO PRECISA: A ferramenta "edit" exige que o 'oldText' seja uma cópia EXATA (com espaços e quebras de linha). Se o "edit" falhar várias vezes, use a ferramenta "exec" com o comando [sed -i 's/texto_velho/texto_novo/g' /caminho/do/arquivo] para forçar a substituição direto no shell.
+
 Ferramentas disponíveis:
 - {"name": "exec", "arguments": {"command": "comando_shell"}}
 - {"name": "read", "arguments": {"file_path": "/caminho"}}
