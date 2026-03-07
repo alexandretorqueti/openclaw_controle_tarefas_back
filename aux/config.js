@@ -16,7 +16,7 @@ const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
 const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527f2';
 
 const MAX_LOG_LINES = 1000;
-const MINUTOS = 90; // Defina o número de minutos para o timeout
+const MINUTOS = 30; // 3 horas para modelos pesados
 const TASK_TIMEOUT_MS = MINUTOS * 60 * 1000; // 
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 const LOCK_FILE = '/home/alexandrebragatorqueti/tmp/.monitor.lock';

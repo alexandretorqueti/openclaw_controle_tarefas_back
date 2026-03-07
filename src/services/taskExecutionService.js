@@ -1,24 +1,16 @@
 // taskExecutionService.js
-
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs').promises;
 const path = require('path');
 const { spawn } = require('child_process');
-const { Logger } = require('../utils/logger');
-const { log } = require('console');
+const CommandExecutor = require('./commandExecutor');
 const prisma = new PrismaClient();
-const { logger } = require('../../aux/logger');
+const { Logger } = require('../utils/logger'); 
+const { log } = require('console');
 
 class TaskExecutionService {
-  /**
-   * Cria um log de execução no banco de dados
-   * @param {Object} task - Objeto da tarefa
-   * @param {string} userId - ID do usuário responsável
-   * @param {string} model - Modelo de IA a ser utilizado
-   * @returns {Promise<Object>} Log criado
-   */
+  
   static async createExecutionLog(task, userId, model) {
-
     try {
       const executionLog = await prisma.taskExecutionLog.create({
         data: {
@@ -29,55 +21,24 @@ class TaskExecutionService {
           success: false
         }
       });
-      log(`📝 Log de execução criado para tarefa ${task.id} (Log ID: ${executionLog.id})`);
-      await Logger.createLog({
-        level: 'INFO',
-        endpoint: 'TaskExecutionService',
-        method: 'createExecutionLog',
-        message: `Log de execução criado para tarefa ${task.id}`,
-        userId: userId
-      });
-
+      log(`📝 Log de execução criado para tarefa ${task.id}`);
       return executionLog;
     } catch (error) {
       log(`❌ Erro ao criar log de execução: ${error.message}`);
-      await Logger.createLog({
-        level: 'ERROR',
-        endpoint: 'TaskExecutionService',
-        method: 'createExecutionLog',
-        message: `Erro ao criar log de execução: ${error.message}`,
-        errorType: error.constructor.name,
-        stackTrace: error.stack
-      });
       throw error;
     }
   }
 
-  /**
-   * Finaliza um log de execução
-   * @param {string} logId - ID do log
-   * @param {Object} result - Resultado da execução
-   * @returns {Promise<Object>} Log atualizado
-   */
   static async finishExecutionLog(logId, result) {
     try {
-      const finishedAt = new Date();
-      
-      // Busca o log para calcular duração
-      const log = await prisma.taskExecutionLog.findUnique({
-        where: { id: logId }
-      });
+      const logEntry = await prisma.taskExecutionLog.findUnique({ where: { id: logId } });
+      if (!logEntry) throw new Error(`Log não encontrado`);
 
-      if (!log) {
-        throw new Error(`Log de execução ${logId} não encontrado`);
-      }
-
-      const durationMs = finishedAt - log.startedAt;
-
-      const updatedLog = await prisma.taskExecutionLog.update({
+      const durationMs = new Date() - logEntry.startedAt;
+      return await prisma.taskExecutionLog.update({
         where: { id: logId },
         data: {
-          finishedAt,
+          finishedAt: new Date(),
           durationMs,
           success: result.success || false,
           exitCode: result.exitCode,
@@ -85,37 +46,11 @@ class TaskExecutionService {
           executionNotes: result.executionNotes
         }
       });
-
-      // Cria log no sistema de logs
-      await Logger.createLog({
-        level: result.success ? 'INFO' : 'ERROR',
-        endpoint: 'TaskExecutionService',
-        method: 'finishExecutionLog',
-        message: `Execução da tarefa ${log.taskId} ${result.success ? 'concluída com sucesso' : 'falhou'}`,
-        userId: log.userId,
-        responseTime: durationMs
-      });
-
-      return updatedLog;
     } catch (error) {
-      await Logger.createLog({
-        level: 'ERROR',
-        endpoint: 'TaskExecutionService',
-        method: 'finishExecutionLog',
-        message: `Erro ao finalizar log de execução: ${error.message}`,
-        errorType: error.constructor.name,
-        stackTrace: error.stack
-      });
       throw error;
     }
   }
 
-  /**
-   * Prepara arquivos para execução da tarefa
-   * @param {Object} task - Objeto da tarefa
-   * @param {string} tasksDir - Diretório de tarefas
-   * @returns {Promise<Object>} Informações dos arquivos criados
-   */
   static async prepareTaskFiles(task, tasksDir) {
     const taskId = task.id;
     const promptFile = path.join(tasksDir, `prompt-${taskId}.txt`);
@@ -123,453 +58,328 @@ class TaskExecutionService {
     const doneFile = path.join(tasksDir, `done-${taskId}.done`);
     const terminalLogFile = path.join(tasksDir, `terminal-${taskId}.log`);
 
-    const promptContent = `[${new Date().toISOString()}] Você é o Agente Técnico Jarbas. Seu único objetivo é executar a tarefa técnica designada abaixo com foco, precisão e eficiência de máquina.
+    let projetoRegras = "Nenhuma regra específica definida.";
+    try {
+      const project = await prisma.project.findUnique({ where: { id: task.projectId } });
+      if (project?.regras) projetoRegras = project.regras;
+    } catch (e) {}
 
-### CONTEXTO DA TAREFA ###
-TÍTULO: ${task.title}
+    const promptContent = `Você é o Agente Técnico Jarbas.
+OBJETIVO: ${task.title}
 DESCRIÇÃO: ${task.description}
 
-### REGRAS DO PROJETO (OBRIGATÓRIAS) ###
-Front: /home/alexandrebragatorqueti/projetos/tarefas-web Porta 3000
-Back: /home/alexandrebragatorqueti/projetos/tarefas-server Porta 3001
+REGRAS: ${projetoRegras}
 
-Não mexa em outras pastas ou portas. Nunca faça nada em ambiente de produção.
+[REGRA DE OURO - PROIBIDO ADIVINHAR CAMINHOS]
+1. Você NÃO PODE adivinhar nomes de arquivos ou caminhos. NUNCA use "read" ou "edit" sem antes confirmar o caminho exato.
+2. OBRIGATÓRIO: Seu primeiro comando deve SEMPRE usar "exec" para mapear o projeto.
+   -> IMPORTANTE: Em comandos find/grep, IGNORE pastas como 'node_modules', 'dist', 'build' e '.git'.
+   -> Exemplo de busca segura: {"name": "exec", "arguments": {"command": "grep -rn --exclude-dir={node_modules,dist,.git} 'Criar Nova Tarefa' ."}}
+3. Só use "edit" após receber o retorno da busca com o caminho real.
 
-### REGRAS DE EDIÇÃO DE CÓDIGO (CRÍTICO E OBRIGATÓRIO) ###
-Você NÃO É um assistente de chat. Você é um executor de sistema (Agent).
-1. PROIBIDO MOSTRAR CÓDIGO: Nunca escreva a solução ou blocos de código na sua resposta de texto.
-2. APLIQUE AS MUDANÇAS: Se você precisa alterar um arquivo, VOCÊ DEVE usar comandos de terminal para reescrever o arquivo físico no disco. 
-3. FERRAMENTA OBRIGATÓRIA: Use a sintaxe Heredoc para aplicar as mudanças de forma segura. Exemplo:
-cat << 'EOF' > /home/alexandrebragatorqueti/projetos/tarefas-web/caminho/do/arquivo.js
-[SEU CÓDIGO COMPLETO AQUI]
-EOF
+[COMO USAR FERRAMENTAS]
+Emita UM JSON estrito em uma nova linha com o formato:
+{"name": "nome_da_ferramenta", "arguments": {"parametro": "valor"}}
 
-### PROTOCOLO DE CONCLUSÃO (CRÍTICO) ###
-Assim que finalizar as alterações no código, use OBRIGATORIAMENTE sua ferramenta de terminal (shell) para executar os dois passos abaixo:
+Ferramentas disponíveis:
+- {"name": "exec", "arguments": {"command": "comando_shell"}}
+- {"name": "read", "arguments": {"file_path": "/caminho"}}
+- {"name": "write", "arguments": {"file_path": "/caminho", "content": "conteúdo"}}
+- {"name": "edit", "arguments": {"file_path": "/caminho", "oldText": "exato_velho", "newText": "novo"}}
 
-1. Gere o relatório de execução usando a sintaxe Heredoc (EOF) para evitar erros de terminal:
-cat << 'EOF' > "${relatorioFile}"
-[Escreva seu relatorio técnico detalhado aqui]
-EOF
+QUANDO TERMINAR A TAREFA:
+1. Use "write" no arquivo: ${relatorioFile}
+2. Use "exec" com 'touch ${doneFile}'
+`;
 
-2. Assine o contrato de finalização (Execute no terminal, não escreva no chat):
-touch "${doneFile}"
+    await fs.writeFile(promptFile, promptContent);
+    await fs.writeFile(relatorioFile, '');
+    await fs.writeFile(terminalLogFile, '');
 
-Não explique suas ações. Apenas execute as ferramentas e encerre.`;
-
-    try {
-      await fs.writeFile(promptFile, promptContent);
-      await fs.writeFile(relatorioFile, ''); // Mantido: o EOF vai sobrescrever com segurança
-      await fs.writeFile(terminalLogFile, '');
-
-      return {
-        promptFile,
-        relatorioFile,
-        doneFile,
-        terminalLogFile,
-        promptContent
-      };
-    } catch (error) {
-      await Logger.createLog({
-        level: 'ERROR',
-        endpoint: 'TaskExecutionService',
-        method: 'prepareTaskFiles',
-        message: `Erro ao preparar arquivos: ${error.message}`,
-        errorType: error.constructor.name,
-        stackTrace: error.stack
-      });
-      throw error;
-    }
+    return { promptFile, relatorioFile, doneFile, terminalLogFile, promptContent };
   }
 
-  /**
-   * Executa o OpenClaw via CLI
-   * @param {string} promptContent - Conteúdo do prompt
-   * @param {string} model - Modelo de IA
-   * @param {string} tasksDir - Diretório de trabalho
-   * @param {string} terminalLogFile - Arquivo de log do terminal
-   * @param {number} timeoutMs - Timeout em milissegundos
-   * @returns {Promise<Object>} Resultado da execução
-   */
-  /**
-   * Executa o OpenClaw com isolamento por tarefa
-   * @param {string} taskId - ID da tarefa (usado como session-id para isolamento)
-   * @param {string} promptContent - Conteúdo do prompt
-   * @param {string} model - Modelo de IA a ser utilizado
-   * @param {string} tasksDir - Diretório de trabalho
-   * @param {string} terminalLogFile - Arquivo de log do terminal
-   * @param {number} timeoutMs - Timeout em milissegundos (padrão: 300000)
-   * @returns {Promise<Object>} Resultado da execução
-   */
-  static async executeOpenClaw(taskId, promptContent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 300000) {
+  static async executeOpenClaw(taskId, inputMessage, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 10800000) {
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
         '--agent', 'programmer',
         '--session-id', taskId,
-        '-m', promptContent,
-        '--timeout', Math.floor(timeoutMs / 1000).toString(), // Converter ms para segundos
+        '-m', inputMessage,
+        '--timeout', Math.floor(timeoutMs / 1000).toString(),
       ];
 
       const env = { ...process.env };
-      
-      // 🛑 CORREÇÃO CRÍTICA 1: Impede que o processo filho trave tentando usar a porta de debug da IDE
-      delete env.NODE_OPTIONS; 
-
-      // 🛑 CORREÇÃO CRÍTICA 2: Só injeta o modelo se ele for explicitamente enviado e diferente do padrão da nuvem.
-      // Isso permite que o Qwen 2.5 local assuma o controle quando chamado.
-      if (model && !model.includes('deepseek-chat')) {
-        env.OPENCLAW_MODEL = model;
-      }
+      delete env.NODE_OPTIONS;
+      if (model && !model.includes('deepseek-chat')) env.OPENCLAW_MODEL = model;
 
       const executionDirectory = projectPath || tasksDir;
+      
       const child = spawn("openclaw", childArgs, {
         cwd: executionDirectory,
         env,
         shell: false,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'] // stdin ignorado, não vamos mais escrever nele!
       });
 
       let stdout = '';
       let stderr = '';
-      const zumbisAssassinados = new Set();
+      let streamBuffer = ''; 
+      let isResolving = false; // Evita resolver a promise duas vezes
 
-      const cacaZumbisEmTempoReal = (textoDoTerminal) => {
-        if (!textoDoTerminal.includes('session file locked')) return;
+      const timeoutTimer = setTimeout(() => {
+        if (!isResolving) {
+          isResolving = true;
+          child.kill('SIGKILL');
+          resolve({ exitCode: null, success: false, errorMessage: `Timeout` });
+        }
+      }, timeoutMs);
 
-        // 🛑 CORREÇÃO CRÍTICA 3: Regex arrumada (\d+ e \.lock)
-        const regex = /pid=\d+\s+(.+\.lock)/g;
-        let match;
+      const extractValidJSON = (text) => {
+        const startIndex = text.indexOf('{"name"');
+        if (startIndex === -1) return null;
+        let depth = 0, inString = false, escape = false;
+        for (let i = startIndex; i < text.length; i++) {
+          const char = text[i];
+          if (escape) { escape = false; continue; }
+          if (char === '\\') { escape = true; continue; }
+          if (char === '"') { inString = !inString; continue; }
+          if (!inString) {
+            if (char === '{') depth++;
+            else if (char === '}') {
+              depth--;
+              if (depth === 0) {
+                const jsonStr = text.substring(startIndex, i + 1);
+                try { return { jsonStr, parsed: JSON.parse(jsonStr) }; } catch (e) { return null; }
+              }
+            }
+          }
+        }
+        return null;
+      };
 
-        while ((match = regex.exec(textoDoTerminal)) !== null) {
-          const pid = parseInt(match[1], 10);
-          const lockFilePath = match[2];
+      const processReActBuffer = async () => {
+        if (isResolving) return;
+        
+        const extracted = extractValidJSON(streamBuffer);
 
-          if (!zumbisAssassinados.has(pid)) {
-            zumbisAssassinados.add(pid);
-            console.log(`[Auto-Cura Real-Time] Zumbi detectado (PID: ${pid}). Agindo instantaneamente...`);
+        if (extracted) {
+          isResolving = true; // Bloqueia outros processamentos
+          clearTimeout(timeoutTimer);
+          
+          try {
+            const toolCall = extracted.parsed;
+            console.log(`\n\x1b[45m\x1b[37m [ORQUESTADOR] Interceptou pedido: ${toolCall.name} \x1b[0m`);
+            
+            // Mata o processo filho imediatamente, pois já pegamos a ferramenta que queríamos
+            child.kill('SIGKILL');
+            
 
-            try { process.kill(pid, 'SIGKILL'); } catch (err) {}
-            // Removido o import duplicado do fs aqui, usando o global
-            fs.unlink(lockFilePath).catch(() => {});
+            // Executa a ferramenta no ambiente Node
+            const result = await CommandExecutor.executeTool(toolCall, executionDirectory);
+            
+            // ESCUDO ANTI-E2BIG: Limita a saída para não estourar o terminal nem a memória da IA
+            let safeOutput = result.output || result.error || "Executado sem retorno visual.";
+            if (safeOutput.length > 15000) {
+                console.log(`\n\x1b[31m[ALERTA] Saída gigante detectada (${safeOutput.length} chars). Truncando para 15000...\x1b[0m`);
+                safeOutput = safeOutput.substring(0, 15000) + "\n\n... [AVISO DO SISTEMA: O RESULTADO ERA MUITO GRANDE E FOI CORTADO. SEJA MAIS ESPECÍFICO NA BUSCA OU IGNORE PASTAS COMPILADAS] ...";
+            }
+
+            const feedbackText = `\n[TOOL EXECUTION RESULT]\nTool: ${toolCall.name}\nSuccess: ${result.success}\nOutput:\n${safeOutput}\n[END TOOL EXECUTION]\n`;
+
+            console.log(`\n\x1b[33m[SISTEMA -> JARBAS] Preparando feedback para o próximo turno:\x1b[0m`);
+            console.log(`\x1b[32m${feedbackText.trim()}\x1b[0m\n`); 
+            
+            // Resolve a promise devolvendo o feedback para o laço principal
+            resolve({ 
+              exitCode: 0, 
+              success: true, 
+              toolFeedback: feedbackText,
+              errorMessage: null 
+            });
+            
+          } catch (err) {
+            resolve({ 
+              exitCode: 1, 
+              success: false, 
+              toolFeedback: `\n[TOOL EXECUTION ERROR]\nFalha: ${err.message}\n[END TOOL EXECUTION]\n`,
+              errorMessage: err.message 
+            });
           }
         }
       };
 
-      const timeoutTimer = setTimeout(() => {
-        child.kill('SIGKILL');
-        resolve({ exitCode: null, success: false, errorMessage: `Timeout após ${timeoutMs}ms`, output: stdout, errorOutput: stderr });
-      }, timeoutMs);
-
-      child.stdout.on('data', (data) => {
+      child.stdout.on('data', async (data) => {
+        if (isResolving) return;
         const text = data.toString();
-        stdout += text;
+        stdout += text; streamBuffer += text;
+        process.stdout.write(`\x1b[36m${text}\x1b[0m`); 
         fs.appendFile(terminalLogFile, text).catch(() => {});
-        cacaZumbisEmTempoReal(text);
+        TaskExecutionService.resolveZombieLocksRealTime(text);
+        await processReActBuffer();
       });
 
-      child.stderr.on('data', (data) => {
+      child.stderr.on('data', async (data) => {
+        if (isResolving) return;
         const text = data.toString();
-        stderr += text;
+        stderr += text; streamBuffer += text; 
+        process.stdout.write(`\x1b[33m${text}\x1b[0m`); 
         fs.appendFile(terminalLogFile, text).catch(() => {});
-        cacaZumbisEmTempoReal(text);
+        TaskExecutionService.resolveZombieLocksRealTime(text);
+        await processReActBuffer();
       });
 
       child.on('error', (error) => {
-        clearTimeout(timeoutTimer);
-        reject({ exitCode: null, success: false, errorMessage: `Erro: ${error.message}`, output: stdout, errorOutput: stderr });
+        if (!isResolving) {
+          isResolving = true;
+          clearTimeout(timeoutTimer);
+          reject({ exitCode: null, success: false, errorMessage: error.message });
+        }
       });
 
       child.on('close', (code) => {
-        clearTimeout(timeoutTimer);
-        resolve({ exitCode: code, success: code === 0, errorMessage: code !== 0 ? `Processo encerrado com código ${code}` : null, output: stdout, errorOutput: stderr });
+        if (!isResolving) {
+          isResolving = true;
+          clearTimeout(timeoutTimer);
+          resolve({ 
+            exitCode: code, 
+            success: code === 0, 
+            toolFeedback: null, // O processo fechou naturalmente sem pedir ferramentas
+            errorMessage: code !== 0 ? `Encerrado com código ${code}` : null, 
+          });
+        }
       });
     });
   }
 
-  static async resolveZombieLocks(errorOutput) {
-    if (!errorOutput || !errorOutput.includes('session file locked')) return false;
-
-    // 🛑 CORREÇÃO CRÍTICA 4: Regex arrumada no método estático
-    const lockFileRegex = /pid=\d+\s+(.+\.lock)/g;
+  static resolveZombieLocksRealTime(texto) {
+    if (!texto.includes('session file locked')) return;
+    const regex = /pid=\d+\s+(.+\.lock)/g;
     let match;
-    let locksCleared = false;
-
-    while ((match = lockFileRegex.exec(errorOutput)) !== null) {
-      const lockFilePath = match[1];
-      try {
-        await fs.unlink(lockFilePath);
-        console.log(`[Auto-Cura] Arquivo zumbi removido com sucesso: ${lockFilePath}`);
-        locksCleared = true;
-      } catch (err) {}
+    while ((match = regex.exec(texto)) !== null) {
+      try { require('fs').unlinkSync(match[1]); } catch (e) {}
     }
-    return locksCleared;
-  }
-  /**
-   * Analisa a saída de erro em busca de arquivos de lock travados e os deleta.
-   * @param {string} errorOutput - O texto de erro retornado pelo OpenClaw
-   * @returns {Promise<boolean>} Retorna true se encontrou e limpou algum lock
-   */
-  static async resolveZombieLocks(errorOutput) {
-    if (!errorOutput || !errorOutput.includes('session file locked')) {
-      return false; // Não é um erro de lock
-    }
-
-    // Regex para extrair o caminho do arquivo .lock da mensagem de erro
-    // Exemplo de match: "pid=1501 /home/user/.openclaw/.../f4dae7e1.jsonl.lock"
-    const lockFileRegex = /pid=\d+\s+(.+\.lock)/g;
-    let match;
-    let locksCleared = false;
-
-    // Procura por todos os arquivos de lock mencionados no erro
-    while ((match = lockFileRegex.exec(errorOutput)) !== null) {
-      const lockFilePath = match[1];
-      try {
-        await fs.unlink(lockFilePath);
-        console.log(`[Auto-Cura] Arquivo zumbi removido com sucesso: ${lockFilePath}`);
-        locksCleared = true;
-      } catch (err) {
-        // Ignora se o arquivo já não existir
-        if (err.code !== 'ENOENT') {
-          console.error(`[Auto-Cura] Falha ao remover arquivo de lock: ${lockFilePath}`, err);
-        }
-      }
-    }
-
-    return locksCleared;
   }
 
-  /**
-   * Verifica se o contrato foi cumprido
-   * @param {string} doneFile - Caminho do arquivo .done
-   * @param {string} relatorioFile - Caminho do arquivo de relatório
-   * @returns {Promise<Object>} Resultado da verificação
-   */
+  static async resolveZombieLocks(errorOutput) {
+    let cleared = false;
+    if (!errorOutput || !errorOutput.includes('session file locked')) return cleared;
+    const regex = /pid=\d+\s+(.+\.lock)/g;
+    let match;
+    while ((match = regex.exec(errorOutput)) !== null) {
+      try { await fs.unlink(match[1]); cleared = true; } catch (e) {}
+    }
+    return cleared;
+  }
+
   static async verifyContract(doneFile, relatorioFile, terminalLogFile) {
     try {
       const doneExists = await fs.access(doneFile).then(() => true).catch(() => false);
-      let executionNotes = '';
-      let relatorioValido = false;
+      let executionNotes = ''; let relatorioValido = false;
 
-      // Verifica se o relatório tem sustância (mais de 10 caracteres)
       try {
         const relatorioContent = await fs.readFile(relatorioFile, 'utf8');
-        if (relatorioContent.trim().length > 10) {
-          executionNotes = relatorioContent;
-          relatorioValido = true;
-        }
-      } catch (error) {}
+        if (relatorioContent.trim().length > 10) { executionNotes = relatorioContent; relatorioValido = true; }
+      } catch (e) {}
 
-      // CENÁRIO 1: A IA fez o relatório, mesmo esquecendo o arquivo .done
       if (doneExists || relatorioValido) {
-        if (!doneExists && relatorioValido) {
-           await fs.writeFile(doneFile, ''); 
-           console.log(`[Orquestrador] Agente esqueceu o .done, mas gerou o relatório. Contrato aceito automaticamente.`);
-        }
-        return {
-          contractFulfilled: true,
-          executionNotes: executionNotes || 'Concluído via contrato padrão.'
-        };
+        if (!doneExists) await fs.writeFile(doneFile, ''); 
+        return { contractFulfilled: true, executionNotes: executionNotes || 'Concluído via Orquestrador' };
       }
-
-      // CENÁRIO 2: A IA não fez o relatório, mas tagarelou no terminal que terminou (ou cuspiu o caminho do .done lá)
-      try {
-        const logContent = await fs.readFile(terminalLogFile, 'utf8');
-        const indicios = ['concluída', 'finished', 'concluído', 'tarefa finalizada', 'touch /home/'];
-        
-        if (indicios.some(termo => logContent.toLowerCase().includes(termo))) {
-          console.log(`[Orquestrador] IA não acionou ferramentas finais, mas indicou sucesso no log. Contrato aceito.`);
-          await fs.writeFile(doneFile, ''); 
-          return {
-            contractFulfilled: true,
-            executionNotes: 'Concluído (verificado via análise de log). Relatório formal ausente.'
-          };
-        }
-      } catch (logError) {}
-
-      return {
-        contractFulfilled: false,
-        executionNotes: 'Arquivo .done não encontrado, relatório vazio e sem indícios de conclusão no log.'
-      };
-    } catch (error) {
-      return { contractFulfilled: false, executionNotes: `Erro: ${error.message}` };
+      return { contractFulfilled: false, executionNotes: 'Contrato não cumprido.' };
+    } catch (e) {
+      return { contractFulfilled: false, executionNotes: e.message };
     }
   }
 
-  /**
-   * Move os arquivos temporários para a pasta "processed" no final da execução
-   * @param {Object} files - Objeto com caminhos dos arquivos
-   * @returns {Promise<void>}
-   */
   static async cleanupFiles(files) {
     if (!files || !files.promptFile) return;
-
     try {
-      // 1. Pega o diretório base (ex: tasksDir) a partir do caminho do promptFile
       const baseDir = path.dirname(files.promptFile);
       const processedDir = path.join(baseDir, 'processed');
-
-      // 2. Cria a pasta 'processed' se ela não existir
       await fs.mkdir(processedDir, { recursive: true });
 
-      // 3. Gera um sufixo de data/hora para não sobrescrever arquivos de tentativas anteriores
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-      const filesToMove = [
-        files.promptFile,
-        files.relatorioFile,
-        files.doneFile,
-        files.terminalLogFile
-      ];
+      const filesToMove = [files.promptFile, files.relatorioFile, files.doneFile, files.terminalLogFile];
 
       for (const file of filesToMove) {
         try {
-          // Verifica se o arquivo realmente foi criado antes de tentar mover
           await fs.access(file); 
-          
           const fileName = path.basename(file);
-          const ext = path.extname(fileName); // ex: .txt, .log
-          const nameWithoutExt = path.basename(fileName, ext); // ex: prompt-123
-          
-          // Novo nome com timestamp: prompt-123_2026-03-05T...txt
+          const ext = path.extname(fileName); 
+          const nameWithoutExt = path.basename(fileName, ext); 
           const newFileName = `${nameWithoutExt}_${timestamp}${ext}`;
-          const destination = path.join(processedDir, newFileName);
-          
-          // Move o arquivo (rename faz a movimentação no mesmo disco)
-          await fs.rename(file, destination);
+          await fs.rename(file, path.join(processedDir, newFileName));
         } catch (error) {
-          // Se o arquivo não existir (ex: a IA não criou o .done), apenas ignora e segue a vida
-          if (error.code !== 'ENOENT') {
-             console.error(`[Aviso] Falha ao mover arquivo ${file}:`, error.message);
-          }
+          if (error.code !== 'ENOENT') console.error(`[Aviso] Falha ao mover ${file}:`, error.message);
         }
       }
-      
-      console.log(`📂 Limpeza concluída: Arquivos da tarefa movidos para a pasta 'processed'.`);
+      console.log(`📂 Limpeza concluída.`);
     } catch (error) {
-      console.error(`❌ Erro fatal ao tentar mover arquivos para processed: ${error.message}`);
+      console.error(`❌ Erro fatal ao tentar mover arquivos: ${error.message}`);
     }
   }
 
-  /**
-   * Método principal para executar uma tarefa
-   * @param {Object} task - Objeto da tarefa
-   * @param {string} userId - ID do usuário
-   * @param {Object} config - Configuração
-   * @returns {Promise<Object>} Resultado da execução
-   */
   static async executeTask(task, userId, config) {
     const { TASKS_DIR, TASK_TIMEOUT_MS = 300000 } = config;
-    let executionLog = null;
-    let files = null;
+    let executionLog = null; let files = null;
 
     try {
-      // 1. Cria log de execução
-      log(`📝 Criando log de execução para tarefa ${task.id}...`);
       executionLog = await this.createExecutionLog(task, userId, task.model);
-
-      // 2. Prepara arquivos
-      log(`📝 Preparando arquivos para execução da tarefa ${task.id}...`);
       files = await this.prepareTaskFiles(task, TASKS_DIR);
+      const project = await prisma.project.findUnique({ where: { id: task.projectId } });
 
-      // 3. Executa OpenClaw com isolamento por tarefa
-            // Busca o projeto para obter a pasta base
-      log(`📝 Executando OpenClaw para tarefa ${task.id}...`);
-      const project = await prisma.project.findUnique({
-        where: { id: task.projectId },
-        select: { pastaBase: true }
-      });
+      let contractResult = { contractFulfilled: false };
+      let turnos = 0;
+      const MAX_TURNOS = 15; 
+      
+      let currentInput = files.promptContent;
 
-      log(`🤖 Iniciando execução do OpenClaw para tarefa ${task.id} com modelo ${task.model}...`);
-      let executionResult = await this.executeOpenClaw(
-        task.id, // Passando o ID da tarefa para isolamento de sessão
-        files.promptContent,
-        task.model,
-        TASKS_DIR,
-        files.terminalLogFile,
-        project?.pastaBase || null,
-        TASK_TIMEOUT_MS
-      );
-      log(`🤖 Execução do OpenClaw para tarefa ${task.id} finalizada. Verificando resultado...`);
-      // NOVO: Sistema de Auto-cura para arquivos de lock zumbis
-      if (!executionResult.success && executionResult.errorOutput) {
-        const hasClearedLocks = await this.resolveZombieLocks(executionResult.errorOutput);
-        
-        // Se limpou algum lock, significa que o erro foi isso. Vamos tentar rodar só mais uma vez!
-        if (hasClearedLocks) {
-          await Logger.createLog({
-            level: 'WARN',
-            endpoint: 'TaskExecutionService',
-            method: 'executeTask',
-            message: `Retentando tarefa ${task.id} após limpar arquivos de lock zumbis.`
-          });
+      console.log(`\n🤖 [INICIANDO LOOP RE-ACT] Tarefa: ${task.id}`);
 
-          // Retentativa com isolamento garantido
-          executionResult = await this.executeOpenClaw(
-            task.id,
-            files.promptContent,
-            task.model,
-            TASKS_DIR,
-            files.terminalLogFile,
-            project?.pastaBase || null,
-            TASK_TIMEOUT_MS
-          );
+      while (!contractResult.contractFulfilled && turnos < MAX_TURNOS) {
+        turnos++;
+        console.log(`\n\x1b[44m\x1b[37m 🔄 --- INICIANDO TURNO ${turnos}/${MAX_TURNOS} --- \x1b[0m`);
+
+        let executionResult = await this.executeOpenClaw(
+          task.id, 
+          currentInput, 
+          task.model, 
+          TASKS_DIR, 
+          files.terminalLogFile, 
+          project?.pastaBase || null, 
+          TASK_TIMEOUT_MS
+        );
+
+        // Verifica a cada turno se o agente concluiu as tarefas (verificando os arquivos)
+        contractResult = await this.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile);
+        if (contractResult.contractFulfilled) {
+            console.log(`\x1b[42m\x1b[30m 🎯 CONTRATO CUMPRIDO NO TURNO ${turnos}! \x1b[0m`);
+            break;
+        }
+
+        if (executionResult.toolFeedback) {
+          currentInput = executionResult.toolFeedback;
+        } else {
+          currentInput = "Por favor, continue a tarefa. Lembre-se de usar a ferramenta 'write' para o relatório e 'exec' com 'touch' para o arquivo .done ao finalizar.";
         }
       }
 
-      // 4. Verifica contrato
-      // O QUE ESTÁ HOJE:
-      // const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile);
-
-      // COMO DEVE FICAR:
-      const contractResult = await this.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile);
-      // 5. Prepara resultado final
       const finalResult = {
-        success: executionResult.success && contractResult.contractFulfilled,
-        exitCode: executionResult.exitCode,
-        errorMessage: executionResult.errorMessage || (contractResult.contractFulfilled ? null : 'Contrato não cumprido'),
+        success: contractResult.contractFulfilled,
+        exitCode: 0,
+        errorMessage: contractResult.contractFulfilled ? null : `Falha: Limite de ${MAX_TURNOS} turnos atingido sem conclusão.`,
         executionNotes: contractResult.executionNotes
       };
 
-      // 6. Finaliza log
       await this.finishExecutionLog(executionLog.id, finalResult);
-
-      // 7. Limpa arquivos
-      await this.cleanupFiles(files);
-
-      return {
-        ...finalResult,
-        taskId: task.id,
-        executionLogId: executionLog.id
-      };
-
+      await this.cleanupFiles(files); 
+      return { ...finalResult, taskId: task.id, executionLogId: executionLog.id };
     } catch (error) {
-      // Em caso de erro, tenta finalizar o log com informações de erro
-      if (executionLog) {
-        try {
-          await this.finishExecutionLog(executionLog.id, {
-            success: false,
-            errorMessage: error.message,
-            executionNotes: `Erro durante execução: ${error.message}`
-          });
-        } catch (finishError) {
-          // Ignora erro ao tentar finalizar
-        }
-      }
-
-      // Tenta limpar arquivos mesmo em caso de erro
-      if (files) {
-        try {
-          await this.cleanupFiles(files);
-        } catch (cleanupError) {
-          // Ignora erro de limpeza
-        }
-      }
-
+      if (executionLog) await this.finishExecutionLog(executionLog.id, { success: false, errorMessage: error.message });
       throw error;
     }
   }
 }
 
 module.exports = TaskExecutionService;
-

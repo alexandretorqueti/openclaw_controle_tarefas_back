@@ -1,156 +1,119 @@
-// commandExecutor.js - Executor de comandos para OpenClaw
+// commandExecutor.js
 const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
 class CommandExecutor {
   /**
-   * Extrai comandos do output do OpenClaw
+   * Executa a ferramenta baseada no JSON extraído do output da IA
+   * @param {Object} toolCall - Objeto parseado (ex: { name: 'exec', arguments: { command: '...' } })
+   * @param {string} cwd - Diretório de trabalho (projectPath)
+   * @returns {Object} - Resultado da execução { success: boolean, output: string, error?: string }
    */
-  static extractCommands(openclawOutput) {
-    const commands = [];
-    let inHeredoc = false;
-    let heredocDelimiter = '';
-    
-    const lines = openclawOutput.split('\n');
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      if (!line) continue;
-      
-      // Detecta início de Heredoc
-      if (line.startsWith('cat') && line.includes('<<') && !inHeredoc) {
-        inHeredoc = true;
-        // Extrai o delimitador (ex: 'EOF')
-        const match = line.match(/<<\s*['"]?(\w+)['"]?/);
-        heredocDelimiter = match ? match[1] : 'EOF';
-        commands.push(line); // Adiciona o comando cat
-        continue;
-      }
-      
-      // Detecta fim de Heredoc
-      if (inHeredoc && line === heredocDelimiter) {
-        inHeredoc = false;
-        heredocDelimiter = '';
-        continue;
-      }
-      
-      // Se estiver dentro de Heredoc, ignora
-      if (inHeredoc) {
-        continue;
-      }
-      
-      // Detecta comandos shell válidos
-      if (this.isValidShellCommand(line)) {
-        commands.push(line);
-      }
-    }
-    
-    return commands;
-  }
-  
-  /**
-   * Verifica se é um comando shell válido
-   */
-  static isValidShellCommand(line) {
-    // Comandos válidos
-    const validCommands = [
-      /^echo\s+.*?>/,
-      /^touch\s+/,
-      /^mkdir\s+/,
-      /^cp\s+/,
-      /^mv\s+/,
-      /^rm\s+/,
-      /^cat\s+.*?<</,
-      /^chmod\s+/,
-      /^chown\s+/,
-      /^git\s+/,
-      /^npm\s+/,
-      /^yarn\s+/,
-      /^pip\s+/,
-      /^python3?\s+/,
-      /^node\s+/,
-      /^curl\s+/,
-      /^wget\s+/,
-      /^tar\s+/,
-      /^unzip\s+/,
-      /^zip\s+/
-    ];
-    
-    // Ignora comentários, linhas vazias, e algumas construções
-    if (!line || 
-        line.startsWith('#') || 
-        line.startsWith('if ') || 
-        line.startsWith('else') || 
-        line.startsWith('fi') ||
-        line.startsWith('then') ||
-        line.startsWith('fi;') ||
-        line.includes('**') || // Markdown bold
-        line.match(/^\d+\.\s+\*\*/) || // Lista numerada com markdown
-        line.startsWith('- ') || // Lista com marcador
-        line.startsWith('ALTERAÇÕES') ||
-        line.startsWith('STATUS') ||
-        line.startsWith('O arquivo')) {
-      return false;
-    }
-    
-    // Verifica se é um comando válido
-    return validCommands.some(regex => regex.test(line));
-  }
-  
-  /**
-   * Executa um comando shell de forma segura
-   */
-  static executeCommand(command, cwd = process.cwd()) {
-    console.log(`   [CommandExecutor] Executando: ${command.substring(0, 80)}${command.length > 80 ? '...' : ''}`);
+  static async executeTool(toolCall, cwd = process.cwd()) {
+    const { name, arguments: args } = toolCall;
+    console.log(`\n   [CommandExecutor] 🤖 Acionando ferramenta: [${name.toUpperCase()}]`);
     
     try {
-      // Para comandos com redirecionamento ou Heredoc, usa shell
-      if (command.includes('>') || command.includes('|') || command.includes('<<')) {
-        const result = execSync(command, { 
-          cwd, 
-          encoding: 'utf8',
-          shell: '/bin/bash',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        console.log(`   [CommandExecutor] ✅ Sucesso`);
-        return { success: true, output: result };
-      } else {
-        // Para comandos simples
-        const result = execSync(command, { 
-          cwd, 
-          encoding: 'utf8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        console.log(`   [CommandExecutor] ✅ Sucesso`);
-        return { success: true, output: result };
+      switch (name) {
+        case 'exec':
+          return this.executeExecCommand(args.command, cwd);
+        
+        case 'read':
+          return this.executeReadCommand(args.file_path);
+        
+        case 'write':
+          return this.executeWriteCommand(args.file_path, args.content);
+        
+        case 'edit':
+          return this.executeEditCommand(args.file_path, args.oldText, args.newText);
+        
+        default:
+          console.log(`   [CommandExecutor] ❌ Ferramenta desconhecida: ${name}`);
+          return { success: false, error: `Ferramenta '${name}' não é suportada pelo sistema.` };
       }
     } catch (error) {
-      console.log(`   [CommandExecutor] ❌ Erro: ${error.message.substring(0, 100)}`);
+      console.log(`   [CommandExecutor] ❌ Erro fatal na ferramenta ${name}: ${error.message}`);
       return { success: false, error: error.message };
     }
   }
-  
-  /**
-   * Processa output do OpenClaw e executa comandos
-   */
-  static processOpenClawOutput(openclawOutput, taskId, cwd = process.cwd()) {
-    console.log(`[CommandExecutor] Processando output do OpenClaw para tarefa ${taskId}...`);
+
+  static executeExecCommand(command, cwd) {
+    if (!command) return { success: false, error: "Parâmetro 'command' ausente." };
+    console.log(`   [CommandExecutor] 🖥️  Terminal: ${command.substring(0, 60)}${command.length > 60 ? '...' : ''}`);
     
-    const commands = this.extractCommands(openclawOutput);
-    console.log(`[CommandExecutor] ${commands.length} comandos válidos encontrados`);
-    
-    const results = [];
-    for (const command of commands) {
-      const result = this.executeCommand(command, cwd);
-      results.push({ command, ...result });
+    try {
+      const result = execSync(command, { 
+        cwd, 
+        encoding: 'utf8', 
+        shell: '/bin/bash',
+        timeout: 30000 // Limite de 30s para evitar travamento em comandos infinitos
+      });
+      console.log(`   [CommandExecutor] ✅ Executado com sucesso`);
+      return { success: true, output: result || "Comando executado sem retorno visual (sucesso)." };
+    } catch (error) {
+      // Se o comando falhar (ex: grep não achou nada), retornamos o erro para a IA tentar novamente
+      return { success: false, error: `Exit code ${error.status}: ${error.stderr || error.message}` };
     }
+  }
+
+  static executeReadCommand(filePath) {
+    if (!filePath) return { success: false, error: "Parâmetro 'file_path' ausente." };
+    console.log(`   [CommandExecutor] 📖 Lendo: ${path.basename(filePath)}`);
     
-    return {
-      totalCommands: commands.length,
-      successful: results.filter(r => r.success).length,
-      failed: results.filter(r => !r.success).length,
-      results
-    };
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: `Arquivo não encontrado: ${filePath}` };
+      }
+      const content = fs.readFileSync(filePath, 'utf8');
+      console.log(`   [CommandExecutor] ✅ Arquivo lido (${content.length} caracteres)`);
+      return { success: true, output: content };
+    } catch (error) {
+      return { success: false, error: `Erro de leitura: ${error.message}` };
+    }
+  }
+
+  static executeWriteCommand(filePath, content) {
+    if (!filePath || content === undefined) return { success: false, error: "Parâmetros 'file_path' ou 'content' ausentes." };
+    console.log(`   [CommandExecutor] 📝 Escrevendo/Criando: ${path.basename(filePath)}`);
+    
+    try {
+      // Garante que o diretório pai existe
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      fs.writeFileSync(filePath, content, 'utf8');
+      console.log(`   [CommandExecutor] ✅ Arquivo salvo`);
+      return { success: true, output: `Arquivo ${filePath} criado/sobrescrito com sucesso.` };
+    } catch (error) {
+      return { success: false, error: `Erro de escrita: ${error.message}` };
+    }
+  }
+
+  static executeEditCommand(filePath, oldText, newText) {
+    if (!filePath || !oldText || newText === undefined) return { success: false, error: "Parâmetros inválidos para edit." };
+    console.log(`   [CommandExecutor] ✂️  Editando trecho em: ${path.basename(filePath)}`);
+    
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: `Arquivo não encontrado: ${filePath}` };
+      }
+      
+      const content = fs.readFileSync(filePath, 'utf8');
+      
+      if (!content.includes(oldText)) {
+        console.log(`   [CommandExecutor] ⚠️ Aviso: 'oldText' não encontrado no arquivo.`);
+        return { success: false, error: `O texto exato fornecido em 'oldText' não foi encontrado no arquivo. Use a ferramenta 'read' primeiro para copiar o texto exato do código-fonte.` };
+      }
+      
+      const newContent = content.replace(oldText, newText);
+      fs.writeFileSync(filePath, newContent, 'utf8');
+      
+      console.log(`   [CommandExecutor] ✅ Arquivo modificado com sucesso`);
+      return { success: true, output: `Substituição realizada com sucesso no arquivo ${filePath}.` };
+    } catch (error) {
+      return { success: false, error: `Erro ao editar: ${error.message}` };
+    }
   }
 }
 
