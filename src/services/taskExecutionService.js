@@ -135,7 +135,7 @@ ${engineRules}`;
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
-        '--agent', 'ArquitetoPleno',
+        '--agent', 'AnalistaSenior',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -211,6 +211,21 @@ ${engineRules}`;
             // Executa a ferramenta no ambiente Node
             const result = await CommandExecutor.executeTool(toolCall, executionDirectory);
             
+            // ==========================================
+            // TRAVA ANTI-LOOP (INTERCEPTAÇÃO DE RETORNO VAZIO)
+            // ==========================================
+            let safeOutput = result.output || result.error || "";
+            
+            // Se o comando rodou com sucesso, mas não achou nada na tela (ex: grep falhou ou find não achou)
+            if (safeOutput.trim() === "") {
+                safeOutput = "[AVISO DO SISTEMA: RETORNO VAZIO]\nO comando executado NÃO RETORNOU NADA. O arquivo, texto ou diretório NÃO EXISTE neste caminho. \nPARE IMEDIATAMENTE. \nNÃO REPITA ESTE COMANDO. Use 'ls -la' ou 'pwd' para se localizar, ou olhe o [ARQUITETURA DO PROJETO] no seu prompt original.";
+            } else if (safeOutput.length > 15000) {
+                // ESCUDO ANTI-E2BIG
+                console.log(`\n\x1b[31m[ALERTA] Saída gigante detectada (${safeOutput.length} chars). Truncando...\x1b[0m`);
+                safeOutput = safeOutput.substring(0, 15000) + "\n\n... [AVISO: RESULTADO CORTADO. SEJA MAIS ESPECÍFICO] ...";
+            }
+
+            const feedbackText = `\n[TOOL EXECUTION RESULT]\nTool: ${toolCall.name}\nSuccess: ${result.success}\nOutput:\n${safeOutput}\n[END TOOL EXECUTION]\n`;    
             // ESCUDO ANTI-E2BIG: Limita a saída para não estourar o terminal nem a memória da IA
             let safeOutput = result.output || result.error || "Executado sem retorno visual.";
             if (safeOutput.length > 15000) {
