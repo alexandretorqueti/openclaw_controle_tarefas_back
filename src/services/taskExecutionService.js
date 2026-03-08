@@ -231,320 +231,82 @@ class TaskExecutionService {
   }
 
   static inferEvidenceFromCommand(command, executionDirectory) {
-    const evidence = {
-      filesRead: [],
-      filesWritten: [],
-      modifiedFiles: [],
-      touchedFiles: [],
-      classification: 'neutral'
-    };
-
-    if (!command || typeof command !== 'string') {
-      return evidence;
-    }
-
-    const normalized = this.normalizeCommandSignature(command);
-    const resolvedPaths = this.extractPathTokensFromCommand(command)
-      .map((token) => this.normalizeFsPath(token, executionDirectory))
-      .filter(Boolean);
-
-    const uniquePaths = Array.from(new Set(resolvedPaths));
-
-    const addAll = (target, items) => {
-      for (const item of items) {
-        if (item) target.push(item);
-      }
-    };
-
-    if (this.isInspectionCommand(command)) {
-      addAll(evidence.filesRead, uniquePaths);
-      addAll(evidence.touchedFiles, uniquePaths);
-      evidence.classification = 'inspection';
-    }
-
-    if (/^\s*touch\b/i.test(normalized)) {
-      addAll(evidence.filesWritten, uniquePaths);
-      addAll(evidence.touchedFiles, uniquePaths);
-      evidence.classification = 'mutation';
-    }
-
-    if (/^\s*rm\b/i.test(normalized)) {
-      addAll(evidence.touchedFiles, uniquePaths);
-      evidence.classification = 'mutation';
-    }
-
-    if (/\bsed\s+-i\b/i.test(normalized) || /\bperl\s+-pi\b/i.test(normalized)) {
-      addAll(evidence.filesWritten, uniquePaths);
-      addAll(evidence.modifiedFiles, uniquePaths);
-      addAll(evidence.touchedFiles, uniquePaths);
-      evidence.classification = 'mutation';
-    }
-
-    if (/^\s*cp\b/i.test(normalized) && uniquePaths.length >= 2) {
-      const source = uniquePaths[0];
-      const destination = uniquePaths[uniquePaths.length - 1];
-
-      addAll(evidence.filesRead, [source]);
-      addAll(evidence.filesWritten, [destination]);
-      addAll(evidence.modifiedFiles, [destination]);
-      addAll(evidence.touchedFiles, [source, destination]);
-      evidence.classification = 'mutation';
-    }
-
-    if (/^\s*mv\b/i.test(normalized) && uniquePaths.length >= 2) {
-      const source = uniquePaths[0];
-      const destination = uniquePaths[uniquePaths.length - 1];
-
-      addAll(evidence.filesRead, [source]);
-      addAll(evidence.filesWritten, [destination]);
-      addAll(evidence.modifiedFiles, [destination]);
-      addAll(evidence.touchedFiles, [source, destination]);
-      evidence.classification = 'mutation';
-    }
-
-    const redirectionRegex = /(?:^|[^0-9])(?:>>|>)\s*(["'`]?)([^"'`\s|;&]+)\1/g;
-    let redirectionMatch;
-
-    while ((redirectionMatch = redirectionRegex.exec(command)) !== null) {
-      const redirectionTarget = this.normalizeFsPath(redirectionMatch[2], executionDirectory);
-      if (!redirectionTarget) continue;
-
-      evidence.filesWritten.push(redirectionTarget);
-      evidence.modifiedFiles.push(redirectionTarget);
-      evidence.touchedFiles.push(redirectionTarget);
-      evidence.classification = 'mutation';
-    }
-
-    evidence.filesRead = Array.from(new Set(evidence.filesRead));
-    evidence.filesWritten = Array.from(new Set(evidence.filesWritten));
-    evidence.modifiedFiles = Array.from(new Set(evidence.modifiedFiles));
-    evidence.touchedFiles = Array.from(new Set(evidence.touchedFiles));
-
-    return evidence;
+    return inferReadOnlyEvidenceFromCommand(command, executionDirectory);
   }
 
-  static addItemsToSetAndTrackDelta(setRef, items, deltaBucket, progressExcludedFiles, deltaState) {
-    for (const item of items || []) {
-      if (!item) continue;
+  static applyExecutionEvidence(executionEvidence, toolName, toolResult = {}, options = {}) {
+    const executionDirectory = options.executionDirectory || process.cwd();
 
-      const resolved = path.resolve(item);
-      if (!setRef.has(resolved)) {
-        setRef.add(resolved);
-        deltaBucket.push(resolved);
+    executionEvidence.toolsUsed = executionEvidence.toolsUsed || [];
+    executionEvidence.filesRead = mergeUniquePaths(
+      executionEvidence.filesRead || [],
+      toolResult.filesRead || []
+    );
 
-        if (!progressExcludedFiles.has(resolved)) {
-          deltaState.hasMeaningfulProgress = true;
-        }
+    executionEvidence.filesWritten = mergeUniquePaths(
+      executionEvidence.filesWritten || [],
+      toolResult.filesWritten || []
+    );
+
+    executionEvidence.modifiedFiles = mergeUniquePaths(
+      executionEvidence.modifiedFiles || [],
+      toolResult.modifiedFiles || []
+    );
+
+    executionEvidence.touchedFiles = mergeUniquePaths(
+      executionEvidence.touchedFiles || [],
+      toolResult.touchedFiles || []
+    );
+
+    executionEvidence.commandsExecuted = Array.from(
+      new Set([
+        ...(executionEvidence.commandsExecuted || []),
+        ...((toolResult.commandsExecuted || []).filter(Boolean)),
+      ])
+    );
+
+    if (toolName && !executionEvidence.toolsUsed.includes(toolName)) {
+      executionEvidence.toolsUsed.push(toolName);
+    }
+
+    if (toolName === 'exec') {
+      for (const command of toolResult.commandsExecuted || []) {
+        const inferred = inferReadOnlyEvidenceFromCommand(command, executionDirectory);
+
+        executionEvidence.filesRead = mergeUniquePaths(
+          executionEvidence.filesRead || [],
+          inferred.filesRead || []
+        );
+
+        executionEvidence.touchedFiles = mergeUniquePaths(
+          executionEvidence.touchedFiles || [],
+          inferred.touchedFiles || []
+        );
       }
-    }
-  }
 
-  static applyExecutionEvidence(executionResult, evidence, context = {}) {
-    const executionDirectory = context.executionDirectory || process.cwd();
-
-    const progressExcludedFiles = new Set(
-      [context.doneFile, context.terminalLogFile, context.promptFile]
-        .filter(Boolean)
-        .map((file) => path.resolve(file))
-    );
-
-    const specialFilesForCommandMeaning = [
-      context.doneFile,
-      context.terminalLogFile,
-      context.promptFile
-    ].filter(Boolean);
-
-    const deltaState = {
-      newFilesRead: [],
-      newFilesWritten: [],
-      newModifiedFiles: [],
-      newTouchedFiles: [],
-      newCommandsExecuted: [],
-      hasMeaningfulProgress: false
-    };
-
-    if (executionResult.toolCall?.name) {
-      evidence.toolsUsed.push(executionResult.toolCall.name);
-    }
-
-    const normalizeFileList = (items) =>
-      (items || [])
-        .map((file) => this.normalizeFsPath(file, executionDirectory))
-        .filter(Boolean);
-
-    const explicitToolResult = executionResult.toolResult || {};
-
-    this.addItemsToSetAndTrackDelta(
-      evidence.filesRead,
-      normalizeFileList(explicitToolResult.filesRead),
-      deltaState.newFilesRead,
-      progressExcludedFiles,
-      deltaState
-    );
-
-    this.addItemsToSetAndTrackDelta(
-      evidence.filesWritten,
-      normalizeFileList(explicitToolResult.filesWritten),
-      deltaState.newFilesWritten,
-      progressExcludedFiles,
-      deltaState
-    );
-
-    this.addItemsToSetAndTrackDelta(
-      evidence.modifiedFiles,
-      normalizeFileList(explicitToolResult.modifiedFiles),
-      deltaState.newModifiedFiles,
-      progressExcludedFiles,
-      deltaState
-    );
-
-    this.addItemsToSetAndTrackDelta(
-      evidence.touchedFiles,
-      normalizeFileList(explicitToolResult.touchedFiles),
-      deltaState.newTouchedFiles,
-      progressExcludedFiles,
-      deltaState
-    );
-
-    if (executionResult.toolCall?.name === 'read') {
-      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
-      this.addItemsToSetAndTrackDelta(
-        evidence.filesRead,
-        filePath ? [filePath] : [],
-        deltaState.newFilesRead,
-        progressExcludedFiles,
-        deltaState
-      );
-      this.addItemsToSetAndTrackDelta(
-        evidence.touchedFiles,
-        filePath ? [filePath] : [],
-        deltaState.newTouchedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-    }
-
-    if (executionResult.toolCall?.name === 'write') {
-      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
-      this.addItemsToSetAndTrackDelta(
-        evidence.filesWritten,
-        filePath ? [filePath] : [],
-        deltaState.newFilesWritten,
-        progressExcludedFiles,
-        deltaState
-      );
-      this.addItemsToSetAndTrackDelta(
-        evidence.modifiedFiles,
-        filePath ? [filePath] : [],
-        deltaState.newModifiedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-      this.addItemsToSetAndTrackDelta(
-        evidence.touchedFiles,
-        filePath ? [filePath] : [],
-        deltaState.newTouchedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      if (executionResult.success && filePath && !progressExcludedFiles.has(path.resolve(filePath))) {
-        deltaState.hasMeaningfulProgress = true;
+      if (toolResult.executionDiagnostics?.noOpMutation) {
+        executionEvidence.noOpMutations = [
+          ...(executionEvidence.noOpMutations || []),
+          {
+            command: toolResult.commandsExecuted?.[0] || null,
+            candidateFiles: uniquePaths(
+              toolResult.executionDiagnostics.candidateFiles || []
+            ),
+          },
+        ];
       }
     }
 
-    if (executionResult.toolCall?.name === 'edit') {
-      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
-      this.addItemsToSetAndTrackDelta(
-        evidence.filesWritten,
-        filePath ? [filePath] : [],
-        deltaState.newFilesWritten,
-        progressExcludedFiles,
-        deltaState
-      );
-      this.addItemsToSetAndTrackDelta(
-        evidence.modifiedFiles,
-        filePath ? [filePath] : [],
-        deltaState.newModifiedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-      this.addItemsToSetAndTrackDelta(
-        evidence.touchedFiles,
-        filePath ? [filePath] : [],
-        deltaState.newTouchedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      if (executionResult.success && filePath && !progressExcludedFiles.has(path.resolve(filePath))) {
-        deltaState.hasMeaningfulProgress = true;
-      }
-    }
-
-    const executedCommand = explicitToolResult.commandExecuted;
-    if (executedCommand && typeof executedCommand === 'string') {
-      evidence.commandsExecuted.push(executedCommand);
-      deltaState.newCommandsExecuted.push(executedCommand);
-
-      const commandSignature = this.normalizeCommandSignature(executedCommand);
-      if (commandSignature && !evidence.commandSignaturesSeen.has(commandSignature)) {
-        evidence.commandSignaturesSeen.add(commandSignature);
-
-        if (this.isMeaningfulCommand(executedCommand, specialFilesForCommandMeaning, executionDirectory)) {
-          deltaState.hasMeaningfulProgress = true;
-        }
-      }
-
-      const inferredCommandEvidence = this.inferEvidenceFromCommand(executedCommand, executionDirectory);
-
-      this.addItemsToSetAndTrackDelta(
-        evidence.filesRead,
-        inferredCommandEvidence.filesRead,
-        deltaState.newFilesRead,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      this.addItemsToSetAndTrackDelta(
-        evidence.filesWritten,
-        inferredCommandEvidence.filesWritten,
-        deltaState.newFilesWritten,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      this.addItemsToSetAndTrackDelta(
-        evidence.modifiedFiles,
-        inferredCommandEvidence.modifiedFiles,
-        deltaState.newModifiedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      this.addItemsToSetAndTrackDelta(
-        evidence.touchedFiles,
-        inferredCommandEvidence.touchedFiles,
-        deltaState.newTouchedFiles,
-        progressExcludedFiles,
-        deltaState
-      );
-
-      if (
-        executionResult.success &&
-        inferredCommandEvidence.classification === 'mutation' &&
-        !this.commandTargetsOnlySpecialFiles(executedCommand, specialFilesForCommandMeaning, executionDirectory)
-      ) {
-        deltaState.hasMeaningfulProgress = true;
-      }
-    }
-
-    return deltaState;
+    return executionEvidence;
   }
 
   static buildTurnSignature(executionResult) {
     if (executionResult?.toolCall?.name === 'exec') {
-      return `exec:${this.normalizeCommandSignature(executionResult.toolCall.arguments?.command || '')}`;
+      return normalizeActionSignature(
+        'exec',
+        executionResult.toolResult || {},
+        executionResult.toolCall?.arguments?.command || ''
+      );
     }
 
     if (executionResult?.toolCall?.name === 'read') {
@@ -559,11 +321,17 @@ class TaskExecutionService {
       return `edit:${executionResult.toolCall.arguments?.file_path || ''}`;
     }
 
+    if (executionResult?.truncatedToolInfo?.detected) {
+      return `truncated:${executionResult.truncatedToolInfo.likelyTool}:${executionResult.truncatedToolInfo.reason}`;
+    }
+
     if (executionResult?.rawOutput) {
       return `raw:${executionResult.rawOutput.trim().replace(/\s+/g, ' ').substring(0, 250)}`;
     }
 
-    return executionResult?.success ? 'success_without_action' : `error:${executionResult?.errorMessage || 'unknown'}`;
+    return executionResult?.success
+      ? 'success_without_action'
+      : `error:${executionResult?.errorMessage || 'unknown'}`;
   }
 
   static detectRepeatedActionLoop(signatures, maxPatternSize = 12, repetitions = 3) {
@@ -788,7 +556,9 @@ class TaskExecutionService {
       }
 
       if (char === '\\') {
-        escape = true;
+        if (inString) {
+          escape = true;
+        }
         continue;
       }
 
@@ -812,6 +582,100 @@ class TaskExecutionService {
     }
 
     return results;
+  }
+
+  static inspectJsonLikeStructure(text) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    let sawOpeningBrace = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (char === '\\' && inString) {
+        escape = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (inString) continue;
+
+      if (char === '{') {
+        sawOpeningBrace = true;
+        depth++;
+      } else if (char === '}') {
+        depth = Math.max(0, depth - 1);
+      }
+    }
+
+    return {
+      finalDepth: depth,
+      inString,
+      sawOpeningBrace
+    };
+  }
+
+  static getLikelyToolNameFromText(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    const directMatch = text.match(/"name"\s*:\s*"(exec|read|write|edit)"/i);
+    if (directMatch && directMatch[1]) {
+      return directMatch[1].toLowerCase();
+    }
+
+    return null;
+  }
+
+  static detectTruncatedToolCall(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+
+    const parsed = this.extractToolCallFromText(trimmed);
+    if (parsed) return null;
+
+    const likelyTool = this.getLikelyToolNameFromText(trimmed);
+    const mentionsArguments = /"arguments"\s*:/i.test(trimmed);
+    const looksLikeToolJson =
+      (trimmed.includes('{') && mentionsArguments) ||
+      !!likelyTool ||
+      /```(?:json)?/i.test(trimmed);
+
+    if (!looksLikeToolJson) {
+      return null;
+    }
+
+    const structure = this.inspectJsonLikeStructure(trimmed);
+
+    let reason = 'json_invalido_ou_truncado';
+
+    if (structure.inString) {
+      reason = 'string_json_nao_foi_fechada';
+    } else if (structure.finalDepth > 0) {
+      reason = 'objeto_json_incompleto';
+    } else if (likelyTool === 'write' && trimmed.length > 4000) {
+      reason = 'payload_grande_demais_ou_truncado';
+    } else if (likelyTool === 'exec' && trimmed.length > 4000) {
+      reason = 'exec_grande_demais_ou_truncado';
+    }
+
+    return {
+      detected: true,
+      likelyTool: likelyTool || 'desconhecida',
+      reason,
+      preview: trimmed.substring(0, 700)
+    };
   }
 
   static normalizeToolCall(parsed) {
@@ -989,6 +853,9 @@ Emita UM JSON estrito em uma nova linha com o formato:
 1. ARQUIVOS GRANDES: Se você tentar usar "read" e receber o aviso de que o arquivo foi cortado por ser muito grande, NÃO tente ler de novo. Use a ferramenta "exec" com o comando [sed -n 'LINHA_INICIAL,LINHA_FINALp' /caminho/do/arquivo] para ler apenas as linhas ao redor de onde você precisa alterar.
 2. EDIÇÃO PRECISA: A ferramenta "edit" exige que o 'oldText' seja uma cópia EXATA (com espaços e quebras de linha). Se o "edit" falhar várias vezes, use a ferramenta "exec" com o comando [sed -i 's/texto_velho/texto_novo/g' /caminho/do/arquivo] para forçar a substituição direto no shell.
 3. Se você usar "exec" para alterar arquivos, essas alterações DEVEM ser reais e consistentes com a tarefa. Não altere apenas o relatório ou o .done.
+4. PAYLOADS GRANDES: NÃO reescreva arquivos grandes inteiros com "write". Prefira "read" seguido de "edit" em blocos pequenos e exatos.
+5. Se precisar alterar muitas regiões, faça múltiplos "edit" menores.
+6. Evite "exec" gigantes com heredoc para reescrever arquivos grandes, porque a resposta pode ser truncada antes da execução.
 
 Ferramentas disponíveis:
 - {"name": "exec", "arguments": {"command": "comando_shell"}}
@@ -1031,7 +898,7 @@ ${engineRules}`;
     return new Promise((resolve) => {
       const childArgs = [
         'agent',
-        '--agent', 'arquitetopleno',
+        '--agent', 'arquitetosenior',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -1068,6 +935,27 @@ ${engineRules}`;
         resolve(result);
       };
 
+      const buildUninterceptedResult = (payload = {}) => {
+        const rawOutput = `${stdout}${stderr}`;
+        const truncatedToolInfo = TaskExecutionService.detectTruncatedToolCall(rawOutput);
+
+        if (truncatedToolInfo?.detected) {
+          console.log(
+            `\n\x1b[31m[PROTOCOLO] Possível tool call truncada detectada: ${truncatedToolInfo.likelyTool} (${truncatedToolInfo.reason})\x1b[0m\n`
+          );
+        }
+
+        return {
+          ...payload,
+          success: truncatedToolInfo?.detected ? false : payload.success,
+          errorMessage: truncatedToolInfo?.detected
+            ? `${payload.errorMessage ? `${payload.errorMessage} | ` : ''}Possível tool call truncada detectada (${truncatedToolInfo.likelyTool}).`
+            : payload.errorMessage,
+          rawOutput,
+          truncatedToolInfo
+        };
+      };
+
       const timeoutTimer = setTimeout(() => {
         if (toolExecutionStarted && !toolExecutionFinished) {
           return;
@@ -1077,15 +965,14 @@ ${engineRules}`;
           child.kill('SIGKILL');
         } catch (_) {}
 
-        settle({
+        settle(buildUninterceptedResult({
           exitCode: null,
           success: false,
           toolFeedback: null,
           toolCall: null,
           toolResult: null,
-          errorMessage: `Timeout após ${timeoutMs}ms`,
-          rawOutput: `${stdout}${stderr}`
-        });
+          errorMessage: `Timeout após ${timeoutMs}ms`
+        }));
       }, timeoutMs);
 
       const executeInterceptedTool = async () => {
@@ -1141,7 +1028,8 @@ ${safeOutput}
             toolCall,
             toolResult: result,
             errorMessage: result.success ? null : (result.error || safeOutput),
-            rawOutput: `${stdout}${stderr}`
+            rawOutput: `${stdout}${stderr}`,
+            truncatedToolInfo: null
           });
         } catch (err) {
           console.log(`\n\x1b[31m[TOOL EXECUTION ERROR]\nFalha: ${err.message}\x1b[0m\n`);
@@ -1154,7 +1042,8 @@ ${safeOutput}
             toolCall,
             toolResult: null,
             errorMessage: err.message,
-            rawOutput: `${stdout}${stderr}`
+            rawOutput: `${stdout}${stderr}`,
+            truncatedToolInfo: null
           });
         }
       };
@@ -1178,15 +1067,14 @@ ${safeOutput}
         TaskExecutionService.resolveZombieLocksRealTime(text);
 
         executeInterceptedTool().catch((err) => {
-          settle({
+          settle(buildUninterceptedResult({
             exitCode: 1,
             success: false,
             toolFeedback: null,
             toolCall: null,
             toolResult: null,
-            errorMessage: err.message,
-            rawOutput: `${stdout}${stderr}`
-          });
+            errorMessage: err.message
+          }));
         });
       };
 
@@ -1198,15 +1086,14 @@ ${safeOutput}
           return;
         }
 
-        settle({
+        settle(buildUninterceptedResult({
           exitCode: null,
           success: false,
           toolFeedback: null,
           toolCall: null,
           toolResult: null,
-          errorMessage: error.message,
-          rawOutput: `${stdout}${stderr}`
-        });
+          errorMessage: error.message
+        }));
       });
 
       child.on('close', (code) => {
@@ -1218,15 +1105,14 @@ ${safeOutput}
           return;
         }
 
-        settle({
+        settle(buildUninterceptedResult({
           exitCode: code,
           success: code === 0,
           toolFeedback: null,
           toolCall: null,
           toolResult: null,
-          errorMessage: code === 0 ? null : `Encerrado com código ${code}`,
-          rawOutput: `${stdout}${stderr}`
-        });
+          errorMessage: code === 0 ? null : `Encerrado com código ${code}`
+        }));
       });
     });
   }
@@ -1439,7 +1325,7 @@ ${safeOutput}
               contractFulfilled: false,
               executionNotes: 'Pré-análise exige alteração no frontend, mas nenhuma foi detectada.',
               feedbackToAgent:
-                `[VALIDAÇÃO] A pré-análise desta tarefa exige alteração REAL no frontend. Você ainda não modificou arquivos em ${project.frontendPath}. Revise o frontend, altere os formulários/telas necessários, atualize o relatório e recrie o .done.`
+                `[VALIDAÇÃO] A pré-análise desta tarefa exige alteração REAL no frontend. Você ainda não modificou arquivos em ${project?.frontendPath || fullFrontendPath}. Revise o frontend, altere os formulários/telas necessários, atualize o relatório e recrie o .done.`
             };
           }
 
@@ -1448,7 +1334,7 @@ ${safeOutput}
               contractFulfilled: false,
               executionNotes: 'Pré-análise exige alteração no backend, mas nenhuma foi detectada.',
               feedbackToAgent:
-                `[VALIDAÇÃO] A pré-análise desta tarefa exige alteração REAL no backend. Você ainda não modificou arquivos em ${project.backendPath}. Revise o backend, implemente a alteração, atualize o relatório e recrie o .done.`
+                `[VALIDAÇÃO] A pré-análise desta tarefa exige alteração REAL no backend. Você ainda não modificou arquivos em ${project?.backendPath || fullBackendPath}. Revise o backend, implemente a alteração, atualize o relatório e recrie o .done.`
             };
           }
         }
@@ -1463,7 +1349,7 @@ ${safeOutput}
               contractFulfilled: false,
               executionNotes: 'A pré-análise esperava revisão do frontend, mas não há evidência disso.',
               feedbackToAgent:
-                `[VALIDAÇÃO] A pré-análise indicou impacto potencial no frontend. Ainda não há evidência de inspeção em ${project.frontendPath}. Revise essa camada antes de concluir.`
+                `[VALIDAÇÃO] A pré-análise indicou impacto potencial no frontend. Ainda não há evidência de inspeção em ${project?.frontendPath || fullFrontendPath}. Revise essa camada antes de concluir.`
             };
           }
 
@@ -1472,7 +1358,7 @@ ${safeOutput}
               contractFulfilled: false,
               executionNotes: 'A pré-análise esperava revisão do backend, mas não há evidência disso.',
               feedbackToAgent:
-                `[VALIDAÇÃO] A pré-análise indicou impacto potencial no backend. Ainda não há evidência de inspeção em ${project.backendPath}. Revise essa camada antes de concluir.`
+                `[VALIDAÇÃO] A pré-análise indicou impacto potencial no backend. Ainda não há evidência de inspeção em ${project?.backendPath || fullBackendPath}. Revise essa camada antes de concluir.`
             };
           }
         }
@@ -1707,12 +1593,12 @@ ${safeOutput}
 
       const evidence = {
         toolsUsed: [],
-        filesRead: new Set(),
-        filesWritten: new Set(),
-        modifiedFiles: new Set(),
-        touchedFiles: new Set(),
+        filesRead: [],
+        filesWritten: [],
+        modifiedFiles: [],
+        touchedFiles: [],
         commandsExecuted: [],
-        commandSignaturesSeen: new Set()
+        noOpMutations: []
       };
 
       let contractResult = { contractFulfilled: false, executionNotes: 'Contrato não cumprido.' };
@@ -1744,19 +1630,28 @@ ${safeOutput}
           TASK_TIMEOUT_MS
         );
 
+        const truncatedToolInfo = executionResult.truncatedToolInfo?.detected
+          ? executionResult.truncatedToolInfo
+          : this.detectTruncatedToolCall(executionResult.rawOutput);
+
         if (!executionResult.toolFeedback && executionResult.rawOutput) {
+          if (truncatedToolInfo?.detected) {
+            console.log(`\n[PROTOCOLO] Tool call truncada detectada: ${truncatedToolInfo.likelyTool} (${truncatedToolInfo.reason})`);
+          }
+
           console.log('\n[RAW OUTPUT DO AGENTE]');
           console.log(executionResult.rawOutput.substring(0, 3000));
           console.log('[FIM RAW OUTPUT]\n');
         }
 
-        const evidenceDelta = this.applyExecutionEvidence(executionResult, evidence, {
-          executionDirectory: project?.pastaBase || TASKS_DIR,
-          doneFile: files.doneFile,
-          relatorioFile: files.relatorioFile,
-          terminalLogFile: files.terminalLogFile,
-          promptFile: files.promptFile
-        });
+        this.applyExecutionEvidence(
+          evidence,
+          executionResult.toolCall?.name,
+          executionResult.toolResult || {},
+          {
+            executionDirectory: project?.pastaBase || TASKS_DIR
+          }
+        );
 
         contractResult = await this.verifyContract(
           files.doneFile,
@@ -1779,7 +1674,7 @@ ${safeOutput}
             contractFulfilled: contractResult.contractFulfilled,
             executionNotes: contractResult.executionNotes,
             feedbackToAgent: contractResult.feedbackToAgent || null,
-
+            truncatedToolInfo: truncatedToolInfo || null,
             paths: {
               TASKS_DIR,
               promptFile: files.promptFile,
@@ -1787,20 +1682,18 @@ ${safeOutput}
               doneFile: files.doneFile,
               terminalLogFile: files.terminalLogFile
             },
-
             existsOnDisk: {
               relatorioExists,
               doneExists
             },
-
-            evidenceDelta,
             evidenceSummary: {
               toolsUsed: evidence.toolsUsed,
               filesRead: Array.from(evidence.filesRead),
               filesWritten: Array.from(evidence.filesWritten),
               modifiedFiles: Array.from(evidence.modifiedFiles),
               touchedFiles: Array.from(evidence.touchedFiles),
-              commandsExecuted: evidence.commandsExecuted
+              commandsExecuted: evidence.commandsExecuted,
+              noOpMutations: evidence.noOpMutations
             }
           });
         }
@@ -1842,9 +1735,30 @@ Depois gere o relatório final e recrie o arquivo .done.`;
             currentInput += `\n${contractResult.feedbackToAgent}\n`;
           }
         } else if (executionResult.rawOutput && executionResult.rawOutput.trim()) {
-          currentInput =
-            contractResult.feedbackToAgent ||
-            `[ERRO DE PROTOCOLO]
+          if (truncatedToolInfo?.detected) {
+            currentInput = `[ERRO DE PROTOCOLO - TOOL CALL TRUNCADA]
+Sua última resposta parecia uma chamada de ferramenta "${truncatedToolInfo.likelyTool}", mas ela chegou truncada, incompleta ou inválida.
+Motivo provável: ${truncatedToolInfo.reason}
+
+Prévia recebida:
+${truncatedToolInfo.preview}
+
+REGRAS OBRIGATÓRIAS A PARTIR DE AGORA:
+- NÃO reescreva arquivos grandes inteiros com "write".
+- NÃO envie um "exec" gigante com heredoc ou payload enorme.
+- Para arquivos grandes, use "read" e depois "edit" em blocos pequenos e exatos.
+- Se precisar alterar muitas partes, faça múltiplos "edit" menores.
+- Emita APENAS um JSON estrito por turno.
+- Não responda em texto livre.
+
+Exemplo correto:
+{"name":"edit","arguments":{"file_path":"/caminho/arquivo.tsx","oldText":"trecho exato","newText":"trecho novo"}}`;
+
+            if (contractResult.feedbackToAgent) {
+              currentInput += `\n\n${contractResult.feedbackToAgent}\n`;
+            }
+          } else {
+            currentInput = `[ERRO DE PROTOCOLO]
 Você respondeu sem usar uma ferramenta válida em JSON estrito.
 Sua resposta anterior foi inválida para este sistema.
 
@@ -1855,6 +1769,11 @@ Regras obrigatórias:
 
 Se precisar procurar arquivos, use primeiro:
 {"name":"exec","arguments":{"command":"find ..."}}`;
+
+            if (contractResult.feedbackToAgent) {
+              currentInput += `\n\n${contractResult.feedbackToAgent}\n`;
+            }
+          }
         } else if (!executionResult.success) {
           currentInput = `[ERRO DE EXECUÇÃO]
 A execução do agente falhou.
@@ -1868,9 +1787,20 @@ Nenhuma ferramenta válida foi emitida.
 Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         }
 
-        const houveProgresso =
-          contractResult.contractFulfilled ||
-          evidenceDelta.hasMeaningfulProgress;
+        const turnProgress = computeTurnProgress(
+          executionResult.toolResult || {},
+          contractResult,
+          project?.pastaBase || TASKS_DIR
+        );
+        const houveProgresso = turnProgress.hasMeaningfulProgress;
+
+        if (turnProgress.noOpMutation) {
+          const noOpFeedback =
+            'O último comando mutante executou sem erro no shell, mas não alterou nenhum arquivo de fato. ' +
+            'Não continue reescrevendo por número de linha. Leia novamente o trecho atual do arquivo e use edição por bloco.';
+
+          currentInput = `${currentInput}\n\n[SISTEMA]\n${noOpFeedback}`;
+        }
 
         if (houveProgresso) {
           turnosSemProgresso = 0;
@@ -1933,7 +1863,8 @@ Se faltou algo, corrija a causa real apontada pela validação.`;
             filesWritten: Array.from(evidence.filesWritten),
             modifiedFiles: Array.from(evidence.modifiedFiles),
             touchedFiles: Array.from(evidence.touchedFiles),
-            commandsExecuted: evidence.commandsExecuted
+            commandsExecuted: evidence.commandsExecuted,
+            noOpMutations: evidence.noOpMutations
           }
         });
       }
@@ -1965,6 +1896,181 @@ Se faltou algo, corrija a causa real apontada pela validação.`;
       throw error;
     }
   }
+}
+
+function uniquePaths(values = []) {
+  return Array.from(
+    new Set(
+      (values || [])
+        .filter(Boolean)
+        .map((value) => path.resolve(String(value)))
+    )
+  );
+}
+
+function mergeUniquePaths(current = [], incoming = []) {
+  return uniquePaths([...(current || []), ...(incoming || [])]);
+}
+
+function isEphemeralArtifact(filePath = '') {
+  const base = path.basename(filePath || '');
+
+  return (
+    base === 'done' ||
+    base.endsWith('.done') ||
+    /^terminal-\d+\.log$/i.test(base) ||
+    /^relatorio-\d+\.txt$/i.test(base)
+  );
+}
+
+function shellSplit(input = '') {
+  const tokens = [];
+  let current = '';
+  let quote = null;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
+
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+
+    if (ch === '\\' && quote !== "'") {
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (ch === quote) {
+        quote = null;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+
+    if (/\s/.test(ch)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += ch;
+  }
+
+  if (current) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function inferReadOnlyEvidenceFromCommand(command = '', cwd = process.cwd()) {
+  const tokens = shellSplit(command);
+  if (!tokens.length) {
+    return {
+      filesRead: [],
+      filesWritten: [],
+      modifiedFiles: [],
+      touchedFiles: [],
+    };
+  }
+
+  const executable = path.basename(tokens[0]);
+  const lastToken = tokens[tokens.length - 1];
+  const maybeFile =
+    lastToken && !lastToken.startsWith('-')
+      ? path.resolve(cwd, lastToken)
+      : null;
+
+  const evidence = {
+    filesRead: [],
+    filesWritten: [],
+    modifiedFiles: [],
+    touchedFiles: [],
+  };
+
+  const isReadOnlyCommand =
+    ['cat', 'grep', 'rg', 'head', 'tail', 'less', 'more', 'nl', 'wc'].includes(executable) ||
+    (executable === 'sed' && tokens.includes('-n')) ||
+    executable === 'awk';
+
+  if (isReadOnlyCommand && maybeFile) {
+    evidence.filesRead.push(maybeFile);
+  }
+
+  return {
+    filesRead: uniquePaths(evidence.filesRead),
+    filesWritten: [],
+    modifiedFiles: [],
+    touchedFiles: [],
+  };
+}
+
+function computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process.cwd()) {
+  const inferred =
+    Array.isArray(toolResult.commandsExecuted) && toolResult.commandsExecuted.length > 0
+      ? inferReadOnlyEvidenceFromCommand(toolResult.commandsExecuted[0], cwd)
+      : { filesRead: [], modifiedFiles: [] };
+
+  const meaningfulReads = mergeUniquePaths(
+    toolResult.filesRead || [],
+    inferred.filesRead || []
+  ).filter((file) => !isEphemeralArtifact(file));
+
+  const meaningfulMutations = uniquePaths(
+    toolResult.modifiedFiles || []
+  ).filter((file) => !isEphemeralArtifact(file));
+
+  const noOpMutation = !!toolResult.executionDiagnostics?.noOpMutation;
+
+  return {
+    meaningfulReads,
+    meaningfulMutations,
+    noOpMutation,
+    hasMeaningfulProgress:
+      !noOpMutation &&
+      (
+        meaningfulReads.length > 0 ||
+        meaningfulMutations.length > 0 ||
+        !!contractResult.contractFulfilled
+      ),
+  };
+}
+
+function normalizeActionSignature(toolName, toolResult = {}, fallbackCommand = '') {
+  if (toolName !== 'exec') {
+    return toolName;
+  }
+
+  const command = (toolResult.commandsExecuted || [])[0] || fallbackCommand || '';
+  const compact = command.replace(/\s+/g, ' ').trim();
+
+  const isLineByLineSed =
+    /^\s*sed\b/.test(compact) &&
+    /\s-i(\S*)?\s/.test(compact) &&
+    /(^|['"\s])\d+c\\?/.test(compact);
+
+  if (isLineByLineSed) {
+    const tokens = shellSplit(command);
+    const file = tokens[tokens.length - 1]
+      ? path.resolve(tokens[tokens.length - 1])
+      : 'unknown-file';
+
+    return `exec:sed_line_by_line:${file}`;
+  }
+
+  return `exec:${compact.slice(0, 160)}`;
 }
 
 module.exports = TaskExecutionService;
