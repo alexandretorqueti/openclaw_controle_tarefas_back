@@ -57,7 +57,7 @@ class TaskExecutionService {
     const relatorioFile = path.join(tasksDir, `relatorio-${taskId}.txt`);
     const doneFile = path.join(tasksDir, `done-${taskId}.done`);
     const terminalLogFile = path.join(tasksDir, `terminal-${taskId}.log`);
-
+    
     // Busca o projeto (sem projectType pois não está disponível no schema atual)
     let project = null;
     try {
@@ -71,7 +71,18 @@ class TaskExecutionService {
     // Persona padrão (projectType não disponível no schema atual)
     let personaPrompt = "Você é o Agente Técnico Jarbas.";
     let baseRules = "";
+    const dirBase = project?.pastaBase || 'Diretório atual';
+    const dirFront = project?.frontendPath ? project.frontendPath : 'Não definido';
+    const dirBack = project?.backendPath ? project.backendPath : 'Não definido';
 
+    const architectureMap = `
+[ARQUITETURA DO PROJETO]
+Você está rodando o terminal na pasta raiz: ${dirBase}
+- O código do Frontend está na pasta: ./${dirFront}
+- O código do Backend está na pasta: ./${dirBack}
+
+ATENÇÃO: Não procure arquivos genéricos na raiz. Direcione seus comandos 'find' ou 'grep' para as pastas corretas acima!
+`;
     // Regras específicas do projeto (campo regras)
     const projectSpecificRules = project?.regras ? project.regras : "Nenhuma regra específica definida.";
 
