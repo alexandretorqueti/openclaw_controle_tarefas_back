@@ -58,19 +58,36 @@ class TaskExecutionService {
     const doneFile = path.join(tasksDir, `done-${taskId}.done`);
     const terminalLogFile = path.join(tasksDir, `terminal-${taskId}.log`);
 
-    let projetoRegras = "Nenhuma regra específica definida.";
+    // Busca o projeto com seu tipo (se existir)
+    let project = null;
     try {
-      const project = await prisma.project.findUnique({ where: { id: task.projectId } });
-      if (project?.regras) projetoRegras = project.regras;
-    } catch (e) {}
+      project = await prisma.project.findUnique({
+        where: { id: task.projectId },
+        include: { projectType: true }
+      });
+    } catch (e) {
+      console.error(`Erro ao buscar projeto: ${e.message}`);
+    }
 
-    const promptContent = `Você é o Agente Técnico Jarbas.
-OBJETIVO: ${task.title}
-DESCRIÇÃO: ${task.description}
+    // Persona padrão caso não haja projectType
+    let personaPrompt = "Você é o Agente Técnico Jarbas.";
+    let baseRules = "";
 
-REGRAS: ${projetoRegras}
+    if (project?.projectType) {
+      personaPrompt = project.projectType.personaPrompt || personaPrompt;
+      baseRules = project.projectType.baseRules || "";
+    }
 
-[REGRA DE OURO - PROIBIDO ADIVINHAR CAMINHOS]
+    // Regras específicas do projeto (campo regras)
+    const projectSpecificRules = project?.regras ? project.regras : "Nenhuma regra específica definida.";
+
+    // Combina regras: baseRules do tipo + regras específicas do projeto
+    const combinedRules = [baseRules, projectSpecificRules]
+      .filter(r => r && r.trim() !== "")
+      .join("\n\n");
+
+    // Engine rules (regras mecânicas do sistema - hardcoded)
+    const engineRules = `[REGRA DE OURO - PROIBIDO ADIVINHAR CAMINHOS]
 1. Você NÃO PODE adivinhar nomes de arquivos ou caminhos. NUNCA use "read" ou "edit" sem antes confirmar o caminho exato.
 2. OBRIGATÓRIO: Seu primeiro comando deve SEMPRE usar "exec" para mapear o projeto.
    -> IMPORTANTE: Em comandos find/grep, IGNORE pastas como 'node_modules', 'dist', 'build' e '.git'.
@@ -93,8 +110,16 @@ Ferramentas disponíveis:
 
 QUANDO TERMINAR A TAREFA:
 1. Use "write" no arquivo: ${relatorioFile}
-2. Use "exec" com 'touch ${doneFile}'
-`;
+2. Use "exec" com 'touch ${doneFile}'`;
+
+    // Montagem final do prompt
+    const promptContent = `${personaPrompt}
+OBJETIVO: ${task.title}
+DESCRIÇÃO: ${task.description}
+
+REGRAS: ${combinedRules}
+
+${engineRules}`;
 
     await fs.writeFile(promptFile, promptContent);
     await fs.writeFile(relatorioFile, '');
@@ -107,7 +132,7 @@ QUANDO TERMINAR A TAREFA:
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
-        '--agent', 'programmer',
+        '--agent', 'ArquitetoSenior',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -335,7 +360,8 @@ QUANDO TERMINAR A TAREFA:
 
       let contractResult = { contractFulfilled: false };
       let turnos = 0;
-      const MAX_TURNOS = 15; 
+      const MAX_TURNOS = 70; 
+      let hasPassedQA = false; // NOVA VARIÁVEL: Controle da fase de revisão
       
       let currentInput = files.promptContent;
 
@@ -355,17 +381,40 @@ QUANDO TERMINAR A TAREFA:
           TASK_TIMEOUT_MS
         );
 
-        // Verifica a cada turno se o agente concluiu as tarefas (verificando os arquivos)
         contractResult = await this.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile);
+        
+        // ==========================================
+        // FASE DE INTERCEPTAÇÃO DE QA (AUTO-REVISÃO)
+        // ==========================================
         if (contractResult.contractFulfilled) {
-            console.log(`\x1b[42m\x1b[30m 🎯 CONTRATO CUMPRIDO NO TURNO ${turnos}! \x1b[0m`);
-            break;
-        }
+          if (!hasPassedQA) {
+            console.log(`\x1b[43m\x1b[30m 🧐 FASE DE AUTO-REVISÃO INICIADA NO TURNO ${turnos} \x1b[0m`);
+            
+            // Apaga o arquivo .done secretamente
+            try { await fs.unlink(files.doneFile); } catch (e) {}
+            // NOVO: Esvazia o relatório para invalidar o contrato atual!
+            try { await fs.writeFile(files.relatorioFile, ''); } catch (e) {}
+            
+            contractResult.contractFulfilled = false; 
+            hasPassedQA = true; 
+            
+            currentInput = `[FASE DE AUTO-REVISÃO OBRIGATÓRIA]
+Você acabou de sinalizar que a tarefa está pronta. AGORA PARE E MUDE SUA POSTURA. 
+Atue como um Revisor de Código Sênior rigoroso. Leia atentamente as alterações que você acabou de fazer.
 
-        if (executionResult.toolFeedback) {
-          currentInput = executionResult.toolFeedback;
-        } else {
-          currentInput = "Por favor, continue a tarefa. Lembre-se de usar a ferramenta 'write' para o relatório e 'exec' com 'touch' para o arquivo .done ao finalizar.";
+Verifique especificamente:
+1. Você alterou O ARQUIVO CORRETO que a tarefa pediu?
+2. Você chamou alguma função nova mas ESQUECEU de declará-la?
+3. Em arquivos React/JSX, você esqueceu as chaves '{}' ao redor das variáveis?
+
+Se você identificar QUALQUER erro, ou se perceber que NÃO FEZ a alteração, use 'edit' ou 'exec' para consertar agora mesmo.
+Se você revisar e tiver CERTEZA ABSOLUTA que está perfeito, você DEVE gerar um NOVO relatório com a ferramenta 'write' e usar 'exec' com 'touch ${files.doneFile}' para aprovar a revisão final.`;
+            
+            continue; 
+          } else {
+            console.log(`\x1b[42m\x1b[30m 🎯 CONTRATO CUMPRIDO E REVISADO NO TURNO ${turnos}! \x1b[0m`);
+            break;
+          }
         }
       }
 

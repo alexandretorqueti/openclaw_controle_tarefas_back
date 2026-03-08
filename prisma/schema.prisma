@@ -30,6 +30,18 @@ model User {
   @@map("users")
 }
 
+model ProjectType {
+  id            String   @id @default(uuid())
+  name          String
+  personaPrompt String
+  baseRules     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  projects      Project[]
+
+  @@map("project_types")
+}
+
 model Project {
   id             String   @id @default(uuid())
   name           String
@@ -41,6 +53,8 @@ model Project {
   updatedAt      DateTime @updatedAt
   createdById    String
   createdBy      User     @relation("ProjectCreator", fields: [createdById], references: [id])
+  projectTypeId  String?
+  projectType    ProjectType? @relation(fields: [projectTypeId], references: [id])
   tasks          Task[]
   
   // Novos campos para configuração de repositórios

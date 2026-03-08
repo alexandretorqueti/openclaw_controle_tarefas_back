@@ -13,6 +13,7 @@ const projectSchema = z.object({
   status: z.boolean().optional().default(true),
   ativo: z.boolean().optional().default(true),
   createdById: z.string().uuid('Invalid user ID format'),
+  projectTypeId: z.string().uuid('Invalid project type ID format').optional().nullable(),
   // Novos campos
   frontendPath: z.string().optional().nullable(),
   frontendPort: z.number().int().positive().max(65535).optional().nullable(),
@@ -34,6 +35,7 @@ const updateProjectSchema = z.object({
   regras: z.string().optional().nullable(),
   status: z.boolean().optional(),
   ativo: z.boolean().optional(),
+  projectTypeId: z.string().uuid('Invalid project type ID format').optional().nullable(),
   // Novos campos
   frontendPath: z.string().optional().nullable(),
   frontendPort: z.number().int().positive().max(65535).optional().nullable(),

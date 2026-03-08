@@ -11,6 +11,7 @@ class ProjectService {
         status: data.status !== undefined ? data.status : true,
         ativo: data.ativo !== undefined ? data.ativo : true,
         createdById: data.createdById,
+        projectTypeId: data.projectTypeId || null,
         // Novos campos
         frontendPath: data.frontendPath || null,
         frontendPort: data.frontendPort || null,
@@ -147,6 +148,9 @@ class ProjectService {
       ativo: data.ativo,
       updatedAt: new Date()
     };
+    
+    // Campo projectTypeId
+    if (data.projectTypeId !== undefined) updateData.projectTypeId = data.projectTypeId;
     
     // Adicionar novos campos apenas se fornecidos
     if (data.frontendPath !== undefined) updateData.frontendPath = data.frontendPath;

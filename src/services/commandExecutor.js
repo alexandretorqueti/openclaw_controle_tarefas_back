@@ -47,7 +47,7 @@ class CommandExecutor {
         cwd, 
         encoding: 'utf8', 
         shell: '/bin/bash',
-        timeout: 30000 // Limite de 30s para evitar travamento em comandos infinitos
+        timeout: 240000 // Limite de 30s para evitar travamento em comandos infinitos
       });
       console.log(`   [CommandExecutor] ✅ Executado com sucesso`);
       return { success: true, output: result || "Comando executado sem retorno visual (sucesso)." };
