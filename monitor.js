@@ -20,6 +20,16 @@ async function main() {
     }
   };
 
+  async function isProcessAlive(pid) {
+    try {
+      if (!pid) return false;
+      process.kill(pid, 0);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async function moveTaskFiles(taskId, destinationDir) {
     const files = [
       `prompt-${taskId}.txt`,
@@ -180,9 +190,34 @@ async function main() {
 
     // 1. Controle de Concorrência (Lock)
     if (await fileExists(LOCK_FILE)) {
-      await incrementTaskTimerandReturnValue();
-      await log('⏳ Outra instância já está rodando. Omitindo execução.');
-      return;
+      try {
+        const pidRaw = await fs.readFile(LOCK_FILE, 'utf8');
+        const pid = parseInt(String(pidRaw).trim(), 10);
+
+        if (!Number.isNaN(pid)) {
+          const alive = await isProcessAlive(pid);
+
+          if (!alive) {
+            await log(`🧹 Lock órfão detectado. PID ${pid} não existe mais. Limpando lock e estado.`);
+            await fs.unlink(LOCK_FILE).catch(() => {});
+            
+            const stateFilePath = path.join(TASKS_DIR, 'monitor-state.json');
+            if (await fileExists(stateFilePath)) {
+              await fs.unlink(stateFilePath).catch(() => {});
+            }
+          } else {
+            await incrementTaskTimerandReturnValue();
+            await log(`⏳ Outra instância já está rodando com PID ${pid}. Omitindo execução.`);
+            return;
+          }
+        } else {
+          await log(`⚠️ Lock com PID inválido. Limpando lock corrompido.`);
+          await fs.unlink(LOCK_FILE).catch(() => {});
+        }
+      } catch (e) {
+        await log(`⚠️ Erro ao validar lock existente: ${e.message}. Tentando seguir com limpeza segura.`);
+        await fs.unlink(LOCK_FILE).catch(() => {});
+      }
     }
     
     await fs.writeFile(LOCK_FILE, process.pid.toString());

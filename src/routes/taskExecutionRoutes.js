@@ -3,12 +3,6 @@ const TaskExecutionController = require('../controllers/taskExecutionController'
 
 const router = express.Router();
 
-/**
- * @route GET /api/task-executions/:taskId
- * @description Lista logs de execução de uma tarefa específica
- * @access Private
- */
-router.get('/:taskId', TaskExecutionController.getTaskExecutions);
 
 /**
  * @route GET /api/task-executions/log/:id
@@ -23,5 +17,12 @@ router.get('/log/:id', TaskExecutionController.getExecutionLog);
  * @access Private
  */
 router.get('/stats/:taskId', TaskExecutionController.getExecutionStats);
+
+/**
+ * @route GET /api/task-executions/:taskId
+ * @description Lista logs de execução de uma tarefa específica
+ * @access Private
+ */
+router.get('/:taskId', TaskExecutionController.getTaskExecutions);
 
 module.exports = router;

@@ -17,7 +17,7 @@ const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527
 
 const MAX_LOG_LINES = 1000;
 const HORAS = 4;
-const MINUTOS = HORAS * 60; // 3 horas para modelos pesados
+const MINUTOS = HORAS * 60; // 4 horas para modelos pesados
 const TASK_TIMEOUT_MS = MINUTOS * 60 * 1000; // 
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 const LOCK_FILE = '/home/alexandrebragatorqueti/tmp/.monitor.lock';
@@ -37,6 +37,9 @@ const fs = require('fs');
 module.exports = {
   BASE_DIR, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, API_URL, 
   STATE_FILE, LOG_FILE, MY_USER_ID, MAX_LOG_LINES, 
-  TASK_TIMEOUT_MS, servicesConfig, STATUS, MINUTOS, LOCK_FILE
+  TASK_TIMEOUT_MS, servicesConfig, STATUS, MINUTOS, LOCK_FILE,
+  DEBUG_TASK_ANALYSIS: process.env.DEBUG_TASK_ANALYSIS === 'true',
+  DEBUG_TASK_PROMPT: process.env.DEBUG_TASK_PROMPT === 'true',
+  DEBUG_TASK_CONTRACT: process.env.DEBUG_TASK_CONTRACT === 'true'
 };
 
