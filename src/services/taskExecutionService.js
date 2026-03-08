@@ -78,9 +78,9 @@ class TaskExecutionService {
 
   static resolveProjectPath(basePath, subPath) {
     if (!subPath) return null;
-    if (path.isAbsolute(subPath)) return subPath;
-    if (!basePath) return subPath;
-    return path.join(basePath, subPath);
+    if (path.isAbsolute(subPath)) return path.resolve(subPath);
+    if (!basePath) return path.resolve(subPath);
+    return path.resolve(basePath, subPath);
   }
 
   static isPathInside(targetPath, basePath) {
@@ -126,7 +126,487 @@ class TaskExecutionService {
     }
     console.log(`================ [FIM DEBUG][${title}] ================\n`);
   }
-  
+
+  static normalizeFsPath(filePath, baseDir = process.cwd()) {
+    if (!filePath || typeof filePath !== 'string') return null;
+
+    let normalized = filePath.trim().replace(/^['"`]/, '').replace(/['"`]$/, '');
+    if (!normalized) return null;
+
+    if (normalized.startsWith('~')) {
+      const home = process.env.HOME || '';
+      normalized = path.join(home, normalized.slice(1));
+    }
+
+    if (path.isAbsolute(normalized)) {
+      return path.resolve(normalized);
+    }
+
+    return path.resolve(baseDir || process.cwd(), normalized);
+  }
+
+  static extractPathTokensFromCommand(command) {
+    if (!command || typeof command !== 'string') return [];
+
+    const tokens = [];
+    const regex = /(["'`])([^"'`\n]*\/[^"'`\n]*)\1|((?:\/|\.{1,2}\/|[A-Za-z0-9_.-]+\/)[^\s|;&]+)/g;
+
+    let match;
+    while ((match = regex.exec(command)) !== null) {
+      const raw = (match[2] || match[3] || '').trim();
+      if (!raw) continue;
+
+      const cleaned = raw.replace(/[),:]+$/g, '');
+      if (cleaned) tokens.push(cleaned);
+    }
+
+    return Array.from(new Set(tokens));
+  }
+
+  static normalizeCommandSignature(command) {
+    if (!command || typeof command !== 'string') return '';
+    return command
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/["']/g, '')
+      .toLowerCase();
+  }
+
+  static isInspectionCommand(command) {
+    if (!command || typeof command !== 'string') return false;
+    return /(^|\s)(find|grep|sed\s+-n|cat|ls|pwd|head|tail|awk|rg)\b/i.test(command);
+  }
+
+  static isMutationCommand(command) {
+    if (!command || typeof command !== 'string') return false;
+
+    return (
+      /\bsed\s+-i\b/i.test(command) ||
+      /\bperl\s+-pi\b/i.test(command) ||
+      /^\s*touch\b/i.test(command) ||
+      /^\s*rm\b/i.test(command) ||
+      /^\s*mv\b/i.test(command) ||
+      /^\s*cp\b/i.test(command) ||
+      /\btee\b/i.test(command) ||
+      /(^|[^0-9])>>?\s*["'`]?[^"'`\s|;&]+["'`]?/i.test(command)
+    );
+  }
+
+  static commandTargetsOnlySpecialFiles(command, specialFiles = [], cwd = process.cwd()) {
+    if (!command || typeof command !== 'string') return false;
+
+    const resolvedSpecialFiles = new Set(
+      (specialFiles || [])
+        .filter(Boolean)
+        .map((file) => path.resolve(file))
+    );
+
+    const commandPaths = this.extractPathTokensFromCommand(command)
+      .map((token) => this.normalizeFsPath(token, cwd))
+      .filter(Boolean);
+
+    if (commandPaths.length === 0) return false;
+
+    return commandPaths.every((file) => resolvedSpecialFiles.has(path.resolve(file)));
+  }
+
+  static isMeaningfulCommand(command, specialFiles = [], cwd = process.cwd()) {
+    if (!command || typeof command !== 'string') return false;
+
+    const normalized = this.normalizeCommandSignature(command);
+    if (!normalized) return false;
+
+    if (normalized === 'pwd') return false;
+    if (/^ls( -[a-z0-9]+)*$/.test(normalized)) return false;
+
+    if (this.commandTargetsOnlySpecialFiles(command, specialFiles, cwd)) {
+      return false;
+    }
+
+    if (/^touch\s+.+\.done\b/.test(normalized)) return false;
+    if (/^rm\s+.+\.done\b/.test(normalized)) return false;
+    if (/^ls( -[a-z0-9]+)*\s+.+\.done\b/.test(normalized)) return false;
+
+    return true;
+  }
+
+  static inferEvidenceFromCommand(command, executionDirectory) {
+    const evidence = {
+      filesRead: [],
+      filesWritten: [],
+      modifiedFiles: [],
+      touchedFiles: [],
+      classification: 'neutral'
+    };
+
+    if (!command || typeof command !== 'string') {
+      return evidence;
+    }
+
+    const normalized = this.normalizeCommandSignature(command);
+    const resolvedPaths = this.extractPathTokensFromCommand(command)
+      .map((token) => this.normalizeFsPath(token, executionDirectory))
+      .filter(Boolean);
+
+    const uniquePaths = Array.from(new Set(resolvedPaths));
+
+    const addAll = (target, items) => {
+      for (const item of items) {
+        if (item) target.push(item);
+      }
+    };
+
+    if (this.isInspectionCommand(command)) {
+      addAll(evidence.filesRead, uniquePaths);
+      addAll(evidence.touchedFiles, uniquePaths);
+      evidence.classification = 'inspection';
+    }
+
+    if (/^\s*touch\b/i.test(normalized)) {
+      addAll(evidence.filesWritten, uniquePaths);
+      addAll(evidence.touchedFiles, uniquePaths);
+      evidence.classification = 'mutation';
+    }
+
+    if (/^\s*rm\b/i.test(normalized)) {
+      addAll(evidence.touchedFiles, uniquePaths);
+      evidence.classification = 'mutation';
+    }
+
+    if (/\bsed\s+-i\b/i.test(normalized) || /\bperl\s+-pi\b/i.test(normalized)) {
+      addAll(evidence.filesWritten, uniquePaths);
+      addAll(evidence.modifiedFiles, uniquePaths);
+      addAll(evidence.touchedFiles, uniquePaths);
+      evidence.classification = 'mutation';
+    }
+
+    if (/^\s*cp\b/i.test(normalized) && uniquePaths.length >= 2) {
+      const source = uniquePaths[0];
+      const destination = uniquePaths[uniquePaths.length - 1];
+
+      addAll(evidence.filesRead, [source]);
+      addAll(evidence.filesWritten, [destination]);
+      addAll(evidence.modifiedFiles, [destination]);
+      addAll(evidence.touchedFiles, [source, destination]);
+      evidence.classification = 'mutation';
+    }
+
+    if (/^\s*mv\b/i.test(normalized) && uniquePaths.length >= 2) {
+      const source = uniquePaths[0];
+      const destination = uniquePaths[uniquePaths.length - 1];
+
+      addAll(evidence.filesRead, [source]);
+      addAll(evidence.filesWritten, [destination]);
+      addAll(evidence.modifiedFiles, [destination]);
+      addAll(evidence.touchedFiles, [source, destination]);
+      evidence.classification = 'mutation';
+    }
+
+    const redirectionRegex = /(?:^|[^0-9])(?:>>|>)\s*(["'`]?)([^"'`\s|;&]+)\1/g;
+    let redirectionMatch;
+
+    while ((redirectionMatch = redirectionRegex.exec(command)) !== null) {
+      const redirectionTarget = this.normalizeFsPath(redirectionMatch[2], executionDirectory);
+      if (!redirectionTarget) continue;
+
+      evidence.filesWritten.push(redirectionTarget);
+      evidence.modifiedFiles.push(redirectionTarget);
+      evidence.touchedFiles.push(redirectionTarget);
+      evidence.classification = 'mutation';
+    }
+
+    evidence.filesRead = Array.from(new Set(evidence.filesRead));
+    evidence.filesWritten = Array.from(new Set(evidence.filesWritten));
+    evidence.modifiedFiles = Array.from(new Set(evidence.modifiedFiles));
+    evidence.touchedFiles = Array.from(new Set(evidence.touchedFiles));
+
+    return evidence;
+  }
+
+  static addItemsToSetAndTrackDelta(setRef, items, deltaBucket, progressExcludedFiles, deltaState) {
+    for (const item of items || []) {
+      if (!item) continue;
+
+      const resolved = path.resolve(item);
+      if (!setRef.has(resolved)) {
+        setRef.add(resolved);
+        deltaBucket.push(resolved);
+
+        if (!progressExcludedFiles.has(resolved)) {
+          deltaState.hasMeaningfulProgress = true;
+        }
+      }
+    }
+  }
+
+  static applyExecutionEvidence(executionResult, evidence, context = {}) {
+    const executionDirectory = context.executionDirectory || process.cwd();
+
+    const progressExcludedFiles = new Set(
+      [context.doneFile, context.terminalLogFile, context.promptFile]
+        .filter(Boolean)
+        .map((file) => path.resolve(file))
+    );
+
+    const specialFilesForCommandMeaning = [
+      context.doneFile,
+      context.terminalLogFile,
+      context.promptFile
+    ].filter(Boolean);
+
+    const deltaState = {
+      newFilesRead: [],
+      newFilesWritten: [],
+      newModifiedFiles: [],
+      newTouchedFiles: [],
+      newCommandsExecuted: [],
+      hasMeaningfulProgress: false
+    };
+
+    if (executionResult.toolCall?.name) {
+      evidence.toolsUsed.push(executionResult.toolCall.name);
+    }
+
+    const normalizeFileList = (items) =>
+      (items || [])
+        .map((file) => this.normalizeFsPath(file, executionDirectory))
+        .filter(Boolean);
+
+    const explicitToolResult = executionResult.toolResult || {};
+
+    this.addItemsToSetAndTrackDelta(
+      evidence.filesRead,
+      normalizeFileList(explicitToolResult.filesRead),
+      deltaState.newFilesRead,
+      progressExcludedFiles,
+      deltaState
+    );
+
+    this.addItemsToSetAndTrackDelta(
+      evidence.filesWritten,
+      normalizeFileList(explicitToolResult.filesWritten),
+      deltaState.newFilesWritten,
+      progressExcludedFiles,
+      deltaState
+    );
+
+    this.addItemsToSetAndTrackDelta(
+      evidence.modifiedFiles,
+      normalizeFileList(explicitToolResult.modifiedFiles),
+      deltaState.newModifiedFiles,
+      progressExcludedFiles,
+      deltaState
+    );
+
+    this.addItemsToSetAndTrackDelta(
+      evidence.touchedFiles,
+      normalizeFileList(explicitToolResult.touchedFiles),
+      deltaState.newTouchedFiles,
+      progressExcludedFiles,
+      deltaState
+    );
+
+    if (executionResult.toolCall?.name === 'read') {
+      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
+      this.addItemsToSetAndTrackDelta(
+        evidence.filesRead,
+        filePath ? [filePath] : [],
+        deltaState.newFilesRead,
+        progressExcludedFiles,
+        deltaState
+      );
+      this.addItemsToSetAndTrackDelta(
+        evidence.touchedFiles,
+        filePath ? [filePath] : [],
+        deltaState.newTouchedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+    }
+
+    if (executionResult.toolCall?.name === 'write') {
+      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
+      this.addItemsToSetAndTrackDelta(
+        evidence.filesWritten,
+        filePath ? [filePath] : [],
+        deltaState.newFilesWritten,
+        progressExcludedFiles,
+        deltaState
+      );
+      this.addItemsToSetAndTrackDelta(
+        evidence.modifiedFiles,
+        filePath ? [filePath] : [],
+        deltaState.newModifiedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+      this.addItemsToSetAndTrackDelta(
+        evidence.touchedFiles,
+        filePath ? [filePath] : [],
+        deltaState.newTouchedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      if (executionResult.success && filePath && !progressExcludedFiles.has(path.resolve(filePath))) {
+        deltaState.hasMeaningfulProgress = true;
+      }
+    }
+
+    if (executionResult.toolCall?.name === 'edit') {
+      const filePath = this.normalizeFsPath(executionResult.toolCall.arguments?.file_path, executionDirectory);
+      this.addItemsToSetAndTrackDelta(
+        evidence.filesWritten,
+        filePath ? [filePath] : [],
+        deltaState.newFilesWritten,
+        progressExcludedFiles,
+        deltaState
+      );
+      this.addItemsToSetAndTrackDelta(
+        evidence.modifiedFiles,
+        filePath ? [filePath] : [],
+        deltaState.newModifiedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+      this.addItemsToSetAndTrackDelta(
+        evidence.touchedFiles,
+        filePath ? [filePath] : [],
+        deltaState.newTouchedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      if (executionResult.success && filePath && !progressExcludedFiles.has(path.resolve(filePath))) {
+        deltaState.hasMeaningfulProgress = true;
+      }
+    }
+
+    const executedCommand = explicitToolResult.commandExecuted;
+    if (executedCommand && typeof executedCommand === 'string') {
+      evidence.commandsExecuted.push(executedCommand);
+      deltaState.newCommandsExecuted.push(executedCommand);
+
+      const commandSignature = this.normalizeCommandSignature(executedCommand);
+      if (commandSignature && !evidence.commandSignaturesSeen.has(commandSignature)) {
+        evidence.commandSignaturesSeen.add(commandSignature);
+
+        if (this.isMeaningfulCommand(executedCommand, specialFilesForCommandMeaning, executionDirectory)) {
+          deltaState.hasMeaningfulProgress = true;
+        }
+      }
+
+      const inferredCommandEvidence = this.inferEvidenceFromCommand(executedCommand, executionDirectory);
+
+      this.addItemsToSetAndTrackDelta(
+        evidence.filesRead,
+        inferredCommandEvidence.filesRead,
+        deltaState.newFilesRead,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      this.addItemsToSetAndTrackDelta(
+        evidence.filesWritten,
+        inferredCommandEvidence.filesWritten,
+        deltaState.newFilesWritten,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      this.addItemsToSetAndTrackDelta(
+        evidence.modifiedFiles,
+        inferredCommandEvidence.modifiedFiles,
+        deltaState.newModifiedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      this.addItemsToSetAndTrackDelta(
+        evidence.touchedFiles,
+        inferredCommandEvidence.touchedFiles,
+        deltaState.newTouchedFiles,
+        progressExcludedFiles,
+        deltaState
+      );
+
+      if (
+        executionResult.success &&
+        inferredCommandEvidence.classification === 'mutation' &&
+        !this.commandTargetsOnlySpecialFiles(executedCommand, specialFilesForCommandMeaning, executionDirectory)
+      ) {
+        deltaState.hasMeaningfulProgress = true;
+      }
+    }
+
+    return deltaState;
+  }
+
+  static buildTurnSignature(executionResult) {
+    if (executionResult?.toolCall?.name === 'exec') {
+      return `exec:${this.normalizeCommandSignature(executionResult.toolCall.arguments?.command || '')}`;
+    }
+
+    if (executionResult?.toolCall?.name === 'read') {
+      return `read:${executionResult.toolCall.arguments?.file_path || ''}`;
+    }
+
+    if (executionResult?.toolCall?.name === 'write') {
+      return `write:${executionResult.toolCall.arguments?.file_path || ''}`;
+    }
+
+    if (executionResult?.toolCall?.name === 'edit') {
+      return `edit:${executionResult.toolCall.arguments?.file_path || ''}`;
+    }
+
+    if (executionResult?.rawOutput) {
+      return `raw:${executionResult.rawOutput.trim().replace(/\s+/g, ' ').substring(0, 250)}`;
+    }
+
+    return executionResult?.success ? 'success_without_action' : `error:${executionResult?.errorMessage || 'unknown'}`;
+  }
+
+  static detectRepeatedActionLoop(signatures, maxPatternSize = 12, repetitions = 3) {
+    if (!Array.isArray(signatures) || signatures.length < repetitions) {
+      return { detected: false };
+    }
+
+    const total = signatures.length;
+    const maxSize = Math.min(maxPatternSize, Math.floor(total / repetitions));
+
+    for (let patternSize = 1; patternSize <= maxSize; patternSize++) {
+      const tail = signatures.slice(total - patternSize);
+      if (tail.some((item) => !item)) continue;
+
+      let repeated = true;
+      for (let rep = 2; rep <= repetitions; rep++) {
+        const start = total - patternSize * rep;
+        const candidate = signatures.slice(start, start + patternSize);
+
+        if (candidate.length !== patternSize) {
+          repeated = false;
+          break;
+        }
+
+        if (candidate.join('||') !== tail.join('||')) {
+          repeated = false;
+          break;
+        }
+      }
+
+      if (repeated) {
+        return {
+          detected: true,
+          patternSize,
+          repetitions,
+          pattern: tail
+        };
+      }
+    }
+
+    return { detected: false };
+  }
+
   static analyzeTaskScope(task, project) {
     const rawText = `${task?.title || ''}\n${task?.description || ''}`;
     const text = rawText.toLowerCase();
@@ -363,7 +843,13 @@ class TaskExecutionService {
     if (name === 'write') {
       const filePath = args.file_path || args.path || args.filePath;
       if (!filePath || typeof filePath !== 'string') return null;
-      return { name, arguments: { file_path: filePath, content: args.content ?? '' } };
+
+      const content =
+        typeof args.content === 'string'
+          ? args.content
+          : String(args.content ?? '');
+
+      return { name, arguments: { file_path: filePath, content } };
     }
 
     if (name === 'edit') {
@@ -492,6 +978,8 @@ ${this.formatNumberedList(resolvedAnalysisPlan.risks)}
 6. Respeite obrigatoriamente a [PRÉ-ANÁLISE DE ESCOPO].
 7. Se a pré-análise indicar frontend e backend, você NÃO pode concluir a tarefa mexendo em apenas uma das camadas.
 8. Antes de concluir, confira se todos os itens da Definição de pronto foram realmente atendidos.
+9. É PROIBIDO usar o arquivo .done para “forçar” conclusão.
+10. Você NÃO DEVE apagar e recriar o .done em loop. Crie o .done apenas uma vez, no final, quando tudo estiver realmente concluído.
 
 [COMO USAR FERRAMENTAS]
 Emita UM JSON estrito em uma nova linha com o formato:
@@ -500,6 +988,7 @@ Emita UM JSON estrito em uma nova linha com o formato:
 ### DICAS DE SOBREVIVÊNCIA NO TERMINAL (MUITO IMPORTANTE) ###
 1. ARQUIVOS GRANDES: Se você tentar usar "read" e receber o aviso de que o arquivo foi cortado por ser muito grande, NÃO tente ler de novo. Use a ferramenta "exec" com o comando [sed -n 'LINHA_INICIAL,LINHA_FINALp' /caminho/do/arquivo] para ler apenas as linhas ao redor de onde você precisa alterar.
 2. EDIÇÃO PRECISA: A ferramenta "edit" exige que o 'oldText' seja uma cópia EXATA (com espaços e quebras de linha). Se o "edit" falhar várias vezes, use a ferramenta "exec" com o comando [sed -i 's/texto_velho/texto_novo/g' /caminho/do/arquivo] para forçar a substituição direto no shell.
+3. Se você usar "exec" para alterar arquivos, essas alterações DEVEM ser reais e consistentes com a tarefa. Não altere apenas o relatório ou o .done.
 
 Ferramentas disponíveis:
 - {"name": "exec", "arguments": {"command": "comando_shell"}}
@@ -538,11 +1027,11 @@ ${engineRules}`;
     };
   }
 
-  static async executeOpenClaw(taskId, inputMessage, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 10800000) {
+  static async executeOpenClaw(taskId, inputMessage, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000) {
     return new Promise((resolve) => {
       const childArgs = [
         'agent',
-        '--agent', 'programmersenior',
+        '--agent', 'arquitetopleno',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -820,28 +1309,39 @@ ${safeOutput}
       const touchedFiles = Array.from(evidence.touchedFiles || []);
       const commandsExecuted = Array.from(evidence.commandsExecuted || []);
 
-      const realModifiedFiles = modifiedFiles.filter((file) => file !== relatorioFile && file !== doneFile);
-      const realWrittenFiles = filesWritten.filter((file) => file !== relatorioFile && file !== doneFile);
+      const specialArtifacts = [relatorioFile, doneFile, terminalLogFile]
+        .filter(Boolean)
+        .map((file) => path.resolve(file));
+
+      const isOnlySpecialCommand = (cmd) =>
+        this.commandTargetsOnlySpecialFiles(
+          cmd,
+          specialArtifacts,
+          project?.pastaBase || process.cwd()
+        );
+
+      const realModifiedFiles = modifiedFiles.filter(
+        (file) => file !== relatorioFile && file !== doneFile && file !== terminalLogFile
+      );
+
+      const realWrittenFiles = filesWritten.filter(
+        (file) => file !== relatorioFile && file !== doneFile && file !== terminalLogFile
+      );
+
       const realTouchedFiles = Array.from(
         new Set(
           [...filesRead, ...filesWritten, ...modifiedFiles, ...touchedFiles]
-            .filter((file) => file && file !== relatorioFile && file !== doneFile)
+            .filter((file) => file && file !== relatorioFile && file !== doneFile && file !== terminalLogFile)
         )
       );
 
       const inspectionCommands = commandsExecuted.filter((cmd) =>
-        /(find|grep|sed\s+-n|cat|ls|pwd|head|tail|awk|rg\b)/i.test(cmd || '')
+        this.isInspectionCommand(cmd || '') && !isOnlySpecialCommand(cmd)
       );
 
       const meaningfulCommands = commandsExecuted.filter((cmd) => {
         if (!cmd || typeof cmd !== 'string') return false;
-
-        const normalized = cmd.trim().toLowerCase();
-        if (!normalized) return false;
-        if (/^touch\s+.+done/.test(normalized)) return false;
-        if (normalized.includes(relatorioFile.toLowerCase()) && normalized.includes('touch')) return false;
-
-        return true;
+        return this.isMeaningfulCommand(cmd, specialArtifacts, project?.pastaBase || process.cwd());
       });
 
       const fullFrontendPath = this.resolveProjectPath(project?.pastaBase, project?.frontendPath);
@@ -887,12 +1387,15 @@ ${safeOutput}
           };
         }
 
-        if (filesRead.length === 0 && inspectionCommands.length === 0) {
+        const haEvidenciaInspecao =
+          realTouchedFiles.length > 0 || inspectionCommands.length > 0;
+
+        if (!haEvidenciaInspecao) {
           return {
             contractFulfilled: false,
             executionNotes: 'Sem evidência de inspeção.',
             feedbackToAgent:
-              '[VALIDAÇÃO] Você gerou saída final, mas ainda não há evidência de inspeção/análise. Leia arquivos ou execute comandos de inspeção antes de concluir.'
+              '[VALIDAÇÃO] Você gerou saída final, mas ainda não há evidência de inspeção/análise. Leia arquivos ou execute comandos de inspeção reais antes de concluir.'
           };
         }
 
@@ -926,7 +1429,7 @@ ${safeOutput}
             contractFulfilled: false,
             executionNotes: 'Nenhuma alteração real detectada.',
             feedbackToAgent:
-              '[VALIDAÇÃO] Relatório e .done não substituem implementação. Nenhum arquivo real do projeto foi modificado ainda. Volte, localize os arquivos corretos e faça a alteração necessária antes de concluir.'
+              '[VALIDAÇÃO] Relatório e .done não substituem implementação. Nenhum arquivo real do projeto foi modificado ainda. Se você alterou usando exec/sed, confirme que a alteração foi feita no arquivo correto. Volte, localize os arquivos corretos e faça a alteração necessária antes de concluir.'
           };
         }
 
@@ -1001,7 +1504,7 @@ ${safeOutput}
       const usefulExecution =
         realModifiedFiles.length > 0 ||
         realWrittenFiles.length > 0 ||
-        filesRead.length > 0 ||
+        realTouchedFiles.length > 0 ||
         meaningfulCommands.length > 0;
 
       if (!usefulExecution) {
@@ -1145,7 +1648,7 @@ ${safeOutput}
   }
 
   static async executeTask(task, userId, config) {
-    const { TASKS_DIR, TASK_TIMEOUT_MS = 300000 } = config;
+    const { TASKS_DIR, TASK_TIMEOUT_MS = 14400000 } = config;
 
     let executionLog = null;
     let files = null;
@@ -1208,22 +1711,24 @@ ${safeOutput}
         filesWritten: new Set(),
         modifiedFiles: new Set(),
         touchedFiles: new Set(),
-        commandsExecuted: []
+        commandsExecuted: [],
+        commandSignaturesSeen: new Set()
       };
 
       let contractResult = { contractFulfilled: false, executionNotes: 'Contrato não cumprido.' };
       let turnos = 0;
-      const MAX_TURNOS = 70;
+      const MAX_TURNOS = 500;
 
       let currentInput = files.promptContent;
 
       console.log(`\n🤖 [INICIANDO LOOP RE-ACT] Tarefa: ${task.id}`);
 
-      try { await fs.unlink(files.doneFile); } catch (e) {}
-      try { await fs.unlink(files.relatorioFile); } catch (e) {}
+      try { await fs.unlink(files.doneFile); } catch (_) {}
+      try { await fs.unlink(files.relatorioFile); } catch (_) {}
 
       let turnosSemProgresso = 0;
-      const MAX_TURNOS_SEM_PROGRESSO = 5;
+      const MAX_TURNOS_SEM_PROGRESSO = 6;
+      const recentActionSignatures = [];
 
       while (!contractResult.contractFulfilled && turnos < MAX_TURNOS) {
         turnos++;
@@ -1245,31 +1750,13 @@ ${safeOutput}
           console.log('[FIM RAW OUTPUT]\n');
         }
 
-        if (executionResult.toolResult) {
-          if (executionResult.toolCall?.name) {
-            evidence.toolsUsed.push(executionResult.toolCall.name);
-          }
-
-          for (const file of executionResult.toolResult.filesRead || []) {
-            evidence.filesRead.add(file);
-          }
-
-          for (const file of executionResult.toolResult.filesWritten || []) {
-            evidence.filesWritten.add(file);
-          }
-
-          for (const file of executionResult.toolResult.modifiedFiles || []) {
-            evidence.modifiedFiles.add(file);
-          }
-
-          for (const file of executionResult.toolResult.touchedFiles || []) {
-            evidence.touchedFiles.add(file);
-          }
-
-          if (executionResult.toolResult.commandExecuted) {
-            evidence.commandsExecuted.push(executionResult.toolResult.commandExecuted);
-          }
-        }
+        const evidenceDelta = this.applyExecutionEvidence(executionResult, evidence, {
+          executionDirectory: project?.pastaBase || TASKS_DIR,
+          doneFile: files.doneFile,
+          relatorioFile: files.relatorioFile,
+          terminalLogFile: files.terminalLogFile,
+          promptFile: files.promptFile
+        });
 
         contractResult = await this.verifyContract(
           files.doneFile,
@@ -1306,6 +1793,7 @@ ${safeOutput}
               doneExists
             },
 
+            evidenceDelta,
             evidenceSummary: {
               toolsUsed: evidence.toolsUsed,
               filesRead: Array.from(evidence.filesRead),
@@ -1326,7 +1814,7 @@ ${safeOutput}
             if (!qaResult.passed) {
               console.log(`\x1b[41m\x1b[37m ❌ BUILD FALHOU! DEVOLVENDO O ERRO PARA A IA... \x1b[0m`);
 
-              try { await fs.unlink(files.doneFile); } catch (e) {}
+              try { await fs.unlink(files.doneFile); } catch (_) {}
 
               currentInput = `[ERRO CRÍTICO DE COMPILAÇÃO - FASE DE QA]
 Você tentou finalizar a tarefa, mas quebrou a compilação do projeto.
@@ -1337,6 +1825,7 @@ Depois gere o relatório final e recrie o arquivo .done.`;
 
               contractResult = { contractFulfilled: false, executionNotes: qaResult.message };
               turnosSemProgresso = 0;
+              recentActionSignatures.length = 0;
               continue;
             }
 
@@ -1345,9 +1834,6 @@ Depois gere o relatório final e recrie o arquivo .done.`;
 
           break;
         }
-
-        const houveProgresso =
-          !!executionResult.toolFeedback || contractResult.contractFulfilled;
 
         if (executionResult.toolFeedback) {
           currentInput = executionResult.toolFeedback;
@@ -1382,22 +1868,49 @@ Nenhuma ferramenta válida foi emitida.
 Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         }
 
+        const houveProgresso =
+          contractResult.contractFulfilled ||
+          evidenceDelta.hasMeaningfulProgress;
+
         if (houveProgresso) {
           turnosSemProgresso = 0;
         } else {
           turnosSemProgresso++;
-          console.log(`⚠️ Turno sem progresso: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+          console.log(`⚠️ Turno sem progresso real: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+
+          currentInput += `
+
+[ALERTA ANTI-LOOP]
+Você está repetindo ações sem gerar novas evidências úteis.
+NÃO repita os mesmos comandos.
+NÃO apague e recrie o .done em loop.
+Se faltou algo, corrija a causa real apontada pela validação.`;
+        }
+
+        const turnSignature = this.buildTurnSignature(executionResult);
+        recentActionSignatures.push(turnSignature);
+        if (recentActionSignatures.length > 60) {
+          recentActionSignatures.shift();
+        }
+
+        const loopInfo = this.detectRepeatedActionLoop(recentActionSignatures, 12, 3);
+        if (loopInfo.detected) {
+          console.log(`❌ Loop detectado: padrão repetido ${loopInfo.repetitions}x (${loopInfo.patternSize} ações).`);
+          contractResult = {
+            contractFulfilled: false,
+            executionNotes: `Loop detectado: o agente repetiu o mesmo padrão de ações ${loopInfo.repetitions} vezes sem concluir a tarefa. Último padrão: ${loopInfo.pattern.join(' | ')}`
+          };
+          break;
         }
 
         if (turnosSemProgresso >= MAX_TURNOS_SEM_PROGRESSO) {
           contractResult = {
             contractFulfilled: false,
-            executionNotes: `Agente não produziu tool call nem saída útil após ${MAX_TURNOS_SEM_PROGRESSO} turnos consecutivos.`
+            executionNotes: `Agente entrou em estagnação: ${MAX_TURNOS_SEM_PROGRESSO} turnos consecutivos sem progresso real.`
           };
           break;
         }
       }
-
 
       if (config.DEBUG_TASK_CONTRACT) {
         const doneExists = await this.fileExists(files.doneFile);
@@ -1455,5 +1968,3 @@ Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
 }
 
 module.exports = TaskExecutionService;
-
-

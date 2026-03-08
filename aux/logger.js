@@ -4,7 +4,7 @@ const fs = require('fs');
 const { LOG_FILE } = require('./config');
 
 // Nova regra: Limite fixo de 500 linhas
-const MAX_LOG_LINES = 500; 
+const MAX_LOG_LINES = 80; 
 
 async function log(message) {
   const timestamp = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
