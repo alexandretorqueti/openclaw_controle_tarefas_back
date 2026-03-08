@@ -58,25 +58,19 @@ class TaskExecutionService {
     const doneFile = path.join(tasksDir, `done-${taskId}.done`);
     const terminalLogFile = path.join(tasksDir, `terminal-${taskId}.log`);
 
-    // Busca o projeto com seu tipo (se existir)
+    // Busca o projeto (sem projectType pois não está disponível no schema atual)
     let project = null;
     try {
       project = await prisma.project.findUnique({
-        where: { id: task.projectId },
-        include: { projectType: true }
+        where: { id: task.projectId }
       });
     } catch (e) {
       console.error(`Erro ao buscar projeto: ${e.message}`);
     }
 
-    // Persona padrão caso não haja projectType
+    // Persona padrão (projectType não disponível no schema atual)
     let personaPrompt = "Você é o Agente Técnico Jarbas.";
     let baseRules = "";
-
-    if (project?.projectType) {
-      personaPrompt = project.projectType.personaPrompt || personaPrompt;
-      baseRules = project.projectType.baseRules || "";
-    }
 
     // Regras específicas do projeto (campo regras)
     const projectSpecificRules = project?.regras ? project.regras : "Nenhuma regra específica definida.";
@@ -155,6 +149,7 @@ ${engineRules}`;
       let stderr = '';
       let streamBuffer = ''; 
       let isResolving = false; // Evita resolver a promise duas vezes
+      let fullOutput = '';
 
       const timeoutTimer = setTimeout(() => {
         if (!isResolving) {
@@ -278,6 +273,30 @@ ${engineRules}`;
           });
         }
       });
+
+
+      child.stdout.on('data', (data) => {
+        const chunk = data.toString();
+        fullOutput += chunk;
+        
+        // Imprime no seu console caractere por caractere (sem pular linha)
+        // Usamos process.stdout.write em vez de console.log para fluir como texto digitado
+        // A cor \x1b[90m deixa o texto cinza para diferenciar do sistema
+        process.stdout.write(`\x1b[90m${chunk}\x1b[0m`); 
+      });
+
+      child.stderr.on('data', (data) => {
+        // Se houver erros do OpenClaw, mostramos em vermelho
+        process.stdout.write(`\x1b[31m${data.toString()}\x1b[0m`);
+      });
+
+      child.on('close', (code) => {
+        // Quando ele terminar de falar, damos uma quebra de linha para organizar
+        console.log('\n'); 
+        
+        // ... (resto do seu código que processa o fullOutput e extrai o JSON) ...
+        resolve({ toolFeedback: null, output: fullOutput }); 
+      });
     });
   }
 
@@ -366,6 +385,11 @@ ${engineRules}`;
       let currentInput = files.promptContent;
 
       console.log(`\n🤖 [INICIANDO LOOP RE-ACT] Tarefa: ${task.id}`);
+      // Limpeza de segurança ANTES de iniciar a tarefa
+      const fsPromises = require('fs').promises;
+      try { await fsPromises.unlink(files.doneFile); } catch (e) {}
+      try { await fsPromises.unlink(files.relatorioFile); } catch (e) {}
+
 
       while (!contractResult.contractFulfilled && turnos < MAX_TURNOS) {
         turnos++;
@@ -384,37 +408,113 @@ ${engineRules}`;
         contractResult = await this.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile);
         
         // ==========================================
-        // FASE DE INTERCEPTAÇÃO DE QA (AUTO-REVISÃO)
+        // FASE DE QA COM BUILD INTELIGENTE (ADAPTADO PRA SUA TELA)
         // ==========================================
         if (contractResult.contractFulfilled) {
-          if (!hasPassedQA) {
-            console.log(`\x1b[43m\x1b[30m 🧐 FASE DE AUTO-REVISÃO INICIADA NO TURNO ${turnos} \x1b[0m`);
+            console.log(`\x1b[43m\x1b[30m ⚙️ FASE DE BUILD AUTOMATIZADO INICIADA NO TURNO ${turnos} \x1b[0m`);
             
-            // Apaga o arquivo .done secretamente
             try { await fs.unlink(files.doneFile); } catch (e) {}
-            // NOVO: Esvazia o relatório para invalidar o contrato atual!
             try { await fs.writeFile(files.relatorioFile, ''); } catch (e) {}
-            
             contractResult.contractFulfilled = false; 
-            hasPassedQA = true; 
-            
-            currentInput = `[FASE DE AUTO-REVISÃO OBRIGATÓRIA]
-Você acabou de sinalizar que a tarefa está pronta. AGORA PARE E MUDE SUA POSTURA. 
-Atue como um Revisor de Código Sênior rigoroso. Leia atentamente as alterações que você acabou de fazer.
 
-Verifique especificamente:
-1. Você alterou O ARQUIVO CORRETO que a tarefa pediu?
-2. Você chamou alguma função nova mas ESQUECEU de declará-la?
-3. Em arquivos React/JSX, você esqueceu as chaves '{}' ao redor das variáveis?
+            try {
+              const { execSync } = require('child_process');
+              const fsPromises = require('fs').promises;
+              const path = require('path'); // <--- IMPORTANTE: Biblioteca para montar caminhos
+              
+              const logContent = await fsPromises.readFile(files.terminalLogFile, 'utf8');
+              let buildErrors = '';
+              let testesExecutados = 0;
 
-Se você identificar QUALQUER erro, ou se perceber que NÃO FEZ a alteração, use 'edit' ou 'exec' para consertar agora mesmo.
-Se você revisar e tiver CERTEZA ABSOLUTA que está perfeito, você DEVE gerar um NOVO relatório com a ferramenta 'write' e usar 'exec' com 'touch ${files.doneFile}' para aprovar a revisão final.`;
-            
-            continue; 
-          } else {
-            console.log(`\x1b[42m\x1b[30m 🎯 CONTRATO CUMPRIDO E REVISADO NO TURNO ${turnos}! \x1b[0m`);
-            break;
-          }
+              // 1. Monta os caminhos absolutos unindo a Pasta Base com o nome do repositório
+              const fullFrontendPath = (project.pastaBase && project.frontendPath) 
+                ? path.join(project.pastaBase, project.frontendPath) 
+                : project.frontendPath;
+
+              const fullBackendPath = (project.pastaBase && project.backendPath) 
+                ? path.join(project.pastaBase, project.backendPath) 
+                : project.backendPath;
+
+              // 2. Verifica o Frontend
+              // Procura por "tarefas-web" nos logs da IA
+              if (fullFrontendPath && project.frontendPath && logContent.includes(project.frontendPath)) {
+                // Se o banco ainda não tiver o comando salvo, usa o npx tsc como padrão
+                const cmd = project.frontendBuildCmd || 'npx tsc --noEmit';
+                
+                console.log(`[QA] 🎨 Alterações detectadas em ${project.frontendPath}. Rodando: ${cmd}`);
+                try {
+                  // Roda o comando na pasta absoluta correta
+                  execSync(cmd, { cwd: fullFrontendPath, stdio: 'pipe' });
+                  testesExecutados++;
+                } catch (err) {
+                  buildErrors += `[ERRO NO FRONTEND (${cmd})]\n${err.stdout?.toString() || ''}\n${err.stderr?.toString() || ''}\n\n`;
+                }
+              }
+
+              // 3. Verifica o Backend
+              if (fullBackendPath && project.backendPath && logContent.includes(project.backendPath)) {
+                const cmd = project.backendBuildCmd || 'npx tsc --noEmit';
+                
+                console.log(`[QA] ⚙️ Alterações detectadas em ${project.backendPath}. Rodando: ${cmd}`);
+                try {
+                  execSync(cmd, { cwd: fullBackendPath, stdio: 'pipe' });
+                  testesExecutados++;
+                } catch (err) {
+                  buildErrors += `[ERRO NO BACKEND (${cmd})]\n${err.stdout?.toString() || ''}\n${err.stderr?.toString() || ''}\n\n`;
+                }
+              }
+
+              // ... (O restante da avaliação final de QA com os ifs de buildErrors continua igualzinho) ...
+
+              // 4. Verifica o Backend
+              if (project.backendPath && logContent.includes(project.backendPath)) {
+                console.log(`[QA] ⚙️ Alterações detectadas no Backend. Compilando...`);
+                try {
+                  // Ajuste o comando abaixo para o script real do seu back
+                  execSync('npx tsc --noEmit', { cwd: project.backendPath, stdio: 'pipe' });
+                  testesExecutados++;
+                } catch (err) {
+                  buildErrors += `[ERRO NO BACKEND]\n${err.stdout?.toString() || ''}\n${err.stderr?.toString() || ''}\n\n`;
+                }
+              }
+
+              // Se não mexeu em nenhum dos dois (ex: mexeu só num README na pasta base)
+              if (testesExecutados === 0) {
+                 console.log(`[QA] ⚠️ Nenhuma alteração estrutural detectada nos paths configurados. Pulando build.`);
+              }
+
+              // 5. AVALIAÇÃO FINAL DO QA
+              if (buildErrors) {
+                console.log(`\x1b[41m\x1b[37m ❌ BUILD FALHOU! DEVOLVENDO O ERRO PARA A IA... \x1b[0m`);
+                
+                const truncatedError = buildErrors.substring(0, 3000); 
+
+                currentInput = `[ERRO CRÍTICO DE COMPILAÇÃO - FASE DE QA]
+Você tentou finalizar a tarefa, mas quebrou a compilação do projeto.
+
+Veja os erros reais retornados pelo compilador:
+--------------------------------------------------
+${truncatedError}
+--------------------------------------------------
+
+LEIA o erro acima. Use 'edit' para consertar o arquivo onde você causou o problema. 
+Você não tem permissão para usar 'touch ${files.doneFile}' até que esse erro desapareça.`;
+
+                continue; // Volta pro loop e dá a bronca no Jarbas
+
+              } else {
+                console.log(`\x1b[42m\x1b[30m ✅ QA APROVADO! CONTRATO CUMPRIDO NO TURNO ${turnos}! \x1b[0m`);
+                
+                // === A CORREÇÃO CRÍTICA AQUI ===
+                contractResult.contractFulfilled = true; 
+                
+                break; // Agora sim ele sai do loop com a variável correta!
+              }
+
+            } catch (fatalError) {
+              console.error("[QA FATAL ERROR]", fatalError);
+              break; // Em caso de erro catastrófico no Node, aborta para não travar num loop infinito
+            }
         }
       }
 
