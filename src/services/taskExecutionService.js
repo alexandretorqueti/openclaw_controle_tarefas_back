@@ -93,11 +93,9 @@ ATENÇÃO: Não procure arquivos genéricos na raiz. Direcione seus comandos 'fi
 
     // Engine rules (regras mecânicas do sistema - hardcoded)
     const engineRules = `[REGRA DE OURO - PROIBIDO ADIVINHAR CAMINHOS]
-1. Você NÃO PODE adivinhar nomes de arquivos ou caminhos. NUNCA use "read" ou "edit" sem antes confirmar o caminho exato.
-2. OBRIGATÓRIO: Seu primeiro comando deve SEMPRE usar "exec" para mapear o projeto.
-   -> IMPORTANTE: Em comandos find/grep, IGNORE pastas como 'node_modules', 'dist', 'build' e '.git'.
-   -> Exemplo de busca segura: {"name": "exec", "arguments": {"command": "grep -rn --exclude-dir={node_modules,dist,.git} 'Criar Nova Tarefa' ."}}
-3. Só use "edit" após receber o retorno da busca com o caminho real.
+1. Você NÃO PODE adivinhar nomes de arquivos.
+2. OBRIGATÓRIO: Seu primeiro comando deve usar "exec" com 'find' direcionado às pastas da Arquitetura do Projeto.
+3. [REGRA ANTI-LOOP]: Se um comando não retornar nada, É PROIBIDO repeti-lo. Use 'ls -la' para entender onde você está.
 
 [COMO USAR FERRAMENTAS]
 Emita UM JSON estrito em uma nova linha com o formato:
