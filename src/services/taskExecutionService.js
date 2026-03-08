@@ -126,7 +126,7 @@ ${engineRules}`;
     return new Promise((resolve, reject) => {
       const childArgs = [
         'agent',
-        '--agent', 'ArquitetoSenior',
+        '--agent', 'ArquitetoPleno',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -453,14 +453,17 @@ ${engineRules}`;
 
               // 3. Verifica o Backend
               if (fullBackendPath && project.backendPath && logContent.includes(project.backendPath)) {
-                const cmd = project.backendBuildCmd || 'npx tsc --noEmit';
+                tentativasBuild++;
                 
-                console.log(`[QA] ⚙️ Alterações detectadas em ${project.backendPath}. Rodando: ${cmd}`);
-                try {
-                  execSync(cmd, { cwd: fullBackendPath, stdio: 'pipe' });
-                  testesExecutados++;
-                } catch (err) {
-                  buildErrors += `[ERRO NO BACKEND (${cmd})]\n${err.stdout?.toString() || ''}\n${err.stderr?.toString() || ''}\n\n`;
+                if (project.backendBuildCmd) {
+                  console.log(`[QA] ⚙️ Alterações detectadas em ${project.backendPath}. Rodando: ${project.backendBuildCmd}`);
+                  try {
+                    execSync(project.backendBuildCmd, { cwd: fullBackendPath, stdio: 'pipe' });
+                  } catch (err) {
+                    buildErrors += `[ERRO NO BACKEND]\n${err.stdout?.toString() || ''}\n${err.stderr?.toString() || ''}\n\n`;
+                  }
+                } else {
+                  console.log(`[QA] ⚠️ Alterações no backend detectadas, mas nenhum 'Comando de Build' configurado no painel. Pulando validação do backend.`);
                 }
               }
 

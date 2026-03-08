@@ -65,6 +65,8 @@ model Project {
   repositoryUrl  String?  // URL do repositório principal (GitHub, GitLab, etc.)
   pastaBase      String?  // Campo pasta base (não obrigatório)
 
+  frontendBuildCmd String?
+  backendBuildCmd  String?
   @@map("projects")
 }
 

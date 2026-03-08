@@ -9,7 +9,21 @@ class ProjectController {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    const validation = validateProject(body);
+    // Determine createdById: prefer authenticated user, fallback to body, then default
+    let createdById = body.createdById;
+    
+    if (req.user && req.user.id) {
+      // Use authenticated user's ID (overrides any provided value)
+      createdById = req.user.id;
+    } else if (!createdById || createdById.trim() === '') {
+      // Fallback to default user ID (Alexandre's ID) for development/testing
+      createdById = '5fe303cc-19be-4d03-abe6-91a63414005f';
+    }
+    
+    // Update body with determined createdById
+    const validatedBody = { ...body, createdById };
+    
+    const validation = validateProject(validatedBody);
     
     if (!validation.success) {
       const error = new Error('Validation failed');

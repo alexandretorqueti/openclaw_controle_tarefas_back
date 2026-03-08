@@ -18,7 +18,9 @@ class ProjectService {
         backendPath: data.backendPath || null,
         backendPort: data.backendPort || null,
         repositoryUrl: data.repositoryUrl || null,
-        pastaBase: data.pastaBase || null
+        pastaBase: data.pastaBase || null,
+        frontendBuildCmd: data.frontendBuildCmd || null,
+        backendBuildCmd: data.backendBuildCmd || null
       },
       include: {
         createdBy: {
@@ -159,6 +161,8 @@ class ProjectService {
     if (data.backendPort !== undefined) updateData.backendPort = data.backendPort;
     if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl;
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase;
+  if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd;
+  if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd;
     
     return await prisma.project.update({
       where: { id },
