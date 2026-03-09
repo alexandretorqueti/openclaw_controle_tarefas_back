@@ -44,7 +44,12 @@ class ProjectController {
 
   // Get all projects
   getAllProjects = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    const projects = await projectService.getAllProjects();
+    const { sort_by: sortBy, sort_order: sortOrder } = req.query;
+    const options = {
+      sortBy: sortBy || 'createdAt',
+      sortOrder: sortOrder || 'desc'
+    };
+    const projects = await projectService.getAllProjects(options);
     
     res.json({
       count: projects.length,

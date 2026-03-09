@@ -36,7 +36,14 @@ class ProjectService {
   }
 
   // Get all projects with task counts
-  async getAllProjects() {
+  async getAllProjects(options = {}) {
+    const { sortBy = 'createdAt', sortOrder = 'desc' } = options;
+    
+    // Validate sort fields
+    const validSortFields = ['createdAt', 'updatedAt', 'name'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'createdAt';
+    const sortDirection = sortOrder === 'asc' ? 'asc' : 'desc';
+
     const projects = await prisma.project.findMany({
       where: { ativo: true },
       include: {
@@ -57,7 +64,7 @@ class ProjectService {
         }
       },
       orderBy: {
-        createdAt: 'desc'
+        [sortField]: sortDirection
       }
     });
     

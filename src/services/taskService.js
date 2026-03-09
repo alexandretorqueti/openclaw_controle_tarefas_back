@@ -169,7 +169,7 @@ class TaskService {
         priorityId: data.priorityId,
         createdById: data.createdById,
         assignedToId: data.assignedToId,
-        model: data.model || null,
+        agent: data.agent || null,
         
         parentTaskId: data.parentTaskId || null
       },
@@ -516,7 +516,7 @@ class TaskService {
     const updateData = {
       title: data.title,
       description: data.description,
-      deadline: data.deadline ? new Date(data.deadline) : undefined,
+      deadline: data.deadline !== undefined ? (data.deadline ? new Date(data.deadline) : null) : undefined,
       position: data.position,
       isCompleted: data.isCompleted,
       projectId: data.projectId,
@@ -524,7 +524,7 @@ class TaskService {
       priorityId: data.priorityId,
       assignedToId: data.assignedToId,
       parentTaskId: data.parentTaskId,
-      model: data.model,
+      agent: data.agent,
       updatedAt: new Date()
     };
 

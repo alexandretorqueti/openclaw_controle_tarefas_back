@@ -61,7 +61,54 @@ exports.listAgents = async () => {
   try {
     const result = await exports.execOpenClawCommand('agents', ['list']);
     // O comando retorna um array de agentes
-    return Array.isArray(result) ? result : [];
+    const agents = Array.isArray(result) ? result : [];
+    
+    // Garantir que cada agente tenha uma estrutura consistente
+    return agents.map(agent => {
+      // Função para limpar strings que podem vir com aspas extras
+      const cleanString = (str) => {
+        if (!str) return '';
+        // Remove aspas duplas no início e no fim
+        let cleaned = str.toString().trim();
+        if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+          cleaned = cleaned.slice(1, -1);
+        }
+        return cleaned;
+      };
+      
+      // Obter valores limpos
+      const rawEmoji = cleanString(agent.identity?.emoji || agent.identityEmoji || agent.emoji || '');
+      const rawAvatar = cleanString(agent.identity?.avatar || agent.avatar || '');
+      
+      // Detectar se o emoji é uma URL (imagem)
+      const isUrl = (str) => {
+        if (!str) return false;
+        return str.startsWith('http://') || str.startsWith('https://') || str.startsWith('data:image');
+      };
+      
+      let finalEmoji = rawEmoji;
+      let finalAvatar = rawAvatar;
+      
+      // Se emoji for URL e avatar estiver vazio, mover para avatar
+      if (isUrl(rawEmoji) && !rawAvatar) {
+        finalAvatar = rawEmoji;
+        finalEmoji = ''; // Limpar emoji pois é uma imagem
+      }
+      
+      return {
+        id: agent.id || '',
+        identity: {
+          name: cleanString(agent.identity?.name || agent.identityName || agent.name || ''),
+          emoji: finalEmoji,
+          avatar: finalAvatar,
+          model: cleanString(agent.model || '') // Movendo model para dentro de identity
+        },
+        bindings: agent.bindings || [],
+        workspace: agent.workspace || '',
+        createdAt: agent.createdAt || new Date().toISOString(),
+        updatedAt: agent.updatedAt || new Date().toISOString()
+      };
+    });
   } catch (error) {
     console.error('Erro ao listar agentes:', error.message);
     throw error;
@@ -99,16 +146,20 @@ exports.setAgentIdentity = async (agentId, identity) => {
   try {
     const args = ['set-identity', '--agent', agentId];
     
-    if (identity.name) {
+    if (identity.name !== undefined) {
       args.push('--name', `"${identity.name}"`);
     }
     
-    if (identity.emoji) {
+    if (identity.emoji !== undefined) {
       args.push('--emoji', `"${identity.emoji}"`);
     }
     
-    if (identity.avatar) {
+    if (identity.avatar !== undefined) {
       args.push('--avatar', `"${identity.avatar}"`);
+    }
+    
+    if (identity.model !== undefined) {
+      args.push('--model', `"${identity.model}"`);
     }
     
     const result = await exports.execOpenClawCommand('agents', args);
@@ -193,5 +244,20 @@ exports.getAgentDetails = async (agentId) => {
   } catch (error) {
     console.error('Erro ao obter detalhes do agente:', error.message);
     throw error;
+  }
+};
+
+/**
+ * Valida se um agente existe
+ * @param {string} agentId - ID do agente
+ * @returns {Promise<boolean>} - True se o agente existe
+ */
+exports.agentExists = async (agentId) => {
+  try {
+    const agents = await exports.listAgents();
+    return agents.some(a => a.id === agentId);
+  } catch (error) {
+    console.error('Erro ao verificar existência do agente:', error.message);
+    return false;
   }
 };

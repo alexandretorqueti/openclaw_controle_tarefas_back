@@ -2,10 +2,9 @@ const { z } = require('zod');
 
 const taskSchema = z.object({
   title: z.string()
-    .min(3, 'Task title must be at least 3 characters')
+    .min(1, 'Task title must be at least 1 character')
     .max(200, 'Task title must be at most 200 characters'),
   description: z.string()
-    .min(10, 'Description must be at least 10 characters')
     .optional()
     .or(z.literal('')),
   deadline: z.string()
@@ -45,7 +44,7 @@ const taskSchema = z.object({
     }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
     .optional()
     .nullable(),
-  model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable()
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable()
 });
 
 const updateTaskSchema = z.object({
@@ -57,12 +56,16 @@ const updateTaskSchema = z.object({
     .min(10, 'Description must be at least 10 characters')
     .optional(),
   deadline: z.string()
+    .optional()
+    .or(z.literal(''))
+    .transform((val) => val === '' ? null : val)
     .refine(date => {
+      // Se for undefined (não enviado) ou null (após transform), é válido
+      if (date === undefined || date === null) return true;
       // Aceita tanto formato ISO 8601 completo quanto sem segundos
       const isoRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
       return isoRegex.test(date) && !isNaN(new Date(date).getTime());
-    }, 'Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS)')
-    .optional(),
+    }, 'Invalid date format. Use ISO 8601 format (YYYY-MM-DDTHH:MM or YYYY-MM-DDTHH:MM:SS)'),
   position: z.number().int().min(0).optional(),
   isCompleted: z.boolean().optional(),
   
@@ -89,7 +92,7 @@ const updateTaskSchema = z.object({
     }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
     .optional()
     .nullable(),
-  model: z.string().max(100, 'Model must be at most 100 characters').optional().nullable(),
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   statusChangeNotes: z.string().max(500).optional(),
   userId: z.string().uuid('Invalid user ID format').optional()
 });

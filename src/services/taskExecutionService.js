@@ -898,7 +898,7 @@ ${engineRules}`;
     return new Promise((resolve) => {
       const childArgs = [
         'agent',
-        '--agent', 'arquitetosenior',
+        '--agent', 'main',
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -1794,6 +1794,15 @@ Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         );
         const houveProgresso = turnProgress.hasMeaningfulProgress;
 
+        // DEBUG: Log detalhado do progresso
+        console.log(`📊 [PROGRESSO] Turno ${turnos}:`);
+        console.log(`   contractFulfilled: ${contractResult.contractFulfilled}`);
+        console.log(`   meaningfulReads: ${turnProgress.meaningfulReads.length}`);
+        console.log(`   meaningfulMutations: ${turnProgress.meaningfulMutations.length}`);
+        console.log(`   noOpMutation: ${turnProgress.noOpMutation}`);
+        console.log(`   hasMeaningfulProgress: ${houveProgresso}`);
+        console.log(`   turnosSemProgresso: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+
         if (turnProgress.noOpMutation) {
           const noOpFeedback =
             'O último comando mutante executou sem erro no shell, mas não alterou nenhum arquivo de fato. ' +
@@ -1823,7 +1832,7 @@ Se faltou algo, corrija a causa real apontada pela validação.`;
           recentActionSignatures.shift();
         }
 
-        const loopInfo = this.detectRepeatedActionLoop(recentActionSignatures, 12, 3);
+        const loopInfo = this.detectRepeatedActionLoop(recentActionSignatures, 12, 8);
         if (loopInfo.detected) {
           console.log(`❌ Loop detectado: padrão repetido ${loopInfo.repetitions}x (${loopInfo.patternSize} ações).`);
           contractResult = {
@@ -1916,10 +1925,11 @@ function isEphemeralArtifact(filePath = '') {
   const base = path.basename(filePath || '');
 
   return (
-    base === 'done' ||
-    base.endsWith('.done') ||
     /^terminal-\d+\.log$/i.test(base) ||
     /^relatorio-\d+\.txt$/i.test(base)
+    // NOTA: .done NÃO é mais considerado artefato efêmero
+    // porque criar .done é o objetivo final da tarefa
+    // e deve contar como progresso significativo
   );
 }
 
@@ -2039,11 +2049,13 @@ function computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process
     meaningfulMutations,
     noOpMutation,
     hasMeaningfulProgress:
-      !noOpMutation &&
+      !!contractResult.contractFulfilled ||  // Contrato cumprido SEMPRE é progresso
       (
-        meaningfulReads.length > 0 ||
-        meaningfulMutations.length > 0 ||
-        !!contractResult.contractFulfilled
+        !noOpMutation &&
+        (
+          meaningfulReads.length > 0 ||
+          meaningfulMutations.length > 0
+        )
       ),
   };
 }

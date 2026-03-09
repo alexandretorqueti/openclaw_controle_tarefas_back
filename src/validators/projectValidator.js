@@ -1,5 +1,6 @@
 const { z } = require('zod');
 
+// Project validator - updated 2026-03-08 for frontend layout refactoring
 const projectSchema = z.object({
   name: z.string()
     .min(3, 'Project name must be at least 3 characters')
