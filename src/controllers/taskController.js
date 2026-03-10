@@ -10,39 +10,19 @@ class TaskController {
   /**
    * Helper para obter usuário a partir do nickname ou userId
    * Aceita: body.nickname, body.userNickname, body.createdByNickname, 
-   *         body.createdById, header X-User-Nickname
+   *         body.createdById, header X-User-Nickname, body.createBy
    */
   async _resolveUser(req) {
-    // Primeiro verificar se já tem req.user (do middleware extractUser)
-    if (req.user?.id) {
-      return req.user;
-    }
-
-    // Tentar obter userId direto
-    const userId = req.body?.createdById || req.body?.userId;
-    if (userId) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, name: true, nickname: true, email: true, role: true }
-      });
-      if (user) return user;
-    }
-
-    // Tentar obter por nickname
-    const nickname = 
-      req.headers['x-user-nickname'] ||
-      req.body?.nickname ||
-      req.body?.userNickname ||
-      req.body?.createdByNickname;
-
+    const nickname = req.body?.created_by?.nickname;
     if (nickname) {
+      // Buscar usuário pelo nickname
       const user = await prisma.user.findUnique({
         where: { nickname: nickname.trim() },
         select: { id: true, name: true, nickname: true, email: true, role: true }
       });
       if (user) return user;
     }
-
+  
     return null;
   }
 

@@ -169,7 +169,15 @@ async function main() {
       };
 
       await log(`🤖 Executando tarefa via TaskExecutionService...`);
-      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_NICKNAME, config);
+      // Busca dados do usuario pelo nickname para passar para o serviço de execução (caso necessário)
+      const usersRes = await axios.get(`${API_URL}/api/users`);
+      const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
+      if (user) {
+        config.MY_USER_ID = user.id;
+      } else {
+        await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Continuando sem MY_USER_ID.`);
+      }
+      const executionResult = await TaskExecutionService.executeTask(task, config.MY_USER_ID, config);
 
       // 4. Processa resultado
       if (executionResult.success) {
