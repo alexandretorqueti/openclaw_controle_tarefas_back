@@ -144,31 +144,40 @@ exports.addAgent = async (name, workspace) => {
  */
 exports.setAgentIdentity = async (agentId, identity) => {
   try {
-    const args = ['set-identity', '--agent', agentId];
-    
+    // Atualiza identidade (name, emoji, avatar) via CLI agents set-identity
+    const identityArgs = ['set-identity', '--agent', agentId];
     if (identity.name !== undefined) {
-      args.push('--name', `"${identity.name}"`);
+      identityArgs.push('--name', identity.name);
     }
-    
     if (identity.emoji !== undefined) {
-      args.push('--emoji', `"${identity.emoji}"`);
+      identityArgs.push('--emoji', identity.emoji);
     }
-    
     if (identity.avatar !== undefined) {
-      args.push('--avatar', `"${identity.avatar}"`);
+      identityArgs.push('--avatar', identity.avatar);
     }
-    
+    await exports.execOpenClawCommand('agents', identityArgs);
+
+    // Atualiza modelo via config (agents.list[<index>].model)
     if (identity.model !== undefined) {
-      args.push('--model', `"${identity.model}"`);
+      const agentsResult = await exports.execOpenClawCommand('agents', ['list', '--json']);
+      const output = typeof agentsResult === 'object' ? agentsResult : (agentsResult.stdout || '');
+
+      const agents = output;
+      const agentIndex = agents.findIndex(agent => agent.id === agentId);
+      if (agentIndex === -1) {
+        throw new Error(`Agente '${agentId}' não encontrado.`);
+      }
+      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.model`, `'"${identity.model}"'`]);
     }
-    
-    const result = await exports.execOpenClawCommand('agents', args);
-    return result;
+
+    return { success: true, agentId };
   } catch (error) {
     console.error('Erro ao atualizar identidade do agente:', error.message);
     throw error;
   }
 };
+
+
 
 /**
  * Adiciona um binding a um agente

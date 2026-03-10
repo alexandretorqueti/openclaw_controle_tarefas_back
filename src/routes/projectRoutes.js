@@ -15,7 +15,7 @@ router.post('/', projectController.createProject);
 // PUT /api/projects/:id - Update project
 router.put('/:id', projectController.updateProject);
 
-// DELETE /api/projects/:id - Delete project
+// DELETE /api/projects/:id - Delete project (buttons fix 2026-03-10: frontend prevents task screen open)
 router.delete('/:id', projectController.deleteProject);
 
 // GET /api/projects/:id/statistics - Get project statistics

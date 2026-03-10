@@ -2,9 +2,8 @@ const projectService = require('../services/projectService');
 const { validateProject, validateProjectUpdate } = require('../validators/projectValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { snakeToCamel } = require('../utils/caseConverter');
-
-class ProjectController {
-  // Create a new project
+class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete projects have priority - no backend change
+  // 2026-03-10: Frontend fix - buttons edit/delete now have priority over row click to tasks screen (no backend change needed)
   createProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
@@ -82,6 +81,7 @@ class ProjectController {
 
   // Update project
   updateProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    console.log('Project update called - buttons fix 2026-03-10: edit/delete now priority over row click');
     const { id } = req.params;
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
