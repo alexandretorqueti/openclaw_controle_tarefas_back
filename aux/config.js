@@ -25,8 +25,8 @@ const LOCK_FILE = process.env.LOCK_FILE_PATH || '/home/alexandrebragatorqueti/tm
 
 
 const STATUS = {
-  IN_PROGRESS: process.env.STATUS_IN_PROGRESS_ID || '28a4201d-272e-4e53-8c91-4cd5bf5ea516',
-  COMPLETED: process.env.STATUS_COMPLETED_ID || 'd9bc0336-0a16-48eb-8fc7-0c5ebec06f97',
+  IN_PROGRESS: process.env.STATUS_IN_PROGRESS_ID,
+  COMPLETED: process.env.STATUS_COMPLETED_ID,
 };
 
 // Garante que as pastas físicas existam

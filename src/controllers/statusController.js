@@ -86,7 +86,7 @@ class StatusController {
         name: name !== undefined ? name : existingStatus.name,
         colorCode: color_code !== undefined ? color_code : existingStatus.colorCode,
         isFinalState: is_final_state !== undefined ? is_final_state : existingStatus.isFinalState,
-        visible_to_ai: visible_to_ai !== undefined ? visible_to_ai : existingStatus.visible_to_ai,
+        visibleToAi: visible_to_ai !== undefined ? visible_to_ai : existingStatus.visibleToAi,
         order: order !== undefined ? order : existingStatus.order
       }
     });

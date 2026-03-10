@@ -64,6 +64,7 @@ model Project {
   backendPort    Int?     // Porta do backend (ex: 3001, 8081)
   repositoryUrl  String?  // URL do repositório principal (GitHub, GitLab, etc.)
   pastaBase      String?  // Campo pasta base (não obrigatório)
+  agent          String?  // Agente padrão para tarefas do projeto
 
   frontendBuildCmd String?
   backendBuildCmd  String?

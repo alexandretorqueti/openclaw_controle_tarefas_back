@@ -5,23 +5,36 @@ const fs = require('fs').promises;
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const CommandExecutor = require('./commandExecutor');
+const agentService = require('./agentService');
 
 const prisma = new PrismaClient();
 
 class TaskExecutionService {
-  static async createExecutionLog(task, userId, model) {
+  static async createExecutionLog(task, userId, agentId) {
     try {
+      let model = 'deepseek/deepseek-chat'; // Modelo padrão
+      
+      // Tenta obter o modelo do agente configurado
+      if (agentId) {
+        try {
+          const agentDetails = await agentService.getAgentDetails(agentId);
+          model = agentDetails.identity?.model || model;
+        } catch (error) {
+          console.warn(`⚠️  Não foi possível obter modelo do agente ${agentId}: ${error.message}`);
+        }
+      }
+      
       const executionLog = await prisma.taskExecutionLog.create({
         data: {
           taskId: task.id,
           userId,
-          model: model || task.model || 'deepseek/deepseek-chat',
+          model: model,
           startedAt: new Date(),
           success: false
         }
       });
 
-      console.log(`📝 Log de execução criado para tarefa ${task.id}`);
+      console.log(`📝 Log de execução criado para tarefa ${task.id} (Agente: ${agentId || 'main'}, Modelo: ${model})`);
       return executionLog;
     } catch (error) {
       console.error(`❌ Erro ao criar log de execução: ${error.message}`);
@@ -894,11 +907,11 @@ ${engineRules}`;
     };
   }
 
-  static async executeOpenClaw(taskId, inputMessage, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000) {
+  static async executeOpenClaw(taskId, inputMessage, agent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000) {
     return new Promise((resolve) => {
       const childArgs = [
         'agent',
-        '--agent', 'main',
+        '--agent', agent,
         '--session-id', taskId,
         '-m', inputMessage,
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
@@ -1540,7 +1553,7 @@ ${safeOutput}
     let files = null;
 
     try {
-      executionLog = await this.createExecutionLog(task, userId, task.model);
+      executionLog = await this.createExecutionLog(task, userId, task.agent);
 
       const project = task.projectId
         ? await prisma.project.findUnique({ where: { id: task.projectId } })
@@ -1620,10 +1633,25 @@ ${safeOutput}
         turnos++;
         console.log(`\n\x1b[44m\x1b[37m 🔄 --- INICIANDO TURNO ${turnos}/${MAX_TURNOS} --- \x1b[0m`);
 
+        // Determina o agente a ser usado (fallback para 'main')
+        const agentId = task.agent || 'main';
+        let agentModel = null;
+        
+        try {
+          // Obtém informações do agente para pegar o modelo configurado
+          const agentDetails = await agentService.getAgentDetails(agentId);
+          agentModel = agentDetails.identity?.model || null;
+          console.log(`🤖 Agente selecionado: ${agentId} (Modelo: ${agentModel || 'padrão'})`);
+        } catch (error) {
+          console.warn(`⚠️  Não foi possível obter detalhes do agente ${agentId}: ${error.message}`);
+          console.log(`🤖 Usando agente padrão: main`);
+        }
+
         const executionResult = await this.executeOpenClaw(
           task.id,
           currentInput,
-          task.model,
+          agentId,  // ID do agente configurado na tarefa
+          agentModel,  // Modelo do agente (para OPENCLAW_MODEL)
           TASKS_DIR,
           files.terminalLogFile,
           project?.pastaBase || null,

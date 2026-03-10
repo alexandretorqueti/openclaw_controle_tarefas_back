@@ -9,7 +9,17 @@ class CommentController {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    const validation = validateComment(body);
+    // Require authenticated user for this personal system
+    if (!req.user || !req.user.id) {
+      const error = new Error('User must be authenticated to create comments');
+      error.statusCode = 401;
+      throw error;
+    }
+    
+    // Always use authenticated user's ID
+    const validatedBody = { ...body, userId: req.user.id };
+    
+    const validation = validateComment(validatedBody);
     
     if (!validation.success) {
       const error = new Error('Validation failed');

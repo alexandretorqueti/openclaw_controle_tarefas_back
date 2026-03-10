@@ -19,6 +19,7 @@ class ProjectService {
         backendPort: data.backendPort || null,
         repositoryUrl: data.repositoryUrl || null,
         pastaBase: data.pastaBase || null,
+        agent: data.agent || null,
         frontendBuildCmd: data.frontendBuildCmd || null,
         backendBuildCmd: data.backendBuildCmd || null
       },
@@ -168,6 +169,7 @@ class ProjectService {
     if (data.backendPort !== undefined) updateData.backendPort = data.backendPort;
     if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl;
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase;
+    if (data.agent !== undefined) updateData.agent = data.agent;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd;
     

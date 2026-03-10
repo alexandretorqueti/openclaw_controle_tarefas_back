@@ -36,7 +36,7 @@ async function fetchSystemData() {
       console.log(`✅ Usuário 'alexandre' encontrado (ID: ${systemData.userId})`);
     } catch (userError) {
       console.log('⚠️  Usuário "alexandre" não encontrado, usando ID padrão');
-      systemData.userId = '5fe303cc-19be-4d03-abe6-91a63414005f'; // ID padrão do sistema
+      systemData.userId = '02c83d5b-c713-4fe7-8081-421ffbf8825c'; // ID padrão do sistema
     }
     
     return systemData;

@@ -11,19 +11,21 @@ class TaskController {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    // Determine createdById: prefer authenticated user, fallback to body, then default
-    let createdById = body.createdById;
-    
-    if (req.user && req.user.id) {
-      // Use authenticated user's ID (overrides any provided value)
-      createdById = req.user.id;
-    } else if (!createdById || createdById.trim() === '') {
-      // Fallback to default user ID (Alexandre's ID) for development/testing
-      createdById = '5fe303cc-19be-4d03-abe6-91a63414005f';
+    // Require authenticated user for this personal system
+    if (!req.user || !req.user.id) {
+      const error = new Error('User must be authenticated to create tasks');
+      error.statusCode = 401;
+      throw error;
     }
     
-    // Update body with determined createdById
-    const validatedBody = { ...body, createdById };
+    // Always use authenticated user's ID as creator
+    const createdById = req.user.id;
+    
+    // If assignedToId is not provided, default to the authenticated user
+    const assignedToId = body.assignedToId || req.user.id;
+    
+    // Update body with authenticated user's IDs
+    const validatedBody = { ...body, createdById, assignedToId };
     
     const validation = validateTask(validatedBody);
     

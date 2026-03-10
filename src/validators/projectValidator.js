@@ -22,6 +22,7 @@ const projectSchema = z.object({
   backendPort: z.number().int().positive().max(65535).optional().nullable(),
   repositoryUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
   pastaBase: z.string().optional().nullable(),
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
 });
@@ -46,6 +47,7 @@ const updateProjectSchema = z.object({
   backendPort: z.number().int().positive().max(65535).optional().nullable(),
   repositoryUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
   pastaBase: z.string().optional().nullable(),
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
 });

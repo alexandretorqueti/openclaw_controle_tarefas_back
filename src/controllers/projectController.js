@@ -9,15 +9,20 @@ class ProjectController {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    // Determine createdById: prefer authenticated user, fallback to body, then default
+    // Determine createdById: prefer authenticated user, otherwise use provided ID
     let createdById = body.createdById;
     
     if (req.user && req.user.id) {
       // Use authenticated user's ID (overrides any provided value)
       createdById = req.user.id;
+      console.log(`✅ Usando ID do usuário autenticado: ${createdById}`);
     } else if (!createdById || createdById.trim() === '') {
-      // Fallback to default user ID (Alexandre's ID) for development/testing
-      createdById = '5fe303cc-19be-4d03-abe6-91a63414005f';
+      // No authenticated user and no provided ID
+      const error = new Error('User must be authenticated or provide createdById');
+      error.statusCode = 401;
+      throw error;
+    } else {
+      console.log(`⚠️  Usando provided createdById (modo desenvolvimento): ${createdById}`);
     }
     
     // Update body with determined createdById
