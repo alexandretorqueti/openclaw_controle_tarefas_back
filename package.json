@@ -9,7 +9,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "jest --setupFilesAfterEnv ./test/setup.js --testTimeout=10000",
+    "test:coverage": "jest --setupFilesAfterEnv ./test/setup.js --coverage"
   },
   "dependencies": {
     "@prisma/client": "^5.7.0",
