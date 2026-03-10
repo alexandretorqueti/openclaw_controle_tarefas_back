@@ -9,7 +9,7 @@ async function main() {
   axios.defaults.timeout = 60000;
 
   // Configuracoes
-  const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_ID, TASK_TIMEOUT_MS } = require('./aux/config');
+  const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
   const { log } = require('./aux/logger');
 
   // Servicos modularizados
@@ -169,7 +169,7 @@ async function main() {
       };
 
       await log(`🤖 Executando tarefa via TaskExecutionService...`);
-      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
+      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_NICKNAME, config);
 
       // 4. Processa resultado
       if (executionResult.success) {

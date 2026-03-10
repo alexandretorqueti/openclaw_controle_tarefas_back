@@ -90,8 +90,10 @@ const passport = {
   session: () => (req, res, next) => next(),
   use: () => {},
   serializeUser: () => {},
-  deserializeUser: () => {}
+  deserializeUser: () => {},
+  authenticate: () => (req, res, next) => next()
 };
+
 
 module.exports = {
   extractUser,

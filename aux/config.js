@@ -13,7 +13,7 @@ const ERROR_DIR = path.join(TASKS_DIR, 'error');
 const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
-const MY_USER_ID = process.env.MY_USER_ID || '0bdc9840-fde8-4008-9c54-47edf5f527f2';
+const MY_USER_NICKNAME = process.env.MY_USER_NICKNAME || 'Jarbas';
 
 const MAX_LOG_LINES = 1000;
 const TASK_DEFAULT_TIMEOUT_MINUTES = parseInt(process.env.TASK_DEFAULT_TIMEOUT_MINUTES) || 30;
@@ -37,7 +37,7 @@ const fs = require('fs');
 
 module.exports = {
   BASE_DIR, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, API_URL, 
-  STATE_FILE, LOG_FILE, MY_USER_ID, MAX_LOG_LINES, 
+  STATE_FILE, LOG_FILE, MY_USER_NICKNAME, MAX_LOG_LINES, 
   TASK_TIMEOUT_MS, servicesConfig, STATUS, MINUTOS, LOCK_FILE,
   OPENCLAW_EXECUTION_TIMEOUT_MS,
   DEBUG_TASK_ANALYSIS: process.env.DEBUG_TASK_ANALYSIS === 'true',
