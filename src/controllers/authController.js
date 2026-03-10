@@ -1,61 +1,33 @@
+/**
+ * Controller de Autenticação Simplificado
+ * 
+ * Sistema simplificado para uso local. Login apenas com nickname,
+ * sem senha ou tokens.
+ */
+
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const prisma = require('../services/prismaService');
 
 class AuthController {
-  // Initiate Google OAuth login
-  googleAuth = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    // Passport will handle the redirect
-    console.log('🔐 Initiating Google OAuth login');
-  });
-
-  // Google OAuth callback
-  googleAuthCallback = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    console.log('🔐 Google OAuth callback received');
-    
-    // Determine which frontend URL to redirect to based on referer or session
-    let frontendUrl = 'http://localhost:3000';
-    
-    // Check if we have a stored origin in session
-    if (req.session.authOrigin) {
-      frontendUrl = req.session.authOrigin;
-      console.log(`📤 Redirecting to stored origin: ${frontendUrl}`);
-    } 
-    // Check referer header from Google
-    else if (req.headers.referer) {
-      console.log(`📤 Referer from Google: ${req.headers.referer}`);
-    }
-    
-    // List of allowed frontend URLs
-    const allowedFrontendUrls = process.env.FRONTEND_URLS 
-      ? process.env.FRONTEND_URLS.split(',') 
-      : ['http://localhost:3000', 'http://192.168.1.70:3000', 'http://tarefas.local:3000'];
-    
-    // Ensure the URL is allowed
-    if (!allowedFrontendUrls.includes(frontendUrl)) {
-      frontendUrl = allowedFrontendUrls[0];
-      console.log(`⚠️  Frontend URL not allowed, defaulting to: ${frontendUrl}`);
-    }
-    
-    console.log(`🎯 Redirecting to: ${frontendUrl}/auth/callback`);
-    
-    // Successful authentication, redirect to frontend
-    res.redirect(`${frontendUrl}/auth/callback`);
-  });
-
-  // Login by nickname
+  /**
+   * Login simples por nickname
+   * POST /api/auth/login
+   * Body: { nickname: string }
+   */
   login = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { nickname } = req.body;
 
     if (!nickname) {
       return res.status(400).json({
+        success: false,
         error: 'Bad Request',
-        message: 'Nickname is required'
+        message: 'Nickname é obrigatório'
       });
     }
 
     // Buscar usuário pelo nickname
     const user = await prisma.user.findUnique({
-      where: { nickname },
+      where: { nickname: nickname.trim() },
       select: {
         id: true,
         name: true,
@@ -70,71 +42,154 @@ class AuthController {
 
     if (!user) {
       return res.status(404).json({
+        success: false,
         error: 'Not Found',
-        message: 'User not found with this nickname'
+        message: 'Usuário não encontrado com este nickname'
       });
     }
 
-    // Logar o usuário manualmente (sem senha, apenas sessão)
-    req.login(user, (err) => {
-      if (err) {
-        console.error('❌ Error logging in user:', err);
-        return next(err);
-      }
-
-      console.log(`✅ User logged in by nickname: ${user.nickname} (${user.name})`);
-      
-      res.json({
-        message: 'Login successful',
-        user: user,
-        correlationId: req.correlationId
-      });
-    });
-  });
-
-  // Get current user
-  getCurrentUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({
-        error: 'Unauthorized',
-        message: 'No user logged in'
-      });
-    }
-
+    console.log(`✅ Login simplificado: ${user.nickname} (${user.name})`);
+    
     res.json({
-      user: req.user,
+      success: true,
+      message: 'Login realizado com sucesso',
+      user: user,
       correlationId: req.correlationId
     });
   });
 
-  // Logout
-  logout = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    req.logout((err) => {
-      if (err) {
-        return next(err);
-      }
-      
-      req.session.destroy((err) => {
-        if (err) {
-          console.error('❌ Error destroying session:', err);
-        }
-        
-        // Clear session cookie
-        res.clearCookie('connect.sid');
-        
-        res.json({
-          message: 'Logged out successfully',
-          correlationId: req.correlationId
-        });
+  /**
+   * Obter usuário atual (por header ou query)
+   * GET /api/auth/me
+   * Header: X-User-Nickname ou Query: ?nickname=xxx
+   */
+  getCurrentUser = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const nickname = req.headers['x-user-nickname'] || req.query?.nickname;
+
+    if (!nickname) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bad Request',
+        message: 'Nickname é obrigatório (header X-User-Nickname ou query ?nickname=xxx)'
       });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { nickname: nickname.trim() },
+      select: {
+        id: true,
+        name: true,
+        nickname: true,
+        email: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        user: null,
+        message: 'Usuário não encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      user: user,
+      correlationId: req.correlationId
     });
   });
 
-  // Check authentication status
-  checkAuth = ErrorMiddleware.catchAsync(async (req, res, next) => {
+  /**
+   * Logout simplificado (apenas resposta de sucesso)
+   * POST /api/auth/logout
+   */
+  logout = ErrorMiddleware.catchAsync(async (req, res, next) => {
     res.json({
-      isAuthenticated: req.isAuthenticated(),
-      user: req.isAuthenticated() ? req.user : null,
+      success: true,
+      message: 'Logout realizado com sucesso',
+      correlationId: req.correlationId
+    });
+  });
+
+  /**
+   * Verificar status de autenticação
+   * GET /api/auth/check
+   * POST /api/auth/check
+   */
+  checkAuth = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const nickname = 
+      req.headers['x-user-nickname'] || 
+      req.body?.nickname ||
+      req.query?.nickname;
+    
+    const userId = req.body?.userId;
+
+    // Se userId foi passado, buscar por ID
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          nickname: true,
+          email: true,
+          avatarUrl: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      return res.json({
+        isAuthenticated: !!user,
+        user: user || null,
+        correlationId: req.correlationId
+      });
+    }
+
+    // Se nickname foi passado, buscar por nickname
+    if (nickname) {
+      const user = await prisma.user.findUnique({
+        where: { nickname: nickname.trim() },
+        select: {
+          id: true,
+          name: true,
+          nickname: true,
+          email: true,
+          avatarUrl: true,
+          role: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      return res.json({
+        isAuthenticated: !!user,
+        user: user || null,
+        correlationId: req.correlationId
+      });
+    }
+
+    // Nenhum identificador fornecido
+    res.json({
+      isAuthenticated: false,
+      user: null,
+      message: 'Nenhum identificador de usuário fornecido',
+      correlationId: req.correlationId
+    });
+  });
+
+  /**
+   * Callback OAuth removido - mantido para compatibilidade
+   */
+  googleAuthCallback = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    res.status(410).json({
+      success: false,
+      message: 'OAuth Google foi removido. Use login por nickname.',
       correlationId: req.correlationId
     });
   });

@@ -15,7 +15,7 @@ const logRoutes = require('./routes/logRoutes');
 const agentRoutes = require('./routes/agentRoutes');
 const ErrorMiddleware = require('./middlewares/errorMiddleware');
 const { Logger, LOG_LEVELS } = require('./utils/logger');
-const { passport, sessionConfig, getCurrentUser } = require('./middlewares/authMiddleware');
+const { extractUser } = require('./middlewares/authMiddleware');
 const cronScheduler = require('./cronScheduler');
 
 const app = express();
@@ -69,15 +69,8 @@ app.use("/logs", express.static("public"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session middleware (must come before passport)
-app.use(require('express-session')(sessionConfig));
-
-// Initialize Passport
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Get current user middleware
-app.use(getCurrentUser);
+// Middleware para extrair usuário do header/body (simplificado)
+app.use(extractUser);
 
 // Add correlation ID and request timing
 app.use(ErrorMiddleware.addCorrelationId);
@@ -143,6 +136,7 @@ app.get('/health', async (req, res) => {
       status: 'ok', 
       timestamp: new Date().toISOString(),
       service: 'Task Manager API',
+      auth: 'simplified (nickname only)',
       correlationId: req.correlationId
     });
   } catch (error) {
@@ -205,6 +199,7 @@ app.listen(PORT, () => {
   console.log(`📁 Database: ${process.env.DATABASE_URL}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN}`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV}`);
+  console.log(`🔓 Auth: Simplificado (apenas nickname, sem senha/tokens)`);
   console.log(`📊 Error logging: ENABLED`);
   
   // Start cron scheduler for recurring tasks
@@ -214,6 +209,4 @@ app.listen(PORT, () => {
   } else {
     console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
   }
-
-  // Teste completo do novo task-processor - modificação de teste pelo agente Jarbas em 2026-02-25 18:55 GMT-3
 });

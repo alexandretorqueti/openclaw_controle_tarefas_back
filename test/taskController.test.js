@@ -1,7 +1,12 @@
 // test/taskController.test.js
-// Testes unitarios para TaskController
+// Testes unitarios para TaskController (Sistema de Auth Simplificado)
 
-const TaskController = require('../src/controllers/taskController');
+// Mock do prismaService - deve vir antes dos imports
+jest.mock('../src/services/prismaService', () => ({
+  user: {
+    findUnique: jest.fn()
+  }
+}));
 
 // Mock do taskService
 jest.mock('../src/services/taskService', () => ({
@@ -17,7 +22,9 @@ jest.mock('../src/services/taskService', () => ({
   finalizeTask: jest.fn()
 }));
 
+const TaskController = require('../src/controllers/taskController');
 const taskService = require('../src/services/taskService');
+const prisma = require('../src/services/prismaService');
 
 describe('TaskController', () => {
   let mockReq;
@@ -31,7 +38,8 @@ describe('TaskController', () => {
       body: {},
       params: {},
       query: {},
-      user: { id: 'test-user-id' },
+      headers: {},
+      user: null,
       correlationId: 'test-correlation-id'
     };
     
@@ -44,14 +52,16 @@ describe('TaskController', () => {
   });
 
   describe('createTask', () => {
-    test('deve criar tarefa com sucesso', async () => {
+    test('deve criar tarefa com sucesso usando createdById no body', async () => {
       const taskData = {
         title: 'Nova Tarefa',
         description: 'Descricao da tarefa',
         projectId: 'proj-123',
         statusId: 'status-123',
         priorityId: 'priority-123',
-        deadline: '2024-12-31'
+        deadline: '2024-12-31',
+        createdById: 'user-123',
+        assignedToId: 'user-123'
       };
       
       mockReq.body = taskData;
@@ -68,12 +78,52 @@ describe('TaskController', () => {
       );
     });
 
-    test('deve rejeitar sem autenticacao', async () => {
-      mockReq.user = null;
+    test('deve criar tarefa usando nickname no body', async () => {
+      const taskData = {
+        title: 'Nova Tarefa',
+        description: 'Descricao',
+        projectId: 'proj-123',
+        statusId: 'status-123',
+        priorityId: 'priority-123',
+        nickname: 'testuser'
+      };
+      
+      mockReq.body = taskData;
+      
+      // Mock do prisma para retornar usuário pelo nickname
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-123',
+        name: 'Test User',
+        nickname: 'testuser'
+      });
+      
+      taskService.createTask.mockResolvedValue({ id: 'task-123', ...taskData, createdById: 'user-123' });
       
       await TaskController.createTask(mockReq, mockRes, mockNext);
       
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+    });
+
+    test('deve rejeitar sem identificacao de usuario', async () => {
+      const taskData = {
+        title: 'Nova Tarefa',
+        description: 'Descricao',
+        projectId: 'proj-123',
+        statusId: 'status-123',
+        priorityId: 'priority-123'
+      };
+      
+      mockReq.body = taskData;
+      
+      // Mock do prisma para não encontrar usuário
+      prisma.user.findUnique.mockResolvedValue(null);
+      
+      await TaskController.createTask(mockReq, mockRes, mockNext);
+      
+      // Deve chamar next com erro (erro 400)
       expect(mockNext).toHaveBeenCalled();
+      const error = mockNext.mock.calls[0][0];
+      expect(error.statusCode).toBe(400);
     });
   });
 
@@ -120,6 +170,8 @@ describe('TaskController', () => {
       await TaskController.getTaskById(mockReq, mockRes, mockNext);
       
       expect(mockNext).toHaveBeenCalled();
+      const error = mockNext.mock.calls[0][0];
+      expect(error.statusCode).toBe(404);
     });
   });
 
@@ -216,7 +268,7 @@ describe('TaskController', () => {
   });
 
   describe('finalizeTask', () => {
-    test('deve finalizar tarefa com sucesso', async () => {
+    test('deve finalizar tarefa com sucesso usando userId', async () => {
       mockReq.params.id = 'task-123';
       mockReq.body = { userId: 'user-123', executionNotes: 'Concluido' };
       
@@ -235,13 +287,43 @@ describe('TaskController', () => {
       );
     });
 
-    test('deve rejeitar sem userId', async () => {
+    test('deve finalizar tarefa com sucesso usando nickname', async () => {
+      mockReq.params.id = 'task-123';
+      mockReq.body = { nickname: 'testuser', executionNotes: 'Concluido' };
+      
+      // Mock do prisma para retornar usuário pelo nickname
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'user-123',
+        nickname: 'testuser'
+      });
+      
+      taskService.finalizeTask.mockResolvedValue({
+        task: { id: 'task-123' },
+        status: { name: 'Done' },
+        isRecurringReset: false
+      });
+      
+      await TaskController.finalizeTask(mockReq, mockRes, mockNext);
+      
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Task finalized successfully'
+        })
+      );
+    });
+
+    test('deve rejeitar sem userId ou nickname', async () => {
       mockReq.params.id = 'task-123';
       mockReq.body = {};
+      
+      // Mock do prisma para não encontrar usuário
+      prisma.user.findUnique.mockResolvedValue(null);
       
       await TaskController.finalizeTask(mockReq, mockRes, mockNext);
       
       expect(mockNext).toHaveBeenCalled();
+      const error = mockNext.mock.calls[0][0];
+      expect(error.statusCode).toBe(400);
     });
   });
 });

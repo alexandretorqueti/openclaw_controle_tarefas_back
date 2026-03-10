@@ -4,27 +4,73 @@ const taskService = require('../services/taskService');
 const { validateTask, validateTaskUpdate, validateTaskFilters } = require('../validators/taskValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { snakeToCamel } = require('../utils/caseConverter');
+const prisma = require('../services/prismaService');
 
 class TaskController {
+  /**
+   * Helper para obter usuário a partir do nickname ou userId
+   * Aceita: body.nickname, body.userNickname, body.createdByNickname, 
+   *         body.createdById, header X-User-Nickname
+   */
+  async _resolveUser(req) {
+    // Primeiro verificar se já tem req.user (do middleware extractUser)
+    if (req.user?.id) {
+      return req.user;
+    }
+
+    // Tentar obter userId direto
+    const userId = req.body?.createdById || req.body?.userId;
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, name: true, nickname: true, email: true, role: true }
+      });
+      if (user) return user;
+    }
+
+    // Tentar obter por nickname
+    const nickname = 
+      req.headers['x-user-nickname'] ||
+      req.body?.nickname ||
+      req.body?.userNickname ||
+      req.body?.createdByNickname;
+
+    if (nickname) {
+      const user = await prisma.user.findUnique({
+        where: { nickname: nickname.trim() },
+        select: { id: true, name: true, nickname: true, email: true, role: true }
+      });
+      if (user) return user;
+    }
+
+    return null;
+  }
+
   // Create a new task
   createTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    // Require authenticated user for this personal system
-    if (!req.user || !req.user.id) {
-      const error = new Error('User must be authenticated to create tasks');
-      error.statusCode = 401;
+    // Resolver usuário
+    const user = await this._resolveUser(req);
+    
+    // Usar o usuário resolvido ou aceitar createdById/assignedToId do body
+    let createdById = body.createdById;
+    let assignedToId = body.assignedToId;
+
+    if (user) {
+      createdById = createdById || user.id;
+      assignedToId = assignedToId || user.id;
+    }
+
+    // Se não temos createdById, retornar erro
+    if (!createdById) {
+      const error = new Error('É necessário informar o usuário (nickname, createdById ou header X-User-Nickname)');
+      error.statusCode = 400;
       throw error;
     }
     
-    // Always use authenticated user's ID as creator
-    const createdById = req.user.id;
-    
-    // If assignedToId is not provided, default to the authenticated user
-    const assignedToId = body.assignedToId || req.user.id;
-    
-    // Update body with authenticated user's IDs
+    // Update body with user's IDs
     const validatedBody = { ...body, createdById, assignedToId };
     
     const validation = validateTask(validatedBody);
@@ -365,10 +411,21 @@ class TaskController {
   // Finalize task
   finalizeTask = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
-    const { userId, executionNotes } = req.body;
+    let { userId, nickname, executionNotes } = req.body;
+
+    // Se não tem userId, tentar resolver por nickname
+    if (!userId && nickname) {
+      const user = await prisma.user.findUnique({
+        where: { nickname: nickname.trim() },
+        select: { id: true }
+      });
+      if (user) {
+        userId = user.id;
+      }
+    }
 
     if (!userId) {
-      const error = new Error('User ID is required');
+      const error = new Error('User ID ou nickname é obrigatório');
       error.statusCode = 400;
       throw error;
     }

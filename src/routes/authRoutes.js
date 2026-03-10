@@ -1,181 +1,31 @@
+/**
+ * Rotas de Autenticação Simplificadas
+ * 
+ * Sistema simplificado para uso local. Apenas login por nickname.
+ */
+
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const { passport } = require('../middlewares/authMiddleware');
+const prisma = require('../services/prismaService');
 
-// GET /auth/google - Initiate Google OAuth
-router.get('/google', 
-  (req, res, next) => {
-    // Store the origin (frontend URL) in session so we know where to redirect back
-    const origin = req.query.origin || req.headers.origin || req.headers.referer || 'http://localhost:3000';
-    
-    // Extract just the base URL (remove paths)
-    const url = new URL(origin);
-    const baseUrl = `${url.protocol}//${url.host}`;
-    
-    // Determine backend URL based on frontend URL
-    let backendHost = 'localhost:3001';
-    if (baseUrl.includes('192.168.1.70')) {
-      backendHost = '192.168.1.70:3001';
-    } else if (baseUrl.includes('tarefas.local')) {
-      backendHost = 'api.tarefas.local:3001';
-    }
-    
-    // Create dynamic callback URL
-    const callbackURL = `http://${backendHost}/auth/google/callback`;
-    
-    // List of allowed frontend URLs
-    const allowedFrontendUrls = process.env.FRONTEND_URLS 
-      ? process.env.FRONTEND_URLS.split(',') 
-      : ['http://localhost:3000', 'http://192.168.1.70:3000', 'http://tarefas.local:3000'];
-    
-    // Check if the origin is allowed
-    if (allowedFrontendUrls.includes(baseUrl)) {
-      req.session.authOrigin = baseUrl;
-      req.session.callbackURL = callbackURL;
-      console.log(`📥 Storing auth origin: ${baseUrl}`);
-      console.log(`📥 Using callback URL: ${callbackURL}`);
-    } else {
-      console.log(`⚠️  Origin not allowed: ${baseUrl}, using default`);
-      req.session.authOrigin = allowedFrontendUrls[0];
-      req.session.callbackURL = `http://localhost:3001/auth/google/callback`;
-    }
-    
-    // Pass the callback URL as state parameter to Google OAuth
-    const state = JSON.stringify({
-      callbackURL: req.session.callbackURL,
-      authOrigin: req.session.authOrigin
-    });
-    
-    // Use custom authenticate with state
-    passport.authenticate('google', { 
-      scope: ['profile', 'email'],
-      prompt: 'select_account',
-      state: Buffer.from(state).toString('base64') // Encode state as base64
-    })(req, res, next);
-  }
-);
-
-// GET /auth/google/callback - Google OAuth callback
-router.get('/google/callback',
-  (req, res, next) => {
-    try {
-      // Decode state parameter if present
-      if (req.query.state) {
-        const state = JSON.parse(Buffer.from(req.query.state, 'base64').toString());
-        console.log('📦 Decoded state:', state);
-        
-        // Update session with state data
-        if (state.authOrigin) {
-          req.session.authOrigin = state.authOrigin;
-        }
-        if (state.callbackURL) {
-          req.session.callbackURL = state.callbackURL;
-          
-          // Update Passport strategy with correct callbackURL
-          const { updateGoogleStrategyCallbackURL } = require('../middlewares/authMiddleware');
-          updateGoogleStrategyCallbackURL(state.callbackURL);
-        }
-      }
-      
-      // Use stored session data as fallback
-      const authOrigin = req.session?.authOrigin || 'http://localhost:3000';
-      const callbackURL = req.session?.callbackURL || 'http://localhost:3001/auth/google/callback';
-      
-      console.log(`🎯 Callback processing - Auth Origin: ${authOrigin}, Callback URL: ${callbackURL}`);
-      
-      // Authenticate with Google
-      passport.authenticate('google', { 
-        failureRedirect: `${authOrigin}/login?error=auth_failed`,
-        session: true
-      })(req, res, next);
-    } catch (error) {
-      console.error('❌ Error processing OAuth callback:', error);
-      // Fallback to default
-      passport.authenticate('google', { 
-        failureRedirect: 'http://localhost:3000/login?error=auth_failed',
-        session: true
-      })(req, res, next);
-    }
-  },
-  authController.googleAuthCallback
-);
-
-// GET /auth/me - Get current user
-router.get('/me', authController.getCurrentUser);
-
-// GET /auth/check - Check authentication status (session-based)
-router.get('/check', authController.checkAuth);
-
-// POST /auth/check - Check authentication status (session-based) or specific user by ID
-router.post('/check', (req, res) => {
-  try {
-    const { userId } = req.body;
-    
-    // If userId is provided, check that specific user in database
-    if (userId) {
-      const { PrismaClient } = require('@prisma/client');
-      const prisma = new PrismaClient();
-      
-      prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          name: true,
-          nickname: true,
-          email: true,
-          avatarUrl: true,
-          role: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      }).then(user => {
-        prisma.$disconnect();
-        
-        if (user) {
-          return res.json({
-            isAuthenticated: true,
-            user: user
-          });
-        } else {
-          return res.json({
-            isAuthenticated: false,
-            user: null
-          });
-        }
-      }).catch(error => {
-        console.error('Error checking user by ID:', error);
-        prisma.$disconnect();
-        
-        return res.status(500).json({
-          isAuthenticated: false,
-          message: 'Error checking user'
-        });
-      });
-    } else {
-      // No userId provided, delegate to session-based authentication check
-      console.log(`🔐 POST /auth/check - No userId, using session authentication`);
-      return authController.checkAuth(req, res);
-    }
-    
-  } catch (error) {
-    console.error('Error in POST /auth/check:', error);
-    return res.status(500).json({
-      isAuthenticated: false,
-      message: 'Internal server error'
-    });
-  }
-});
-
-// POST /auth/logout - Logout
-router.post('/logout', authController.logout);
-
-// --- SIMPLE AUTHENTICATION ---
-// POST /auth/login - Login by nickname (using authController)
+// POST /api/auth/login - Login por nickname (sem senha)
 router.post('/login', authController.login);
 
-// POST /auth/register - Simple registration
-router.post('/register', (req, res) => {
+// GET /api/auth/me - Obter usuário atual
+router.get('/me', authController.getCurrentUser);
+
+// GET /api/auth/check - Verificar status de autenticação
+router.get('/check', authController.checkAuth);
+
+// POST /api/auth/check - Verificar status por userId ou nickname
+router.post('/check', authController.checkAuth);
+
+// POST /api/auth/logout - Logout
+router.post('/logout', authController.logout);
+
+// POST /api/auth/register - Registro simples
+router.post('/register', async (req, res) => {
   try {
     const { name, email, nickname } = req.body;
     
@@ -206,71 +56,70 @@ router.post('/register', (req, res) => {
     const cleanEmail = email ? email.trim() : null;
     
     // Verificar se nome ou nickname já existem
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    
-    prisma.user.findFirst({
+    const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
           { name: cleanName },
           { nickname: cleanNickname }
         ]
       }
-    }).then(existingUser => {
-      if (existingUser) {
-        prisma.$disconnect();
-        const field = existingUser.name === cleanName ? 'Nome' : 'Nickname';
-        return res.status(400).json({ 
-          success: false, 
-          message: `${field} já está em uso` 
-        });
-      }
-      
-      // Criar novo usuário
-      const newUserData = {
+    });
+
+    if (existingUser) {
+      const field = existingUser.name === cleanName ? 'Nome' : 'Nickname';
+      return res.status(400).json({ 
+        success: false, 
+        message: `${field} já está em uso` 
+      });
+    }
+    
+    // Criar novo usuário
+    const newUser = await prisma.user.create({
+      data: {
         name: cleanName,
         nickname: cleanNickname,
         email: cleanEmail,
-        role: 'Viewer' // Role padrão
-      };
-      
-      prisma.user.create({
-        data: newUserData
-      }).then(newUser => {
-        console.log(`📝 Registro simples: ${newUser.name} (${newUser.nickname}) (ID: ${newUser.id})`);
-        prisma.$disconnect();
-        
-        return res.status(200).json({
-          success: true,
-          message: 'Conta criada com sucesso',
-          user: {
-            id: newUser.id,
-            name: newUser.name,
-            nickname: newUser.nickname,
-            email: newUser.email,
-            role: newUser.role,
-            avatarUrl: newUser.avatarUrl,
-            isAuthenticated: true
-          }
-        });
-      });
-    }).catch(error => {
-      console.error('Erro no registro simples:', error);
-      prisma.$disconnect();
-      
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Erro interno no servidor' 
-      });
+        role: 'Viewer'
+      }
+    });
+
+    console.log(`📝 Registro: ${newUser.name} (${newUser.nickname}) (ID: ${newUser.id})`);
+    
+    return res.status(200).json({
+      success: true,
+      message: 'Conta criada com sucesso',
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        nickname: newUser.nickname,
+        email: newUser.email,
+        role: newUser.role,
+        avatarUrl: newUser.avatarUrl
+      }
     });
     
   } catch (error) {
-    console.error('Erro no registro simples:', error);
+    console.error('Erro no registro:', error);
     return res.status(500).json({ 
       success: false, 
       message: 'Erro interno no servidor' 
     });
   }
+});
+
+// Rotas OAuth removidas - mantidas para compatibilidade (retornam erro)
+router.get('/google', (req, res) => {
+  res.status(410).json({
+    success: false,
+    message: 'OAuth Google foi removido. Use login por nickname em /api/auth/login'
+  });
+});
+
+router.get('/google/callback', (req, res) => {
+  res.status(410).json({
+    success: false,
+    message: 'OAuth Google foi removido. Use login por nickname.'
+  });
 });
 
 module.exports = router;

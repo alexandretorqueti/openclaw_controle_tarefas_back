@@ -7,6 +7,7 @@ class UserService {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         avatarUrl: true,
         role: true,
@@ -26,6 +27,7 @@ class UserService {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         avatarUrl: true,
         role: true,
@@ -42,6 +44,7 @@ class UserService {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         avatarUrl: true,
         role: true,
@@ -58,6 +61,7 @@ class UserService {
       select: {
         id: true,
         name: true,
+        nickname: true,
         email: true,
         avatarUrl: true,
         role: true,
