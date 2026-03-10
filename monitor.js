@@ -24,6 +24,9 @@ async function main() {
   // Instancias de servicos
   const lockService = new LockService(LOCK_FILE);
   const stateService = new MonitorStateService(TASKS_DIR);
+  
+  // Variavel de escopo global para as funcoes auxiliares acessarem
+  let MY_USER_ID = null;
 
   /**
    * Verifica timeout de tarefas ativas e executa acao de recuperacao
@@ -70,12 +73,18 @@ async function main() {
       terminalOutput = await fs.readFile(terminalLogPath, 'utf8');
     }
 
-    // Adiciona comentario sobre a falha
-    await axios.post(`${API_URL}/api/comments`, {
-      taskId: task.id,
-      userId: MY_USER_ID,
-      content: `⚠️ **FALHA DE EXECUCAO LOCAL**\nErro: ${error.message}\n\nSaida do Terminal:\n${terminalOutput.substring(0, 1000)}`
-    });
+    // Adiciona comentario sobre a falha se tivermos o ID do usuario
+    if (MY_USER_ID) {
+      try {
+        await axios.post(`${API_URL}/api/comments`, {
+          taskId: task.id,
+          userId: MY_USER_ID,
+          content: `⚠️ **FALHA DE EXECUCAO LOCAL**\nErro: ${error.message}\n\nSaida do Terminal:\n${terminalOutput.substring(0, 1000)}`
+        });
+      } catch (e) {
+        await log(`❌ Erro ao postar comentario de falha: ${e.message}`);
+      }
+    }
     
     // Tenta reatribuir para o desenvolvedor
     try {
@@ -103,10 +112,18 @@ async function main() {
     await log(`✅ Tarefa ${task.id} executada com sucesso!`);
     
     // Atualiza status da tarefa
-    await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
-      userId: MY_USER_ID,
-      executionNotes: executionResult.executionNotes
-    });
+    if (MY_USER_ID) {
+      try {
+        await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
+          userId: MY_USER_ID,
+          executionNotes: executionResult.executionNotes
+        });
+      } catch (e) {
+        await log(`❌ Erro ao finalizar a tarefa na API: ${e.message}`);
+      }
+    } else {
+      await log(`⚠️ Nao foi possivel finalizar tarefa na API pois MY_USER_ID é nulo.`);
+    }
 
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
     await stateService.cleanupTask(task.id);
@@ -144,6 +161,19 @@ async function main() {
     await log(`🔓 Lock trancado com sucesso.`);
 
     try {
+      // Busca dados do usuario pelo nickname para usar ao longo do ciclo de vida da tarefa
+      try {
+        const usersRes = await axios.get(`${API_URL}/api/users`);
+        const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
+        if (user) {
+          MY_USER_ID = user.id;
+        } else {
+          await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Operacoes que exigem ID podem falhar.`);
+        }
+      } catch (userError) {
+        await log(`⚠️ Falha ao buscar configuracoes de usuario: ${userError.message}`);
+      }
+
       // 2. Busca nova tarefa
       const address = `${API_URL}/api/tasks/next/Jarbas`;
       log(`🔍 Consultando proxima tarefa na fila: ${address}`);
@@ -165,19 +195,13 @@ async function main() {
       // 3. Executa a tarefa usando o servico
       const config = {
         TASKS_DIR,
-        TASK_TIMEOUT_MS
+        TASK_TIMEOUT_MS,
+        MY_USER_ID // Passando para dentro do TaskExecutionService caso necessario
       };
 
       await log(`🤖 Executando tarefa via TaskExecutionService...`);
-      // Busca dados do usuario pelo nickname para passar para o serviço de execução (caso necessário)
-      const usersRes = await axios.get(`${API_URL}/api/users`);
-      const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
-      if (user) {
-        config.MY_USER_ID = user.id;
-      } else {
-        await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Continuando sem MY_USER_ID.`);
-      }
-      const executionResult = await TaskExecutionService.executeTask(task, config.MY_USER_ID, config);
+      
+      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
 
       // 4. Processa resultado
       if (executionResult.success) {
