@@ -1632,6 +1632,10 @@ ${safeOutput}
       while (!contractResult.contractFulfilled && turnos < MAX_TURNOS) {
         turnos++;
         console.log(`\n\x1b[44m\x1b[37m 🔄 --- INICIANDO TURNO ${turnos}/${MAX_TURNOS} --- \x1b[0m`);
+        console.log(`[PROGRESS-DEBUG] ╔══════════════════════════════════════════════════════════╗`);
+        console.log(`[PROGRESS-DEBUG] ║  INÍCIO DO TURNO ${turnos}                                    ║`);
+        console.log(`[PROGRESS-DEBUG] ╚══════════════════════════════════════════════════════════╝`);
+        console.log(`[PROGRESS-DEBUG] turnosSemProgresso atual: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
 
         // Determina o agente a ser usado (fallback para 'main')
         const agentId = task.agent || 'main';
@@ -1815,6 +1819,25 @@ Nenhuma ferramenta válida foi emitida.
 Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         }
 
+        // ============================================================
+        // [PROGRESS-DEBUG] INÍCIO DA AVALIAÇÃO DE PROGRESSO DO TURNO
+        // ============================================================
+        console.log(`\n[PROGRESS-DEBUG] ╔══════════════════════════════════════════════════════════╗`);
+        console.log(`[PROGRESS-DEBUG] ║  TURNO ${turnos} - AVALIAÇÃO DE PROGRESSO                    ║`);
+        console.log(`[PROGRESS-DEBUG] ╚══════════════════════════════════════════════════════════╝`);
+        console.log(`[PROGRESS-DEBUG] turnosSemProgresso ANTES: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+        
+        // Log do toolResult recebido
+        console.log(`[PROGRESS-DEBUG] --- toolResult recebido ---`);
+        console.log(`[PROGRESS-DEBUG] toolCall.name: ${executionResult.toolCall?.name || 'N/A'}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.success: ${executionResult.toolResult?.success}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.filesRead: ${JSON.stringify(executionResult.toolResult?.filesRead || [])}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.filesWritten: ${JSON.stringify(executionResult.toolResult?.filesWritten || [])}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.modifiedFiles: ${JSON.stringify(executionResult.toolResult?.modifiedFiles || [])}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.touchedFiles: ${JSON.stringify(executionResult.toolResult?.touchedFiles || [])}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.commandsExecuted: ${JSON.stringify(executionResult.toolResult?.commandsExecuted || [])}`);
+        console.log(`[PROGRESS-DEBUG] toolResult.executionDiagnostics: ${JSON.stringify(executionResult.toolResult?.executionDiagnostics || {})}`);
+
         const turnProgress = computeTurnProgress(
           executionResult.toolResult || {},
           contractResult,
@@ -1823,13 +1846,17 @@ Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         const houveProgresso = turnProgress.hasMeaningfulProgress;
 
         // DEBUG: Log detalhado do progresso
-        console.log(`📊 [PROGRESSO] Turno ${turnos}:`);
-        console.log(`   contractFulfilled: ${contractResult.contractFulfilled}`);
-        console.log(`   meaningfulReads: ${turnProgress.meaningfulReads.length}`);
-        console.log(`   meaningfulMutations: ${turnProgress.meaningfulMutations.length}`);
-        console.log(`   noOpMutation: ${turnProgress.noOpMutation}`);
-        console.log(`   hasMeaningfulProgress: ${houveProgresso}`);
-        console.log(`   turnosSemProgresso: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+        console.log(`\n📊 [PROGRESS-DEBUG] ═══ RESUMO DO TURNO ${turnos} ═══`);
+        console.log(`[PROGRESS-DEBUG] contractFulfilled: ${contractResult.contractFulfilled}`);
+        console.log(`[PROGRESS-DEBUG] meaningfulReads: ${turnProgress.meaningfulReads.length} arquivos`);
+        turnProgress.meaningfulReads.forEach(f => console.log(`[PROGRESS-DEBUG]   📖 ${f}`));
+        console.log(`[PROGRESS-DEBUG] meaningfulMutations: ${turnProgress.meaningfulMutations.length} arquivos`);
+        turnProgress.meaningfulMutations.forEach(f => console.log(`[PROGRESS-DEBUG]   ✏️  ${f}`));
+        console.log(`[PROGRESS-DEBUG] touchedFiles: ${(turnProgress.touchedFiles || []).length} arquivos`);
+        (turnProgress.touchedFiles || []).forEach(f => console.log(`[PROGRESS-DEBUG]   👆 ${f}`));
+        console.log(`[PROGRESS-DEBUG] noOpMutation: ${turnProgress.noOpMutation}`);
+        console.log(`[PROGRESS-DEBUG] >>> hasMeaningfulProgress: ${houveProgresso} <<<`);
+        console.log(`[PROGRESS-DEBUG] turnosSemProgresso ANTES: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
 
         if (turnProgress.noOpMutation) {
           const noOpFeedback =
@@ -1840,10 +1867,35 @@ Continue usando SOMENTE JSON estrito com uma única ferramenta por turno.`;
         }
 
         if (houveProgresso) {
+          console.log(`[PROGRESS-DEBUG] ✅ PROGRESSO DETECTADO! Resetando contador.`);
+          console.log(`[PROGRESS-DEBUG] turnosSemProgresso: ${turnosSemProgresso} → 0`);
           turnosSemProgresso = 0;
         } else {
           turnosSemProgresso++;
+          console.log(`[PROGRESS-DEBUG] ❌ SEM PROGRESSO! Incrementando contador.`);
+          console.log(`[PROGRESS-DEBUG] turnosSemProgresso: ${turnosSemProgresso - 1} → ${turnosSemProgresso}`);
           console.log(`⚠️ Turno sem progresso real: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
+          
+          // Log detalhado do por quê não houve progresso
+          console.log(`[PROGRESS-DEBUG] --- ANÁLISE: Por que não houve progresso? ---`);
+          if (turnProgress.noOpMutation) {
+            console.log(`[PROGRESS-DEBUG]   → noOpMutation=true: comando executou mas não mudou nada`);
+          }
+          if (turnProgress.meaningfulReads.length === 0) {
+            console.log(`[PROGRESS-DEBUG]   → Nenhum arquivo significativo foi lido`);
+          }
+          if (turnProgress.meaningfulMutations.length === 0) {
+            console.log(`[PROGRESS-DEBUG]   → Nenhum arquivo significativo foi modificado`);
+          }
+          if ((turnProgress.touchedFiles || []).length === 0) {
+            console.log(`[PROGRESS-DEBUG]   → Nenhum arquivo foi tocado`);
+          }
+          if (!executionResult.toolCall) {
+            console.log(`[PROGRESS-DEBUG]   → Nenhuma tool call foi detectada na resposta do agente`);
+          }
+          if (!executionResult.toolResult) {
+            console.log(`[PROGRESS-DEBUG]   → toolResult está vazio/undefined`);
+          }
 
           currentInput += `
 
@@ -1853,6 +1905,8 @@ NÃO repita os mesmos comandos.
 NÃO apague e recrie o .done em loop.
 Se faltou algo, corrija a causa real apontada pela validação.`;
         }
+        
+        console.log(`[PROGRESS-DEBUG] turnosSemProgresso DEPOIS: ${turnosSemProgresso}/${MAX_TURNOS_SEM_PROGRESSO}`);
 
         const turnSignature = this.buildTurnSignature(executionResult);
         recentActionSignatures.push(turnSignature);
@@ -1950,15 +2004,42 @@ function mergeUniquePaths(current = [], incoming = []) {
 }
 
 function isEphemeralArtifact(filePath = '') {
+  if (!filePath) return false;
+  
   const base = path.basename(filePath || '');
+  const fullPath = path.resolve(filePath);
 
-  return (
-    /^terminal-\d+\.log$/i.test(base) ||
-    /^relatorio-\d+\.txt$/i.test(base)
-    // NOTA: .done NÃO é mais considerado artefato efêmero
-    // porque criar .done é o objetivo final da tarefa
-    // e deve contar como progresso significativo
-  );
+  // Padrões de arquivos efêmeros que NÃO devem contar como progresso
+  const ephemeralPatterns = [
+    /^terminal-[^/]+\.log$/i,       // terminal-*.log (qualquer ID)
+    /^relatorio-[^/]+\.txt$/i,      // relatorio-*.txt (qualquer ID)
+    /^\.done$/i,                     // arquivos .done ocultos
+    /\.lock$/i,                      // arquivos de lock
+    /^monitor-state\.json$/i,        // estado do monitor
+  ];
+  
+  // Verificar padrões no nome base
+  for (const pattern of ephemeralPatterns) {
+    if (pattern.test(base)) {
+      return true;
+    }
+  }
+  
+  // Arquivos em diretórios de tarefas que são artefatos do sistema
+  if (fullPath.includes('/tasks/') || fullPath.includes('/processed/')) {
+    // Mas NÃO considerar .done como efêmero se estiver no diretório de tarefas
+    // porque criar .done é parte do objetivo
+    if (base.endsWith('.done') && !base.startsWith('.')) {
+      return false;  // done-123.done NÃO é efêmero, é o objetivo!
+    }
+  }
+
+  return false;
+  
+  // NOTA IMPORTANTE:
+  // - done-*.done NÃO é efêmero porque criar .done é o objetivo final
+  // - terminal-*.log É efêmero (apenas log)
+  // - relatorio-*.txt É efêmero (relatório do sistema, não código)
 }
 
 function shellSplit(input = '') {
@@ -2056,35 +2137,108 @@ function inferReadOnlyEvidenceFromCommand(command = '', cwd = process.cwd()) {
 }
 
 function computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process.cwd()) {
-  const inferred =
-    Array.isArray(toolResult.commandsExecuted) && toolResult.commandsExecuted.length > 0
-      ? inferReadOnlyEvidenceFromCommand(toolResult.commandsExecuted[0], cwd)
-      : { filesRead: [], modifiedFiles: [] };
+  console.log(`\n[PROGRESS-DEBUG] ========== INÍCIO computeTurnProgress ==========`);
+  console.log(`[PROGRESS-DEBUG] cwd: ${cwd}`);
+  console.log(`[PROGRESS-DEBUG] contractFulfilled: ${contractResult.contractFulfilled}`);
+  
+  // BUG FIX: Iterar por TODOS os comandos, não apenas o primeiro
+  let allInferredReads = [];
+  const commandsExecuted = Array.isArray(toolResult.commandsExecuted) ? toolResult.commandsExecuted : [];
+  
+  console.log(`[PROGRESS-DEBUG] Comandos executados: ${commandsExecuted.length}`);
+  commandsExecuted.forEach((cmd, idx) => {
+    console.log(`[PROGRESS-DEBUG]   [${idx}] ${(cmd || '').substring(0, 100)}...`);
+  });
+  
+  for (const command of commandsExecuted) {
+    const inferred = inferReadOnlyEvidenceFromCommand(command, cwd);
+    allInferredReads = mergeUniquePaths(allInferredReads, inferred.filesRead || []);
+    console.log(`[PROGRESS-DEBUG] Inferidos do comando "${(command || '').substring(0, 50)}...": ${(inferred.filesRead || []).length} arquivos lidos`);
+  }
+  
+  // Arquivos lidos direto do toolResult
+  const directReads = toolResult.filesRead || [];
+  console.log(`[PROGRESS-DEBUG] filesRead direto do toolResult: ${directReads.length}`);
+  directReads.forEach(f => console.log(`[PROGRESS-DEBUG]   - ${f}`));
+  
+  // Merge de todas as leituras
+  const allReads = mergeUniquePaths(directReads, allInferredReads);
+  console.log(`[PROGRESS-DEBUG] Total de leituras (antes do filtro): ${allReads.length}`);
+  
+  // Filtrar arquivos efêmeros das leituras
+  const meaningfulReads = allReads.filter((file) => {
+    const isEphemeral = isEphemeralArtifact(file);
+    if (isEphemeral) {
+      console.log(`[PROGRESS-DEBUG] EXCLUÍDO (efêmero) da leitura: ${file}`);
+    }
+    return !isEphemeral;
+  });
+  console.log(`[PROGRESS-DEBUG] meaningfulReads após filtro: ${meaningfulReads.length}`);
+  meaningfulReads.forEach(f => console.log(`[PROGRESS-DEBUG]   ✓ ${f}`));
 
-  const meaningfulReads = mergeUniquePaths(
-    toolResult.filesRead || [],
-    inferred.filesRead || []
-  ).filter((file) => !isEphemeralArtifact(file));
+  // BUG FIX: Considerar TANTO modifiedFiles QUANTO filesWritten
+  const modifiedFiles = toolResult.modifiedFiles || [];
+  const filesWritten = toolResult.filesWritten || [];
+  const allMutations = mergeUniquePaths(modifiedFiles, filesWritten);
+  
+  console.log(`[PROGRESS-DEBUG] modifiedFiles do toolResult: ${modifiedFiles.length}`);
+  modifiedFiles.forEach(f => console.log(`[PROGRESS-DEBUG]   - ${f}`));
+  console.log(`[PROGRESS-DEBUG] filesWritten do toolResult: ${filesWritten.length}`);
+  filesWritten.forEach(f => console.log(`[PROGRESS-DEBUG]   - ${f}`));
+  console.log(`[PROGRESS-DEBUG] Total de mutações (antes do filtro): ${allMutations.length}`);
 
-  const meaningfulMutations = uniquePaths(
-    toolResult.modifiedFiles || []
-  ).filter((file) => !isEphemeralArtifact(file));
+  // Filtrar arquivos efêmeros das mutações
+  const meaningfulMutations = allMutations.filter((file) => {
+    const isEphemeral = isEphemeralArtifact(file);
+    if (isEphemeral) {
+      console.log(`[PROGRESS-DEBUG] EXCLUÍDO (efêmero) da mutação: ${file}`);
+    }
+    return !isEphemeral;
+  });
+  console.log(`[PROGRESS-DEBUG] meaningfulMutations após filtro: ${meaningfulMutations.length}`);
+  meaningfulMutations.forEach(f => console.log(`[PROGRESS-DEBUG]   ✓ ${f}`));
+
+  // BUG FIX: Considerar touchedFiles para detectar atividade de análise
+  const touchedFiles = (toolResult.touchedFiles || []).filter((file) => !isEphemeralArtifact(file));
+  console.log(`[PROGRESS-DEBUG] touchedFiles (não efêmeros): ${touchedFiles.length}`);
+  touchedFiles.forEach(f => console.log(`[PROGRESS-DEBUG]   - ${f}`));
 
   const noOpMutation = !!toolResult.executionDiagnostics?.noOpMutation;
+  console.log(`[PROGRESS-DEBUG] noOpMutation: ${noOpMutation}`);
+  
+  // Calcular se houve progresso significativo
+  const hasReads = meaningfulReads.length > 0;
+  const hasMutations = meaningfulMutations.length > 0;
+  const hasTouched = touchedFiles.length > 0;
+  const contractFulfilled = !!contractResult.contractFulfilled;
+  
+  // BUG FIX: Progresso agora também considera touchedFiles
+  const hasMeaningfulProgress = 
+    contractFulfilled ||  // Contrato cumprido SEMPRE é progresso
+    (
+      !noOpMutation &&
+      (
+        hasReads ||
+        hasMutations ||
+        hasTouched  // NOVO: arquivos tocados também contam como progresso
+      )
+    );
+  
+  console.log(`[PROGRESS-DEBUG] ---------- DECISÃO FINAL ----------`);
+  console.log(`[PROGRESS-DEBUG] hasReads: ${hasReads}`);
+  console.log(`[PROGRESS-DEBUG] hasMutations: ${hasMutations}`);
+  console.log(`[PROGRESS-DEBUG] hasTouched: ${hasTouched}`);
+  console.log(`[PROGRESS-DEBUG] noOpMutation: ${noOpMutation}`);
+  console.log(`[PROGRESS-DEBUG] contractFulfilled: ${contractFulfilled}`);
+  console.log(`[PROGRESS-DEBUG] >>> hasMeaningfulProgress: ${hasMeaningfulProgress} <<<`);
+  console.log(`[PROGRESS-DEBUG] ========== FIM computeTurnProgress ==========\n`);
 
   return {
     meaningfulReads,
     meaningfulMutations,
+    touchedFiles,
     noOpMutation,
-    hasMeaningfulProgress:
-      !!contractResult.contractFulfilled ||  // Contrato cumprido SEMPRE é progresso
-      (
-        !noOpMutation &&
-        (
-          meaningfulReads.length > 0 ||
-          meaningfulMutations.length > 0
-        )
-      ),
+    hasMeaningfulProgress,
   };
 }
 

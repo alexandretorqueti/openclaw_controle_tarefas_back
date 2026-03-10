@@ -103,51 +103,103 @@ class EvidenceService {
    * @returns {boolean}
    */
   static isEphemeralArtifact(filePath = '') {
+    if (!filePath) return false;
+    
     const base = path.basename(filePath || '');
+    const fullPath = path.resolve(filePath);
 
-    return (
-      /^terminal-\d+\.log$/i.test(base) ||
-      /^relatorio-\d+\.txt$/i.test(base)
-    );
+    // Padrões de arquivos efêmeros que NÃO devem contar como progresso
+    const ephemeralPatterns = [
+      /^terminal-[^/]+\.log$/i,       // terminal-*.log (qualquer ID)
+      /^relatorio-[^/]+\.txt$/i,      // relatorio-*.txt (qualquer ID)
+      /^\.done$/i,                     // arquivos .done ocultos
+      /\.lock$/i,                      // arquivos de lock
+      /^monitor-state\.json$/i,        // estado do monitor
+    ];
+    
+    // Verificar padrões no nome base
+    for (const pattern of ephemeralPatterns) {
+      if (pattern.test(base)) {
+        return true;
+      }
+    }
+    
+    // Arquivos em diretórios de tarefas que são artefatos do sistema
+    if (fullPath.includes('/tasks/') || fullPath.includes('/processed/')) {
+      // Mas NÃO considerar .done como efêmero se estiver no diretório de tarefas
+      // porque criar .done é parte do objetivo
+      if (base.endsWith('.done') && !base.startsWith('.')) {
+        return false;  // done-123.done NÃO é efêmero, é o objetivo!
+      }
+    }
+
+    return false;
+    
+    // NOTA IMPORTANTE:
+    // - done-*.done NÃO é efêmero porque criar .done é o objetivo final
+    // - terminal-*.log É efêmero (apenas log)
+    // - relatorio-*.txt É efêmero (relatório do sistema, não código)
   }
 
   /**
    * Calcula progresso do turno
+   * BUG FIXES aplicados:
+   * 1. Agora itera por TODOS os comandos executados, não apenas o primeiro
+   * 2. Agora considera filesWritten além de modifiedFiles
+   * 3. Agora considera touchedFiles para detectar atividade de análise
+   * 
    * @param {Object} toolResult - Resultado da ferramenta
    * @param {Object} contractResult - Resultado do contrato
    * @param {string} cwd - Diretorio de trabalho
    * @returns {Object}
    */
   static computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process.cwd()) {
-    const inferred =
-      Array.isArray(toolResult.commandsExecuted) && toolResult.commandsExecuted.length > 0
-        ? inferReadOnlyEvidenceFromCommand(toolResult.commandsExecuted[0], cwd)
-        : { filesRead: [], modifiedFiles: [] };
+    // BUG FIX: Iterar por TODOS os comandos, não apenas o primeiro
+    let allInferredReads = [];
+    const commandsExecuted = Array.isArray(toolResult.commandsExecuted) ? toolResult.commandsExecuted : [];
+    
+    for (const command of commandsExecuted) {
+      const inferred = inferReadOnlyEvidenceFromCommand(command, cwd);
+      allInferredReads = mergeUniquePaths(allInferredReads, inferred.filesRead || []);
+    }
 
+    // Merge de todas as leituras e filtrar efêmeros
     const meaningfulReads = mergeUniquePaths(
       toolResult.filesRead || [],
-      inferred.filesRead || []
+      allInferredReads
     ).filter((file) => !this.isEphemeralArtifact(file));
 
-    const meaningfulMutations = uniquePaths(
-      toolResult.modifiedFiles || []
-    ).filter((file) => !this.isEphemeralArtifact(file));
+    // BUG FIX: Considerar TANTO modifiedFiles QUANTO filesWritten
+    const allMutations = mergeUniquePaths(
+      toolResult.modifiedFiles || [],
+      toolResult.filesWritten || []
+    );
+    
+    const meaningfulMutations = allMutations.filter((file) => !this.isEphemeralArtifact(file));
+
+    // BUG FIX: Considerar touchedFiles para detectar atividade de análise
+    const touchedFiles = (toolResult.touchedFiles || []).filter((file) => !this.isEphemeralArtifact(file));
 
     const noOpMutation = !!toolResult.executionDiagnostics?.noOpMutation;
+
+    // BUG FIX: Progresso agora também considera touchedFiles
+    const hasMeaningfulProgress = 
+      !!contractResult.contractFulfilled ||
+      (
+        !noOpMutation &&
+        (
+          meaningfulReads.length > 0 ||
+          meaningfulMutations.length > 0 ||
+          touchedFiles.length > 0  // NOVO: arquivos tocados também contam
+        )
+      );
 
     return {
       meaningfulReads,
       meaningfulMutations,
+      touchedFiles,
       noOpMutation,
-      hasMeaningfulProgress:
-        !!contractResult.contractFulfilled ||
-        (
-          !noOpMutation &&
-          (
-            meaningfulReads.length > 0 ||
-            meaningfulMutations.length > 0
-          )
-        ),
+      hasMeaningfulProgress,
     };
   }
 }
