@@ -191,15 +191,67 @@ class ProjectService {
 
   // Delete project (soft delete)
   async deleteProject(id) {
-    // Soft delete: set ativo = false, status = false
-    return await prisma.project.update({
-      where: { id },
-      data: {
-        ativo: false,
-        status: false,
-        updatedAt: new Date()
+    console.log('🔍 projectService.deleteProject - ID recebido:', id);
+    
+    try {
+      // Verificar se projeto existe
+      const project = await prisma.project.findUnique({
+        where: { id }
+      });
+      
+      if (!project) {
+        console.log('❌ projectService.deleteProject - Projeto não encontrado:', id);
+        return null;
       }
-    });
+      
+      console.log('✅ projectService.deleteProject - Projeto encontrado:', project.name);
+      
+      // Verificar se há tasks relacionadas (não concluídas)
+      const relatedTasks = await prisma.task.findMany({
+        where: { 
+          projectId: id,
+          isCompleted: false // Apenas tasks não concluídas
+        },
+        take: 1 // Apenas verificar se existe pelo menos uma
+      });
+      
+      if (relatedTasks.length > 0) {
+        console.log('⚠️ projectService.deleteProject - Projeto tem tasks não concluídas:', relatedTasks.length);
+        // Não impedir exclusão, apenas logar
+      }
+      
+      // Soft delete: set ativo = false, status = false
+      const deletedProject = await prisma.project.update({
+        where: { id },
+        data: {
+          ativo: false,
+          status: false,
+          updatedAt: new Date()
+        }
+      });
+      
+      console.log('✅ projectService.deleteProject - Projeto marcado como inativo:', deletedProject.id);
+      return deletedProject;
+      
+    } catch (error) {
+      console.error('❌ projectService.deleteProject - Erro ao excluir projeto:', error);
+      
+      // Tratar erros específicos do Prisma
+      if (error.code === 'P2025') {
+        // Registro não encontrado
+        console.log('❌ projectService.deleteProject - Projeto não encontrado (P2025):', id);
+        return null;
+      }
+      
+      if (error.code === 'P2003') {
+        // Violação de chave estrangeira
+        console.error('❌ projectService.deleteProject - Violação de chave estrangeira:', error);
+        throw new Error('Cannot delete project due to foreign key constraints. Related data must be deleted first.');
+      }
+      
+      // Repassar outros erros
+      throw error;
+    }
   }
 
   // Get project statistics

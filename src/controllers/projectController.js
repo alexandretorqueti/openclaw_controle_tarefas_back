@@ -111,14 +111,43 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
   // Delete project
   deleteProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
+    
+    // DEBUG: Log para verificar o ID recebido
+    console.log('🔍 DELETE /api/projects/:id - ID recebido:', id);
+    console.log('🔍 DELETE /api/projects/:id - Tipo do ID:', typeof id);
+    console.log('🔍 DELETE /api/projects/:id - URL completa:', req.originalUrl);
+    console.log('🔍 DELETE /api/projects/:id - Método:', req.method);
+    
+    // Validar se ID foi fornecido
+    if (!id || id.trim() === '') {
+      const error = new Error('Project ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    // Validar formato UUID (opcional, mas recomendado)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      console.log('❌ DELETE /api/projects/:id - ID inválido (não é UUID):', id);
+      const error = new Error('Invalid project ID format');
+      error.statusCode = 400;
+      throw error;
+    }
+    
+    console.log('✅ DELETE /api/projects/:id - ID válido, chamando service...');
+    
     const project = await projectService.deleteProject(id);
 
     if (!project) {
-      const error = new Error('Project not found');
+      console.log('❌ DELETE /api/projects/:id - Projeto não encontrado:', id);
+      const error = new Error(`Project with ID ${id} not found`);
       error.statusCode = 404;
+      error.code = 'PROJECT_NOT_FOUND';
       throw error;
     }
 
+    console.log('✅ DELETE /api/projects/:id - Projeto excluído com sucesso:', project.id);
+    
     res.json({
       message: 'Project deleted successfully',
       project,
