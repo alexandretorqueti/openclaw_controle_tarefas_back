@@ -8,29 +8,53 @@ const ErrorMiddleware = require('../middlewares/errorMiddleware');
 class CommentController {
   // Create a new comment
   createComment = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    // Convert snake_case to camelCase if needed
-    const body = snakeToCamel(req.body);
-    
-    // Always use authenticated user's ID
-    const validatedBody = { ...body, userId: req.user.id };
-    
-    const validation = validateComment(validatedBody);
-    
-    if (!validation.success) {
-      const error = new Error('Validation failed');
-      error.name = 'ZodError';
-      error.errors = validation.error.errors;
-      error.statusCode = 400;
-      throw error;
-    }
+    try {
+      // Use req.body directly
+      const body = req.body || {};
+      
+      // Get userId from body or req.user
+      let userId = body.userId;
+      
+      // Check if req.user exists and has id
+      if (req.user && req.user.id) {
+        userId = req.user.id;
+      }
+      
+      // If still no userId, throw error
+      if (!userId || userId.trim() === '') {
+        const error = new Error('User must be authenticated or provide userId');
+        error.statusCode = 401;
+        throw error;
+      }
+      
+      // Prepare data for validation
+      const dataForValidation = {
+        content: body.content,
+        taskId: body.taskId,
+        userId: userId,
+        parentCommentId: body.parentCommentId
+      };
+      
+      const validation = validateComment(dataForValidation);
+      
+      if (!validation.success) {
+        const error = new Error('Validation failed');
+        error.name = 'ZodError';
+        error.errors = validation.error.errors;
+        error.statusCode = 400;
+        throw error;
+      }
 
-    const comment = await commentService.createComment(validation.data);
-    
-    res.status(201).json({
-      message: 'Comment created successfully',
-      comment,
-      correlationId: req.correlationId
-    });
+      const comment = await commentService.createComment(validation.data);
+      
+      res.status(201).json({
+        message: 'Comment created successfully',
+        comment,
+        correlationId: req.correlationId
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   // Get all comments for a task

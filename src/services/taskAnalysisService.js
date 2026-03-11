@@ -1,51 +1,36 @@
 // src/services/taskAnalysisService.js
 // Servico de analise de escopo e tipo de tarefas
-
+const promptFactory = require('../utils/promptFactory');
 const { formatNumberedList, formatInlineList } = require('../utils/formatUtils');
 
 // src/services/taskAnalysisService.js
-const llmService = require('./llmService');
+const LlmService = require('./llmService');
+const llmService = new LlmService('qwen2.5-coder:14b', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
+
 
 class TaskAnalysisService {
   static lastAnalysis = null;
   static async analyzeTaskScope(task, project) {
-    const prompt = `
-      Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
-      
-      PROJETO:
-      - Base: ${project?.pastaBase}
-      - Frontend Path: ${project?.frontendPath || 'N/A'}
-      - Backend Path: ${project?.backendPath || 'N/A'}
-
-      TAREFA:
-      - Título: ${task.title}
-      - Descrição: ${task.description}
-
-      REGRAS:
-      1. Se a tarefa pede para criar/alterar/corrigir código, o tipo é 'development'.
-      2. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
-      3. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
-      4. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
-
-      Responda EXCLUSIVAMENTE em JSON com este formato:
-      {
-        "taskType": "development" | "analysis" | "automation",
-        "requiresReport": true | false,
-        "expectedLayers": ["frontend", "backend"],
-        "requiredModifiedLayers": ["backend"],
-        "mandatoryChecks": ["passo 1", "passo 2"],
-        "risks": ["risco 1"]
-      }
-    `;
+    const prompt = promptFactory.buildTaskAnalysisPrompt(task, project);
 
     // Chama a IA local
-    const analysis = await llmService.analyze(prompt);
+    let analysis = await llmService.analyze(prompt);
 
     // Fallback caso a IA falhe
     if (!analysis) {
       return this.getFallbackScope(task); 
     }
 
+    // Se analysis for string, tenta parsear como JSON
+    
+    if (typeof analysis === 'string') {
+      try {
+        analysis = JSON.parse(analysis);
+      } catch (e) {
+        console.warn("⚠️ Falha ao parsear análise da IA, usando fallback:", e.message);
+        return this.getFallbackScope(task);
+      }
+    }
     // Injeta instruções padrão de finalização
     analysis.finalizationInstructions = [
       'Escrever o resultado final no arquivo de relatorio.',

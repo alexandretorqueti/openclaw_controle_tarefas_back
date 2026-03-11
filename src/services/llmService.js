@@ -1,11 +1,12 @@
 // src/services/llmService.js
+
 const axios = require('axios');
 const { extractJsonObjects } = require('../utils/jsonUtils'); // Usando seu utilitário
 
 class LlmService {
-  constructor() {
-    this.endpoint = 'http://localhost:11434/api/generate'; // Ajuste para o seu provedor
-    this.model = 'qwen2.5-coder:14b'; 
+  constructor(model = 'qwen2.5-coder:14b', endpoint = 'http://localhost:11434/api/generate') {
+    this.endpoint = endpoint; // Ajuste para o seu provedor
+    this.model = model; 
   }
 
   async analyze(prompt) {
@@ -31,4 +32,5 @@ class LlmService {
   }
 }
 
-module.exports = new LlmService();
+module.exports = LlmService;
+

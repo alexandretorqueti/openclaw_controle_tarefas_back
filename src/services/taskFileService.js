@@ -168,10 +168,21 @@ ${engineRules}`;
       await fs.mkdir(processedDir, { recursive: true });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filesToMove = [files.promptFile, files.relatorioFile, files.doneFile, files.terminalLogFile];
+      
+      // === LISTA ATUALIZADA ===
+      const filesToMove = [
+        files.promptFile, 
+        files.relatorioFile, 
+        files.doneFile, 
+        files.terminalLogFile,
+        files.architectPlanFile, // Arquivo de texto do plano
+        files.architectLogFile   // Log do terminal do Arquiteto
+      ].filter(Boolean); // Evita falhas se a chave vier undefined
 
       for (const file of filesToMove) {
         try {
+          // O fs.access vai falhar (e cair no catch silencioso) 
+          // caso a tarefa não seja de desenvolvimento e o arquivo não exista. Isso é perfeito!
           await fs.access(file);
 
           const fileName = path.basename(file);
