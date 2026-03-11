@@ -116,7 +116,7 @@ class MonitorStateService {
         await fs.unlink(this.stateFilePath);
       }
     } catch (error) {
-      console.error(`Erro ao limpar estado: ${error.message}`);
+      // Silenciosamente ignora erros ao limpar estado
     }
   }
 }

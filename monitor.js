@@ -133,8 +133,6 @@ async function main() {
    * Funcao principal de execucao
    */
   async function run() {
-    console.error('🚀 Iniciando Orquestrador Node.js (Arquitetura Modularizada)...');
-
     // 1. Controle de Concorrencia (Lock)
     const lockCheck = await lockService.checkLock();
     
@@ -157,8 +155,6 @@ async function main() {
       await log(`❌ Falha ao adquirir lock.`);
       return;
     }
-    
-    await log(`🔓 Lock trancado com sucesso.`);
 
     try {
       // Busca dados do usuario pelo nickname para usar ao longo do ciclo de vida da tarefa
@@ -176,16 +172,14 @@ async function main() {
 
       // 2. Busca nova tarefa
       const address = `${API_URL}/api/tasks/next/Jarbas`;
-      log(`🔍 Consultando proxima tarefa na fila: ${address}`);
       const response = await axios.get(address);
       
       if (!response.data.success || !response.data.task) {
-        console.error("😴 Nenhuma tarefa nova na fila.");
         return;
       }
 
       const task = response.data.task;
-      await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}. Assumindo o controle...`);
+      await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
       
       await stateService.registerActiveTask(task.id);
       
@@ -196,11 +190,9 @@ async function main() {
       const config = {
         TASKS_DIR,
         TASK_TIMEOUT_MS,
-        MY_USER_ID // Passando para dentro do TaskExecutionService caso necessario
+        MY_USER_ID
       };
 
-      await log(`🤖 Executando tarefa via TaskExecutionService...`);
-      
       const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
 
       // 4. Processa resultado
@@ -224,10 +216,7 @@ async function main() {
       await lockService.releaseLock();
       process.exitCode = 1;
     } finally {
-      const released = await lockService.releaseLock();
-      if (released) {
-        await log(`🔓 Lock liberado com sucesso.`);
-      }
+      await lockService.releaseLock();
     }
   }
 

@@ -1,14 +1,14 @@
 // src/services/evidenceService.js
-// Servico para gerenciamento de evidencias de execucao
+// Serviço responsável por rastrear as ações da IA e gerar as evidências de execução
 
 const path = require('path');
 const { mergeUniquePaths, uniquePaths } = require('../utils/pathUtils');
-const { inferReadOnlyEvidenceFromCommand } = require('../utils/commandUtils');
+const { parseCommandEvidence } = require('../utils/commandUtils');
+const { isEphemeralArtifact } = require('../utils/fileUtils');
 
 class EvidenceService {
   /**
-   * Cria objeto de evidencia vazio
-   * @returns {Object}
+   * Cria um objeto de evidências vazio.
    */
   static createEmptyEvidence() {
     return {
@@ -23,17 +23,23 @@ class EvidenceService {
   }
 
   /**
-   * Aplica evidencias de uma execucao
-   * @param {Object} executionEvidence - Evidencias atuais
-   * @param {string} toolName - Nome da ferramenta
-   * @param {Object} toolResult - Resultado da ferramenta
-   * @param {Object} options - Opcoes
-   * @returns {Object}
+   * Ignora arquivos de backup comuns criados por ferramentas como sed (-i.bak, etc)
+   */
+  static isBackupFile(filePath) {
+    if (!filePath) return false;
+    const lowerPath = filePath.toLowerCase();
+    return lowerPath.endsWith('.bak') || lowerPath.endsWith('~') || lowerPath.endsWith('.orig');
+  }
+
+  /**
+   * Aplica o resultado de uma chamada de ferramenta ao objeto de evidências.
+   * Modificado para inferir as intenções da IA diretamente do JSON, garantindo 
+   * que arquivos editados sejam rastreados mesmo se o executor falhar em reportá-los.
    */
   static applyExecutionEvidence(executionEvidence, toolCall, toolResult = {}, options = {}) {
     const executionDirectory = options.executionDirectory || process.cwd();
     
-    // Suporte retroativo caso venha apenas a string do nome
+    // Suporte retroativo caso venha apenas a string do nome (para compatibilidade)
     const toolName = typeof toolCall === 'string' ? toolCall : toolCall?.name;
 
     executionEvidence.toolsUsed = executionEvidence.toolsUsed || [];
@@ -54,7 +60,7 @@ class EvidenceService {
       const args = toolCall.arguments;
       const filePathArg = args.file_path || args.path || args.filePath;
       
-      if (filePathArg) {
+      if (filePathArg && !this.isBackupFile(filePathArg)) {
         const absPath = path.resolve(executionDirectory, filePathArg);
         
         if (toolName === 'read') {
@@ -75,8 +81,12 @@ class EvidenceService {
          }
          
          const inferred = parseCommandEvidence(args.command, executionDirectory);
-         executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead, inferred.filesRead);
-         executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles, inferred.modifiedFiles);
+         // Filtra os backups nas leituras e escritas
+         const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
+         const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));
+
+         executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead, filteredReads);
+         executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles, filteredWrites);
       }
     }
 
@@ -84,9 +94,14 @@ class EvidenceService {
     if (toolName === 'exec') {
       for (const command of toolResult.commandsExecuted || []) {
         const inferred = parseCommandEvidence(command, executionDirectory);
-        executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead || [], inferred.filesRead || []);
-        executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles || [], inferred.modifiedFiles || []);
-        executionEvidence.touchedFiles = mergeUniquePaths(executionEvidence.touchedFiles || [], inferred.touchedFiles || []);
+        
+        const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
+        const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));
+        const filteredTouches = (inferred.touchedFiles || []).filter(f => !this.isBackupFile(f));
+
+        executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead || [], filteredReads);
+        executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles || [], filteredWrites);
+        executionEvidence.touchedFiles = mergeUniquePaths(executionEvidence.touchedFiles || [], filteredTouches);
       }
 
       if (toolResult.executionDiagnostics?.noOpMutation) {
@@ -104,102 +119,50 @@ class EvidenceService {
   }
 
   /**
-   * Verifica se um arquivo e um artefato efemero (log, relatorio)
-   * @param {string} filePath - Caminho do arquivo
-   * @returns {boolean}
-   */
-  static isEphemeralArtifact(filePath = '') {
-    if (!filePath) return false;
-    
-    const base = path.basename(filePath || '');
-    const fullPath = path.resolve(filePath);
-
-    // Padrões de arquivos efêmeros que NÃO devem contar como progresso
-    const ephemeralPatterns = [
-      /^terminal-[^/]+\.log$/i,       // terminal-*.log (qualquer ID)
-      /^relatorio-[^/]+\.txt$/i,      // relatorio-*.txt (qualquer ID)
-      /^\.done$/i,                     // arquivos .done ocultos
-      /\.lock$/i,                      // arquivos de lock
-      /^monitor-state\.json$/i,        // estado do monitor
-    ];
-    
-    // Verificar padrões no nome base
-    for (const pattern of ephemeralPatterns) {
-      if (pattern.test(base)) {
-        return true;
-      }
-    }
-    
-    // Arquivos em diretórios de tarefas que são artefatos do sistema
-    if (fullPath.includes('/tasks/') || fullPath.includes('/processed/')) {
-      // Mas NÃO considerar .done como efêmero se estiver no diretório de tarefas
-      // porque criar .done é parte do objetivo
-      if (base.endsWith('.done') && !base.startsWith('.')) {
-        return false;  // done-123.done NÃO é efêmero, é o objetivo!
-      }
-    }
-
-    return false;
-    
-    // NOTA IMPORTANTE:
-    // - done-*.done NÃO é efêmero porque criar .done é o objetivo final
-    // - terminal-*.log É efêmero (apenas log)
-    // - relatorio-*.txt É efêmero (relatório do sistema, não código)
-  }
-
-  /**
-   * Calcula progresso do turno
-   * BUG FIXES aplicados:
-   * 1. Agora itera por TODOS os comandos executados, não apenas o primeiro
-   * 2. Agora considera filesWritten além de modifiedFiles
-   * 3. Agora considera touchedFiles para detectar atividade de análise
-   * 
-   * @param {Object} toolResult - Resultado da ferramenta
-   * @param {Object} contractResult - Resultado do contrato
-   * @param {string} cwd - Diretorio de trabalho
-   * @returns {Object}
+   * Calcula o progresso do turno atual, filtrando artefatos efêmeros.
    */
   static computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process.cwd()) {
-    // BUG FIX: Iterar por TODOS os comandos, não apenas o primeiro
     let allInferredReads = [];
+    let allInferredMutations = [];
+    
     const commandsExecuted = Array.isArray(toolResult.commandsExecuted) ? toolResult.commandsExecuted : [];
     
     for (const command of commandsExecuted) {
-      const inferred = inferReadOnlyEvidenceFromCommand(command, cwd);
-      allInferredReads = mergeUniquePaths(allInferredReads, inferred.filesRead || []);
+      const inferred = parseCommandEvidence(command, cwd);
+      
+      const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
+      const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));
+
+      allInferredReads = mergeUniquePaths(allInferredReads, filteredReads);
+      allInferredMutations = mergeUniquePaths(allInferredMutations, filteredWrites);
     }
-
-    // Merge de todas as leituras e filtrar efêmeros
-    const meaningfulReads = mergeUniquePaths(
-      toolResult.filesRead || [],
-      allInferredReads
-    ).filter((file) => !this.isEphemeralArtifact(file));
-
-    // BUG FIX: Considerar TANTO modifiedFiles QUANTO filesWritten
-    const allMutations = mergeUniquePaths(
-      toolResult.modifiedFiles || [],
-      toolResult.filesWritten || []
-    );
     
-    const meaningfulMutations = allMutations.filter((file) => !this.isEphemeralArtifact(file));
+    const directReads = (toolResult.filesRead || []).filter(f => !this.isBackupFile(f));
+    const allReads = mergeUniquePaths(directReads, allInferredReads);
+    const meaningfulReads = allReads.filter((file) => !isEphemeralArtifact(file));
 
-    // BUG FIX: Considerar touchedFiles para detectar atividade de análise
-    const touchedFiles = (toolResult.touchedFiles || []).filter((file) => !this.isEphemeralArtifact(file));
+    const modifiedFiles = (toolResult.modifiedFiles || []).filter(f => !this.isBackupFile(f));
+    const filesWritten = (toolResult.filesWritten || []).filter(f => !this.isBackupFile(f));
+    const allMutations = mergeUniquePaths(mergeUniquePaths(modifiedFiles, filesWritten), allInferredMutations);
+    
+    const meaningfulMutations = allMutations.filter((file) => !isEphemeralArtifact(file));
 
+    const touchedFiles = (toolResult.touchedFiles || []).filter((file) => !isEphemeralArtifact(file) && !this.isBackupFile(file));
     const noOpMutation = !!toolResult.executionDiagnostics?.noOpMutation;
-
-    // BUG FIX: Progresso agora também considera touchedFiles
+    
+    const hasReads = meaningfulReads.length > 0;
+    const hasMutations = meaningfulMutations.length > 0;
+    const hasTouched = touchedFiles.length > 0;
+    
+    const contractFulfilled = !!contractResult.contractFulfilled;
+    
     const hasMeaningfulProgress = 
-      !!contractResult.contractFulfilled ||
+      contractFulfilled || // Se cumpriu o contrato, é progresso AUTOMATICO!
       (
-        !noOpMutation &&
-        (
-          meaningfulReads.length > 0 ||
-          meaningfulMutations.length > 0 ||
-          touchedFiles.length > 0  // NOVO: arquivos tocados também contam
-        )
+        !noOpMutation && 
+        (hasReads || hasMutations || hasTouched)
       );
-
+    
     return {
       meaningfulReads,
       meaningfulMutations,
@@ -211,3 +174,4 @@ class EvidenceService {
 }
 
 module.exports = EvidenceService;
+

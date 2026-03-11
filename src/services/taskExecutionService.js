@@ -6,6 +6,7 @@ const path = require('path');
 const { spawn, execSync } = require('child_process');
 const CommandExecutor = require('./commandExecutor');
 const agentService = require('./agentService');
+const WorkspaceSnapshotService = require('./workspaceSnapshotService');
 
 // Importação dos serviços modularizados
 const ContractVerificationService = require('./contractVerificationService');
@@ -31,7 +32,7 @@ class TaskExecutionService {
           const agentDetails = await agentService.getAgentDetails(agentId);
           model = agentDetails.identity?.model || model;
         } catch (error) {
-          console.warn(`⚠️ Não foi possível obter modelo do agente ${agentId}: ${error.message}`);
+          // Silenciosamente ignora erro ao obter modelo do agente
         }
       }
       const executionLog = await prisma.taskExecutionLog.create({
@@ -45,7 +46,6 @@ class TaskExecutionService {
       });
       return executionLog;
     } catch (error) {
-      console.error(`❌ Erro ao criar log de execução: ${error.message}`);
       throw error;
     }
   }
@@ -278,6 +278,10 @@ QUANDO TERMINAR:
       const project = task.projectId ? await prisma.project.findUnique({ where: { id: task.projectId } }) : null;
       const analysisPlan = TaskAnalysisService.analyzeTaskScope(task, project);
       files = await this.prepareTaskFiles(task, TASKS_DIR, project, analysisPlan);
+
+      // === NOVO: TIRAR O SNAPSHOT INICIAL ===
+      const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+
       const evidence = EvidenceService.createEmptyEvidence();
       let contractResult = { contractFulfilled: false };
       let turnos = 0; let turnosSemProgresso = 0;
@@ -302,7 +306,8 @@ QUANDO TERMINAR:
           evidence,
           task,
           project,
-          analysisPlan
+          analysisPlan,
+          initialSnapshot
         });
         
         if (contractResult.contractFulfilled) {

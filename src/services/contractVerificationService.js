@@ -6,6 +6,7 @@ const path = require('path');
 const { resolveProjectPath, isPathInside } = require('../utils/pathUtils');
 const { isInspectionCommand, commandTargetsOnlySpecialFiles, isMeaningfulCommand } = require('../utils/commandUtils');
 const TaskAnalysisService = require('./taskAnalysisService');
+const WorkspaceSnapshotService = require('./workspaceSnapshotService'); // <-- Nova importação
 
 class ContractVerificationService {
   /**
@@ -54,14 +55,39 @@ class ContractVerificationService {
         task = {},
         evidence = {},
         project = null,
-        analysisPlan = null
+        analysisPlan = null,
+        initialSnapshot = null // <-- Recebe o snapshot injetado pelo orquestrador
       } = options;
 
       const resolvedAnalysisPlan = analysisPlan || TaskAnalysisService.analyzeTaskScope(task, project);
 
+      // === A NOVA FONTE DA VERDADE (FILE SYSTEM) ===
+      let realModifiedFiles = [];
+      if (initialSnapshot && project?.pastaBase) {
+        // Definimos quais caminhos realmente importam para o código
+        const pathsToWatch = [
+            resolveProjectPath(project.pastaBase, project.frontendPath),
+            resolveProjectPath(project.pastaBase, project.backendPath)
+        ].filter(Boolean); // Remove nulos caso um dos caminhos não exista
+
+        // Pegamos TUDO que mudou no disco
+        const allChangedInDisk = await WorkspaceSnapshotService.getModifiedFiles(initialSnapshot, project.pastaBase);
+
+        // FILTRO REAL: Só aceitamos o arquivo se ele estiver DENTRO do front ou do back
+        realModifiedFiles = allChangedInDisk.filter(filePath => {
+          return pathsToWatch.some(watchPath => isPathInside(filePath, watchPath));
+        });
+      } else {
+         // Fallback de segurança caso o snapshot falhe ou não seja passado
+         const modifiedFiles = Array.from(evidence.modifiedFiles || []);
+         const filesWritten = Array.from(evidence.filesWritten || []);
+         realModifiedFiles = [...new Set([...modifiedFiles, ...filesWritten])].filter(
+            (file) => file !== relatorioFile && file !== doneFile && file !== terminalLogFile
+         );
+      }
+
+      // O Snapshot não detecta leituras/inspeções, então mantemos a captura delas via evidência
       const filesRead = Array.from(evidence.filesRead || []);
-      const filesWritten = Array.from(evidence.filesWritten || []);
-      const modifiedFiles = Array.from(evidence.modifiedFiles || []);
       const touchedFiles = Array.from(evidence.touchedFiles || []);
       const commandsExecuted = Array.from(evidence.commandsExecuted || []);
 
@@ -76,20 +102,10 @@ class ContractVerificationService {
           project?.pastaBase || process.cwd()
         );
 
-      const realModifiedFiles = modifiedFiles.filter(
-        (file) => file !== relatorioFile && file !== doneFile && file !== terminalLogFile
-      );
-
-      const realWrittenFiles = filesWritten.filter(
-        (file) => file !== relatorioFile && file !== doneFile && file !== terminalLogFile
-      );
-
+      // Os arquivos realmente "tocados" agora englobam o que foi modificado pelo File System e lido pela IA
       const realTouchedFiles = Array.from(
-        new Set(
-          [...filesRead, ...filesWritten, ...modifiedFiles, ...touchedFiles]
-            .filter((file) => file && file !== relatorioFile && file !== doneFile && file !== terminalLogFile)
-        )
-      );
+        new Set([...filesRead, ...touchedFiles, ...realModifiedFiles])
+      ).filter((file) => file && file !== relatorioFile && file !== doneFile && file !== terminalLogFile);
 
       const inspectionCommands = commandsExecuted.filter((cmd) =>
         isInspectionCommand(cmd || '') && !isOnlySpecialCommand(cmd)
@@ -103,6 +119,7 @@ class ContractVerificationService {
       const fullFrontendPath = resolveProjectPath(project?.pastaBase, project?.frontendPath);
       const fullBackendPath = resolveProjectPath(project?.pastaBase, project?.backendPath);
 
+      // Agora a checagem das camadas usa os arquivos 100% detectados pelo Snapshot
       const modifiedInFrontend = fullFrontendPath
         ? realModifiedFiles.filter((file) => isPathInside(file, fullFrontendPath))
         : [];
@@ -264,7 +281,6 @@ class ContractVerificationService {
 
       const usefulExecution =
         realModifiedFiles.length > 0 ||
-        realWrittenFiles.length > 0 ||
         realTouchedFiles.length > 0 ||
         meaningfulCommands.length > 0;
 
@@ -291,4 +307,3 @@ class ContractVerificationService {
 }
 
 module.exports = ContractVerificationService;
-

@@ -57,7 +57,6 @@ class LockService {
       await fs.writeFile(this.lockFilePath, process.pid.toString());
       return true;
     } catch (error) {
-      console.error(`Erro ao adquirir lock: ${error.message}`);
       return false;
     }
   }
@@ -74,7 +73,6 @@ class LockService {
       }
       return false;
     } catch (error) {
-      console.error(`Erro ao liberar lock: ${error.message}`);
       return false;
     }
   }

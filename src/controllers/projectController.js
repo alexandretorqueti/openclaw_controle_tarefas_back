@@ -14,14 +14,11 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
     if (req.user && req.user.id) {
       // Use authenticated user's ID (overrides any provided value)
       createdById = req.user.id;
-      console.log(`✅ Usando ID do usuário autenticado: ${createdById}`);
     } else if (!createdById || createdById.trim() === '') {
       // No authenticated user and no provided ID
       const error = new Error('User must be authenticated or provide createdById');
       error.statusCode = 401;
       throw error;
-    } else {
-      console.log(`⚠️  Usando provided createdById (modo desenvolvimento): ${createdById}`);
     }
     
     // Update body with determined createdById
@@ -81,7 +78,7 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
 
   // Update project
   updateProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
-    console.log('Project update called - buttons fix 2026-03-10: edit/delete now priority over row click');
+
     const { id } = req.params;
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);

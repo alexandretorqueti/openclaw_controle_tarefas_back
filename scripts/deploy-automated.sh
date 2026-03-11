@@ -103,6 +103,13 @@ build_frontend() {
     log_info "🏗️  Gerando build de produção do Frontend..."
     cd "$FRONTEND_REPO_DIR"
     
+    # Verificar se estamos no diretório correto
+    if [ ! -f "package.json" ]; then
+        log_error "❌ Diretório do frontend incorreto: $FRONTEND_REPO_DIR"
+        log_error "   Não encontrado: package.json"
+        return 1
+    fi
+    
     # Instalar dependências de dev se necessário para o build
     npm install
     

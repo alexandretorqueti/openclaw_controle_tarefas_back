@@ -181,15 +181,11 @@ ${engineRules}`;
 
           await fs.rename(file, path.join(processedDir, newFileName));
         } catch (error) {
-          if (error.code !== 'ENOENT') {
-            console.error(`[Aviso] Falha ao mover ${file}:`, error.message);
-          }
+          // Silenciosamente ignora erros ao mover arquivos (exceto ENOENT)
         }
       }
-
-      console.log('📂 Limpeza concluida.');
     } catch (error) {
-      console.error(`❌ Erro fatal ao tentar mover arquivos: ${error.message}`);
+      // Silenciosamente ignora erros ao mover arquivos
     }
   }
 }

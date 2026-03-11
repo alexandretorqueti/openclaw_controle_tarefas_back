@@ -118,7 +118,7 @@ class TaskController {
     
     // Log for debugging date issues
     if (body.deadline !== undefined) {
-      console.log(`[TaskController] Updating task ${id} deadline:`, body.deadline, 'type:', typeof body.deadline);
+
     }
     
     const validation = validateTaskUpdate(body);
