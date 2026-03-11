@@ -94,18 +94,19 @@ exports.getAgent = async (req, res) => {
 exports.updateAgentIdentity = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, emoji, avatar, model } = req.body;
+    const { name, emoji, avatar, model, workspace } = req.body;
     
     // Check if at least one field is provided (undefined means field not sent)
     const hasName = name !== undefined;
     const hasEmoji = emoji !== undefined;
     const hasAvatar = avatar !== undefined;
     const hasModel = model !== undefined;
+    const hasWorkspace = workspace !== undefined;
     
-    if (!hasName && !hasEmoji && !hasAvatar && !hasModel) {
+    if (!hasName && !hasEmoji && !hasAvatar && !hasModel && !hasWorkspace) {
       return res.status(400).json({
         success: false,
-        error: 'Pelo menos um campo (name, emoji, avatar ou model) deve ser fornecido'
+        error: 'Pelo menos um campo (name, emoji, avatar, model ou workspace) deve ser fornecido'
       });
     }
     
@@ -117,7 +118,7 @@ exports.updateAgentIdentity = async (req, res) => {
       });
     }
     
-    const identity = { name, emoji, avatar, model };
+    const identity = { name, emoji, avatar, model, workspace };
     const result = await agentService.setAgentIdentity(id, identity);
     
     res.json({

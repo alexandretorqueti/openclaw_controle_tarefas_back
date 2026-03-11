@@ -204,16 +204,15 @@ QUANDO TERMINAR:
         await OpenClawService.execute(
           `${task.id}-architect`, // Sessão diferente para não misturar logs
           architectInput, 
-          'arquitetosenior',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
+          'analista-pleno',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
           null,                   // Usa o modelo padrão
           TASKS_DIR, 
           architectLogFile, 
           project?.pastaBase, 
-          300000                  // Timeout de 5 min
+          600000                  // Timeout de 10 min
         );
         // === A TRAVA DE SEGURANÇA ===
         // Se o Arquiteto foi intrometido e criou o .done, apagamos ele!
-        await fs.unlink(files.doneFile).catch(() => {});
         // ============================
 
         logger.log(`🧠 [Arquiteto] finalizou a análise.`);

@@ -190,6 +190,19 @@ exports.setAgentIdentity = async (agentId, identity) => {
       await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.model`, `'"${identity.model}"'`]);
     }
 
+    // Atualiza workspace via config (agents.list[<index>].workspace)
+    if (identity.workspace !== undefined) {
+      const agentsResult = await exports.execOpenClawCommand('agents', ['list', '--json']);
+      const output = typeof agentsResult === 'object' ? agentsResult : (agentsResult.stdout || '');
+
+      const agents = output;
+      const agentIndex = agents.findIndex(agent => agent.id === agentId);
+      if (agentIndex === -1) {
+        throw new Error(`Agente '${agentId}' não encontrado.`);
+      }
+      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.workspace`, `'"${identity.workspace}"'`]);
+    }
+
     // Invalida o cache para forçar atualização na próxima requisição
     agentCache.invalidate();
     

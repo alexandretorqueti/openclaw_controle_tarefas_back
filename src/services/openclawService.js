@@ -51,7 +51,7 @@ class OpenClawService {
         settle({ success: false, errorMessage: `Timeout ${timeoutMs}ms`, rawOutput: stdout + stderr });
       }, timeoutMs);
 
-    const onData = async (data, source) => {
+      const onData = async (data, source) => {
         if (isSettled) return;
         const text = data.toString();
         source === 'stdout' ? (stdout += text) : (stderr += text);
