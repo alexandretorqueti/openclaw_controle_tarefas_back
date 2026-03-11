@@ -1,3 +1,5 @@
+// CommentController.js
+
 const commentService = require('../services/commentService');
 const { validateComment, validateCommentUpdate } = require('../validators/commentValidator');
 const { snakeToCamel } = require('../utils/caseConverter');
@@ -8,13 +10,6 @@ class CommentController {
   createComment = ErrorMiddleware.catchAsync(async (req, res, next) => {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
-    
-    // Require authenticated user for this personal system
-    if (!req.user || !req.user.id) {
-      const error = new Error('User must be authenticated to create comments');
-      error.statusCode = 401;
-      throw error;
-    }
     
     // Always use authenticated user's ID
     const validatedBody = { ...body, userId: req.user.id };
@@ -152,3 +147,4 @@ class CommentController {
 }
 
 module.exports = new CommentController();
+

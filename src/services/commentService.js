@@ -1,3 +1,5 @@
+// commentService.js
+
 const prisma = require('./prismaService');
 
 // TESTE DE REGRAS E COMENTÁRIOS: Este serviço gerencia comentários e deve receber as regras do projeto
@@ -264,3 +266,4 @@ class CommentService {
 }
 
 module.exports = new CommentService();
+

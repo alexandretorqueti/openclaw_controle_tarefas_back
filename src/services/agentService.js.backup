@@ -2,7 +2,6 @@ const { spawn } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
-const agentCache = require('./agentCache');
 
 /**
  * Executa um comando OpenClaw e retorna a saída JSON
@@ -55,10 +54,10 @@ exports.execOpenClawCommand = async (command, args = []) => {
 };
 
 /**
- * Busca agentes diretamente do OpenClaw (sem cache)
+ * Lista todos os agentes
  * @returns {Promise<Array>} - Lista de agentes
  */
-exports._fetchAgentsDirectly = async () => {
+exports.listAgents = async () => {
   try {
     const result = await exports.execOpenClawCommand('agents', ['list']);
     // O comando retorna um array de agentes
@@ -111,22 +110,7 @@ exports._fetchAgentsDirectly = async () => {
       };
     });
   } catch (error) {
-    console.error('Erro ao buscar agentes diretamente:', error.message);
-    throw error;
-  }
-};
-
-/**
- * Lista todos os agentes (com cache de 1 hora)
- * @returns {Promise<Array>} - Lista de agentes
- */
-exports.listAgents = async () => {
-  try {
-    // Usa o cache com função de fallback para buscar diretamente
-    const agents = await agentCache.getAgents(() => exports._fetchAgentsDirectly());
-    return agents;
-  } catch (error) {
-    console.error('Erro ao listar agentes (com cache):', error.message);
+    console.error('Erro ao listar agentes:', error.message);
     throw error;
   }
 };
@@ -145,10 +129,6 @@ exports.addAgent = async (name, workspace) => {
     }
     
     const result = await exports.execOpenClawCommand('agents', args);
-    
-    // Invalida o cache para forçar atualização na próxima requisição
-    agentCache.invalidate();
-    
     return result;
   } catch (error) {
     console.error('Erro ao adicionar agente:', error.message);
@@ -190,9 +170,6 @@ exports.setAgentIdentity = async (agentId, identity) => {
       await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.model`, `'"${identity.model}"'`]);
     }
 
-    // Invalida o cache para forçar atualização na próxima requisição
-    agentCache.invalidate();
-    
     return { success: true, agentId };
   } catch (error) {
     console.error('Erro ao atualizar identidade do agente:', error.message);
@@ -215,10 +192,6 @@ exports.bindAgent = async (agentId, binding) => {
       '--agent', agentId,
       '--bind', binding
     ]);
-    
-    // Invalida o cache para forçar atualização na próxima requisição
-    agentCache.invalidate();
-    
     return result;
   } catch (error) {
     console.error('Erro ao adicionar binding:', error.message);
@@ -239,10 +212,6 @@ exports.unbindAgent = async (agentId, binding) => {
       '--agent', agentId,
       '--bind', binding
     ]);
-    
-    // Invalida o cache para forçar atualização na próxima requisição
-    agentCache.invalidate();
-    
     return result;
   } catch (error) {
     console.error('Erro ao remover binding:', error.message);
@@ -258,10 +227,6 @@ exports.unbindAgent = async (agentId, binding) => {
 exports.deleteAgent = async (agentId) => {
   try {
     const result = await exports.execOpenClawCommand('agents', ['delete', agentId]);
-    
-    // Invalida o cache para forçar atualização na próxima requisição
-    agentCache.invalidate();
-    
     return result;
   } catch (error) {
     console.error('Erro ao excluir agente:', error.message);

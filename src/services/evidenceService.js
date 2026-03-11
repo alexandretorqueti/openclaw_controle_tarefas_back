@@ -30,65 +30,71 @@ class EvidenceService {
    * @param {Object} options - Opcoes
    * @returns {Object}
    */
-  static applyExecutionEvidence(executionEvidence, toolName, toolResult = {}, options = {}) {
+  static applyExecutionEvidence(executionEvidence, toolCall, toolResult = {}, options = {}) {
     const executionDirectory = options.executionDirectory || process.cwd();
+    
+    // Suporte retroativo caso venha apenas a string do nome
+    const toolName = typeof toolCall === 'string' ? toolCall : toolCall?.name;
 
     executionEvidence.toolsUsed = executionEvidence.toolsUsed || [];
-    executionEvidence.filesRead = mergeUniquePaths(
-      executionEvidence.filesRead || [],
-      toolResult.filesRead || []
-    );
-
-    executionEvidence.filesWritten = mergeUniquePaths(
-      executionEvidence.filesWritten || [],
-      toolResult.filesWritten || []
-    );
-
-    executionEvidence.modifiedFiles = mergeUniquePaths(
-      executionEvidence.modifiedFiles || [],
-      toolResult.modifiedFiles || []
-    );
-
-    executionEvidence.touchedFiles = mergeUniquePaths(
-      executionEvidence.touchedFiles || [],
-      toolResult.touchedFiles || []
-    );
-
-    executionEvidence.commandsExecuted = Array.from(
-      new Set([
-        ...(executionEvidence.commandsExecuted || []),
-        ...((toolResult.commandsExecuted || []).filter(Boolean)),
-      ])
-    );
+    executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead || [], toolResult.filesRead || []);
+    executionEvidence.filesWritten = mergeUniquePaths(executionEvidence.filesWritten || [], toolResult.filesWritten || []);
+    executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles || [], toolResult.modifiedFiles || []);
+    executionEvidence.touchedFiles = mergeUniquePaths(executionEvidence.touchedFiles || [], toolResult.touchedFiles || []);
+    
+    const cmds = toolResult.commandsExecuted || [];
+    executionEvidence.commandsExecuted = Array.from(new Set([...(executionEvidence.commandsExecuted || []), ...cmds.filter(Boolean)]));
 
     if (toolName && !executionEvidence.toolsUsed.includes(toolName)) {
       executionEvidence.toolsUsed.push(toolName);
     }
 
-    // Para exec, infere evidencias adicionais
+    // === O GRANDE FIX: Inferir arquivos alterados direto do JSON da IA ===
+    if (toolCall && typeof toolCall === 'object' && toolCall.arguments) {
+      const args = toolCall.arguments;
+      const filePathArg = args.file_path || args.path || args.filePath;
+      
+      if (filePathArg) {
+        const absPath = path.resolve(executionDirectory, filePathArg);
+        
+        if (toolName === 'read') {
+          executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead, [absPath]);
+        }
+        
+        if (toolName === 'write' || toolName === 'edit') {
+          // Garante que a alteração seja anotada como prova (evidence)
+          executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles, [absPath]);
+          executionEvidence.filesWritten = mergeUniquePaths(executionEvidence.filesWritten, [absPath]);
+        }
+      }
+
+      // Se for exec, passa o comando pelo detetive independente do retorno do executor
+      if (toolName === 'exec' && args.command) {
+         if (!executionEvidence.commandsExecuted.includes(args.command)) {
+           executionEvidence.commandsExecuted.push(args.command);
+         }
+         
+         const inferred = parseCommandEvidence(args.command, executionDirectory);
+         executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead, inferred.filesRead);
+         executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles, inferred.modifiedFiles);
+      }
+    }
+
+    // Mantém o processamento antigo via toolResult como fallback
     if (toolName === 'exec') {
       for (const command of toolResult.commandsExecuted || []) {
-        const inferred = inferReadOnlyEvidenceFromCommand(command, executionDirectory);
-
-        executionEvidence.filesRead = mergeUniquePaths(
-          executionEvidence.filesRead || [],
-          inferred.filesRead || []
-        );
-
-        executionEvidence.touchedFiles = mergeUniquePaths(
-          executionEvidence.touchedFiles || [],
-          inferred.touchedFiles || []
-        );
+        const inferred = parseCommandEvidence(command, executionDirectory);
+        executionEvidence.filesRead = mergeUniquePaths(executionEvidence.filesRead || [], inferred.filesRead || []);
+        executionEvidence.modifiedFiles = mergeUniquePaths(executionEvidence.modifiedFiles || [], inferred.modifiedFiles || []);
+        executionEvidence.touchedFiles = mergeUniquePaths(executionEvidence.touchedFiles || [], inferred.touchedFiles || []);
       }
 
       if (toolResult.executionDiagnostics?.noOpMutation) {
         executionEvidence.noOpMutations = [
           ...(executionEvidence.noOpMutations || []),
           {
-            command: toolResult.commandsExecuted?.[0] || null,
-            candidateFiles: uniquePaths(
-              toolResult.executionDiagnostics.candidateFiles || []
-            ),
+            command: toolResult.commandsExecuted?.[0] || (toolCall && toolCall.arguments ? toolCall.arguments.command : null),
+            candidateFiles: uniquePaths(toolResult.executionDiagnostics.candidateFiles || []),
           },
         ];
       }

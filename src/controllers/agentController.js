@@ -1,4 +1,5 @@
 const agentService = require('../services/agentService');
+const agentCache = require('../services/agentCache');
 
 /**
  * Lista todos os agentes
@@ -221,6 +222,49 @@ exports.deleteAgent = async (req, res) => {
       success: false,
       error: error.message,
       stderr: error.stderr || null
+    });
+  }
+};
+
+/**
+ * Obtém informações do cache de agentes
+ * @route GET /api/agents/cache/info
+ */
+exports.getCacheInfo = async (req, res) => {
+  try {
+    const cacheInfo = agentCache.getCacheInfo();
+    
+    res.json({
+      success: true,
+      data: cacheInfo,
+      message: 'Informações do cache obtidas com sucesso'
+    });
+  } catch (error) {
+    console.error('Erro no controller getCacheInfo:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Invalida o cache de agentes (força atualização)
+ * @route POST /api/agents/cache/invalidate
+ */
+exports.invalidateCache = async (req, res) => {
+  try {
+    agentCache.invalidate();
+    
+    res.json({
+      success: true,
+      message: 'Cache invalidado com sucesso. Próxima requisição buscará dados frescos.'
+    });
+  } catch (error) {
+    console.error('Erro no controller invalidateCache:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 };

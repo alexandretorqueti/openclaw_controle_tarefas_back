@@ -51,4 +51,18 @@ router.delete('/:id/bindings', agentController.removeBinding);
  */
 router.delete('/:id', agentController.deleteAgent);
 
+/**
+ * @route   GET /api/agents/cache/info
+ * @desc    Obtém informações do cache de agentes
+ * @access  Private
+ */
+router.get('/cache/info', agentController.getCacheInfo);
+
+/**
+ * @route   POST /api/agents/cache/invalidate
+ * @desc    Invalida o cache de agentes (força atualização)
+ * @access  Private
+ */
+router.post('/cache/invalidate', agentController.invalidateCache);
+
 module.exports = router;

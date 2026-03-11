@@ -1,3 +1,5 @@
+// taskExecutionService.js
+
 const { PrismaClient } = require('@prisma/client');
 const fs = require('fs').promises;
 const path = require('path');
@@ -285,7 +287,14 @@ QUANDO TERMINAR:
         const res = await this.executeOpenClaw(task.id, currentInput, task.agent || 'main', null, TASKS_DIR, files.terminalLogFile, project?.pastaBase, TASK_TIMEOUT_MS);
         
         // Usa EvidenceService para aplicar evidências
-        EvidenceService.applyExecutionEvidence(evidence, res.toolCall?.name, res.toolResult || {}, { executionDirectory: project?.pastaBase || TASKS_DIR });
+        EvidenceService.applyExecutionEvidence(
+          evidence, 
+          res.toolCall, 
+          res.toolResult || {}, 
+          { 
+            executionDirectory: project?.pastaBase || TASKS_DIR 
+          }
+        );
         
         // Usa ContractVerificationService para verificação completa do contrato
         contractResult = await ContractVerificationService.verifyContract(files.doneFile, files.relatorioFile, files.terminalLogFile, { 
@@ -324,3 +333,4 @@ QUANDO TERMINAR:
 }
 
 module.exports = TaskExecutionService;
+
