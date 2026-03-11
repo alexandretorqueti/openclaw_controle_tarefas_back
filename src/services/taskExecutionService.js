@@ -263,11 +263,32 @@ QUANDO TERMINAR:
   }
 
   static async runBuildValidationIfNeeded(project, evidence) {
-    if (!project || !project.backendBuildCmd) return { passed: true };
-    try {
-      execSync(project.backendBuildCmd, { cwd: project.pastaBase, stdio: 'pipe' });
-      return { passed: true };
-    } catch (e) { return { passed: false, message: e.message }; }
+    if (!project) return { passed: true };
+
+    // 1. Validação do Backend
+    // Nota: Usando backendPath para manter o padrão das outras análises
+    if (project.backendBuildCmd && project.backendPath) {
+      try {
+        const backDir = path.join(project.pastaBase, project.backendPath);
+        execSync(project.backendBuildCmd, { cwd: backDir, stdio: 'pipe' });
+      } catch (e) { 
+        // Retornamos especificamente que foi o erro do backend para a IA saber o que corrigir
+        return { passed: false, message: `Build do Backend falhou: ${e.message}` }; 
+      }
+    }
+
+    // 2. Validação do Frontend
+    if (project.frontendBuildCmd && project.frontendPath) {
+      try {
+        const frontDir = path.join(project.pastaBase, project.frontendPath);
+        execSync(project.frontendBuildCmd, { cwd: frontDir, stdio: 'pipe' });
+      } catch (e) { 
+        // Retornamos especificamente que foi o erro do frontend
+        return { passed: false, message: `Build do Frontend falhou: ${e.message}` }; 
+      }
+    }
+
+    return { passed: true };
   }
 
   static async executeTask(task, userId, config) {
