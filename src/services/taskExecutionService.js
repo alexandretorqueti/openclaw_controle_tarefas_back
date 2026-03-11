@@ -138,24 +138,35 @@ QUANDO TERMINAR:
   static async runBuildValidationIfNeeded(project, evidence) {
     if (!project) return { passed: true };
 
+    // Adicionamos um timeout de 60 segundos (60000ms) para evitar travamento infinito
+    const BUILD_TIMEOUT = 60000;
+
     if (project.backendBuildCmd && project.backendPath) {
       try {
+        console.log(`⏳ Testando build do Backend: ${project.backendBuildCmd}...`);
         const backDir = path.join(project.pastaBase, project.backendPath);
-        execSync(project.backendBuildCmd, { cwd: backDir, stdio: 'pipe' });
+        
+        // O timeout impede que comandos como 'npm start' congelem o Node
+        execSync(project.backendBuildCmd, { cwd: backDir, stdio: 'pipe', timeout: BUILD_TIMEOUT });
       } catch (e) { 
-        return { passed: false, message: `Build do Backend falhou: ${e.message}` }; 
+        console.log(`❌ Build do Backend reprovou.`);
+        return { passed: false, message: `Build do Backend falhou ou excedeu o limite de tempo: ${e.message}` }; 
       }
     }
 
     if (project.frontendBuildCmd && project.frontendPath) {
       try {
+        console.log(`⏳ Testando build do Frontend: ${project.frontendBuildCmd}...`);
         const frontDir = path.join(project.pastaBase, project.frontendPath);
-        execSync(project.frontendBuildCmd, { cwd: frontDir, stdio: 'pipe' });
+        
+        execSync(project.frontendBuildCmd, { cwd: frontDir, stdio: 'pipe', timeout: BUILD_TIMEOUT });
       } catch (e) { 
-        return { passed: false, message: `Build do Frontend falhou: ${e.message}` }; 
+        console.log(`❌ Build do Frontend reprovou.`);
+        return { passed: false, message: `Build do Frontend falhou ou excedeu o limite de tempo: ${e.message}` }; 
       }
     }
 
+    console.log(`✅ Testes de Build passaram com sucesso!`);
     return { passed: true };
   }
 

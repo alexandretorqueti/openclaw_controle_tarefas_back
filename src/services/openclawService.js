@@ -51,25 +51,43 @@ class OpenClawService {
         settle({ success: false, errorMessage: `Timeout ${timeoutMs}ms`, rawOutput: stdout + stderr });
       }, timeoutMs);
 
-      const onData = async (data, source) => {
+    const onData = async (data, source) => {
         if (isSettled) return;
         const text = data.toString();
         source === 'stdout' ? (stdout += text) : (stderr += text);
         streamBuffer += text;
+        
         fs.appendFile(terminalLogFile, text).catch(() => {});
         
         const toolCall = ToolCallService.extractToolCallFromText(streamBuffer);
+        
         if (toolCall && !toolStarted) {
           toolStarted = true;
+          
+          // Tenta matar o processo do OpenClaw pois interceptamos a ferramenta
           try { child.kill('SIGKILL'); } catch (_) {}
-          const result = await CommandExecutor.executeTool(toolCall, projectPath || tasksDir);
-          settle({ 
-            success: result.success, 
-            toolFeedback: `[RESULTADO] ${result.output || result.error}`, 
-            toolCall, 
-            toolResult: result, 
-            rawOutput: stdout + stderr 
-          });
+          
+          // === O FIX ENTRA AQUI ===
+          // Se o executor da ferramenta falhar, garantimos que o Node não trave
+          try {
+            const result = await CommandExecutor.executeTool(toolCall, projectPath || tasksDir);
+            settle({ 
+              success: result.success, 
+              toolFeedback: `[RESULTADO] ${result.output || result.error}`, 
+              toolCall, 
+              toolResult: result, 
+              rawOutput: stdout + stderr 
+            });
+          } catch (err) {
+            console.error(`❌ Erro crítico ao executar ferramenta da IA:`, err);
+            // Devolve o erro para a IA em vez de travar o Node
+            settle({ 
+              success: false, 
+              toolFeedback: `[FALHA INTERNA DO SISTEMA] O comando falhou catastróficamente: ${err.message}`, 
+              toolCall, 
+              rawOutput: stdout + stderr 
+            });
+          }
         }
       };
 

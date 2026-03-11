@@ -1,5 +1,6 @@
 const { Logger, ERROR_TYPES } = require('../utils/logger');
 const { Prisma } = require('@prisma/client');
+const autoTaskService = require('../services/autoTaskService');
 
 /**
  * Global error handling middleware for Express.js
@@ -221,6 +222,22 @@ class ErrorMiddleware {
         
         // Send response
         res.json(response);
+        
+        // Criar tarefa automática de forma assíncrona (não bloquear resposta)
+        try {
+          autoTaskService.createAutoTask(error, req, res)
+            .then(task => {
+              if (task) {
+                console.log(`Tarefa automática ${task.id} criada para erro: ${error.message}`);
+              }
+            })
+            .catch(taskError => {
+              // Não falhar se a criação da tarefa falhar
+              console.error('Erro ao criar tarefa automática:', taskError.message);
+            });
+        } catch (taskError) {
+          console.error('Erro ao iniciar criação de tarefa automática:', taskError.message);
+        }
         
       } catch (loggingError) {
         // Fallback if logging fails

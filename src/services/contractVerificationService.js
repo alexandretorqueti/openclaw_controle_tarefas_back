@@ -63,20 +63,34 @@ class ContractVerificationService {
 
       // === A NOVA FONTE DA VERDADE (FILE SYSTEM) ===
       let realModifiedFiles = [];
+      
       if (initialSnapshot && project?.pastaBase) {
-        // Definimos quais caminhos realmente importam para o código
-        const pathsToWatch = [
-            resolveProjectPath(project.pastaBase, project.frontendPath),
-            resolveProjectPath(project.pastaBase, project.backendPath)
-        ].filter(Boolean); // Remove nulos caso um dos caminhos não exista
-
-        // Pegamos TUDO que mudou no disco
+        // Pegamos TUDO que mudou na pasta do projeto
         const allChangedInDisk = await WorkspaceSnapshotService.getModifiedFiles(initialSnapshot, project.pastaBase);
 
-        // FILTRO REAL: Só aceitamos o arquivo se ele estiver DENTRO do front ou do back
+        // FILTRO REAL: Aceita qualquer alteração, EXCETO os arquivos do orquestrador
         realModifiedFiles = allChangedInDisk.filter(filePath => {
-          return pathsToWatch.some(watchPath => isPathInside(filePath, watchPath));
+          const resolvedPath = path.resolve(filePath);
+          const fileName = path.basename(resolvedPath);
+
+          // 1. Ignora os 3 arquivos de controle exatos desta execução
+          if (
+              resolvedPath === path.resolve(doneFile) ||
+              resolvedPath === path.resolve(relatorioFile) ||
+              resolvedPath === path.resolve(terminalLogFile)
+          ) {
+              return false;
+          }
+
+          // 2. Ignora qualquer arquivo de sistema gerado por NÓS (Arquiteto, Prompts, etc)
+          if (/^(prompt|relatorio|terminal|done|plano-arquiteto|terminal-arquiteto)-.*\.(txt|log|done)$/i.test(fileName)) {
+              return false;
+          }
+
+          // Se passou pelos filtros acima, é um código-fonte/arquivo real do seu projeto!
+          return true;
         });
+        
       } else {
          // Fallback de segurança caso o snapshot falhe ou não seja passado
          const modifiedFiles = Array.from(evidence.modifiedFiles || []);
@@ -116,25 +130,35 @@ class ContractVerificationService {
         return isMeaningfulCommand(cmd, specialArtifacts, project?.pastaBase || process.cwd());
       });
 
+      // === DEFINIÇÃO DOS CAMINHOS DAS CAMADAS ===
       const fullFrontendPath = resolveProjectPath(project?.pastaBase, project?.frontendPath);
       const fullBackendPath = resolveProjectPath(project?.pastaBase, project?.backendPath);
 
-      // Agora a checagem das camadas usa os arquivos 100% detectados pelo Snapshot
-      const modifiedInFrontend = fullFrontendPath
-        ? realModifiedFiles.filter((file) => isPathInside(file, fullFrontendPath))
-        : [];
+      // Funções blindadas para verificar se um arquivo pertence a uma camada
+      // Tenta usar o isPathInside, mas se falhar por diferença de path absoluto/relativo,
+      // usa o .includes() com o nome da pasta (ex: 'tarefas-server') como garantia.
+      const isFrontendFile = (file) => {
+          if (!file) return false;
+          const normalized = file.replace(/\\/g, '/'); // Previne erros de barra no Windows/Linux
+          if (fullFrontendPath && isPathInside(normalized, fullFrontendPath)) return true;
+          if (project?.frontendPath && normalized.includes(project.frontendPath)) return true;
+          return false;
+      };
 
-      const modifiedInBackend = fullBackendPath
-        ? realModifiedFiles.filter((file) => isPathInside(file, fullBackendPath))
-        : [];
+      const isBackendFile = (file) => {
+          if (!file) return false;
+          const normalized = file.replace(/\\/g, '/');
+          if (fullBackendPath && isPathInside(normalized, fullBackendPath)) return true;
+          if (project?.backendPath && normalized.includes(project.backendPath)) return true;
+          return false;
+      };
 
-      const touchedInFrontend = fullFrontendPath
-        ? realTouchedFiles.filter((file) => isPathInside(file, fullFrontendPath))
-        : [];
+      // Agora a checagem das camadas usa as funções blindadas
+      const modifiedInFrontend = realModifiedFiles.filter(isFrontendFile);
+      const modifiedInBackend = realModifiedFiles.filter(isBackendFile);
 
-      const touchedInBackend = fullBackendPath
-        ? realTouchedFiles.filter((file) => isPathInside(file, fullBackendPath))
-        : [];
+      const touchedInFrontend = realTouchedFiles.filter(isFrontendFile);
+      const touchedInBackend = realTouchedFiles.filter(isBackendFile);
 
       const reportRequired =
         TaskAnalysisService.requiresReport(task) ||
