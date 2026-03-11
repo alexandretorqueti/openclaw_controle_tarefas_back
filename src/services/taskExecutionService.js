@@ -22,6 +22,8 @@ const { normalizeCommandSignature, isInspectionCommand, isMutationCommand, comma
 const { extractJsonObjects, inspectJsonLikeStructure } = require('../utils/jsonUtils');
 const { fileExists } = require('../utils/fileUtils');
 
+const logger = require('../../aux/logger');
+
 const prisma = new PrismaClient();
 
 class TaskExecutionService {
@@ -143,30 +145,30 @@ QUANDO TERMINAR:
 
     if (project.backendBuildCmd && project.backendPath) {
       try {
-        console.log(`⏳ Testando build do Backend: ${project.backendBuildCmd}...`);
+        logger.log(`⏳ Testando build do Backend: ${project.backendBuildCmd}...`);
         const backDir = path.join(project.pastaBase, project.backendPath);
         
         // O timeout impede que comandos como 'npm start' congelem o Node
         execSync(project.backendBuildCmd, { cwd: backDir, stdio: 'pipe', timeout: BUILD_TIMEOUT });
       } catch (e) { 
-        console.log(`❌ Build do Backend reprovou.`);
+        logger.log(`❌ Build do Backend reprovou.`);
         return { passed: false, message: `Build do Backend falhou ou excedeu o limite de tempo: ${e.message}` }; 
       }
     }
 
     if (project.frontendBuildCmd && project.frontendPath) {
       try {
-        console.log(`⏳ Testando build do Frontend: ${project.frontendBuildCmd}...`);
+        logger.log(`⏳ Testando build do Frontend: ${project.frontendBuildCmd}...`);
         const frontDir = path.join(project.pastaBase, project.frontendPath);
         
         execSync(project.frontendBuildCmd, { cwd: frontDir, stdio: 'pipe', timeout: BUILD_TIMEOUT });
       } catch (e) { 
-        console.log(`❌ Build do Frontend reprovou.`);
+        logger.log(`❌ Build do Frontend reprovou.`);
         return { passed: false, message: `Build do Frontend falhou ou excedeu o limite de tempo: ${e.message}` }; 
       }
     }
 
-    console.log(`✅ Testes de Build passaram com sucesso!`);
+    logger.log(`✅ Testes de Build passaram com sucesso!`);
     return { passed: true };
   }
 
@@ -195,14 +197,14 @@ QUANDO TERMINAR:
         // Constrói o prompt mandando ele escrever no planFile
         const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, planFile);
 
-        console.log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
+        logger.log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
 
         // Chama o OpenClawService com um agente de planejamento (ex: 'architect' ou 'planner')
         // Passamos um timeout menor (ex: 5 minutos) pois ele só precisa escrever um arquivo e sair
         await OpenClawService.execute(
           `${task.id}-architect`, // Sessão diferente para não misturar logs
           architectInput, 
-          'estagiario',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
+          'arquitetosenior',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
           null,                   // Usa o modelo padrão
           TASKS_DIR, 
           architectLogFile, 
@@ -214,7 +216,7 @@ QUANDO TERMINAR:
         await fs.unlink(files.doneFile).catch(() => {});
         // ============================
 
-        console.log(`🧠 [Arquiteto] finalizou a análise.`);
+        logger.log(`🧠 [Arquiteto] finalizou a análise.`);
         // Verifica se o Arquiteto fez o dever de casa e escreveu o plano
         const planExists = await fileExists(planFile);
         let architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
@@ -241,9 +243,11 @@ QUANDO TERMINAR:
       currentInput = files.promptContent;
 
       while (!contractResult.contractFulfilled && turnos < 100) {
+        logger.log(`🤖 Turno ${turnos}...`);
         turnos++;
         
         // Chamada via o novo OpenClawService
+        logger.log(currentInput);
         const res = await OpenClawService.execute(
           task.id, currentInput, task.agent || 'main', null, TASKS_DIR, files.terminalLogFile, project?.pastaBase, TASK_TIMEOUT_MS
         );
@@ -266,6 +270,7 @@ QUANDO TERMINAR:
           if (!qa.passed) {
             await fs.unlink(files.doneFile).catch(()=>{});
             currentInput = `Build falhou: ${qa.message}. Corrija e finalize novamente com .done.`;
+            logger.log(currentInput);
             contractResult.contractFulfilled = false;
             continue;
           }
@@ -285,6 +290,7 @@ QUANDO TERMINAR:
         const prog = EvidenceService.computeTurnProgress(res.toolResult || {}, contractResult, project?.pastaBase || TASKS_DIR);
         prog.hasMeaningfulProgress ? (turnosSemProgresso = 0) : turnosSemProgresso++;
         
+        logger.log(`Turnos sem progresso: ${turnosSemProgresso}`);
         if (turnosSemProgresso >= 6) { 
           contractResult.executionNotes = 'Estagnação.'; 
           break; 

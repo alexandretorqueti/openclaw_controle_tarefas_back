@@ -35,7 +35,8 @@ const updateProjectSchema = z.object({
   description: z.string()
     .min(10, 'Description must be at least 10 characters')
     .max(500, 'Description must be at most 500 characters')
-    .optional(),
+    .optional()
+    .or(z.literal('')),
   regras: z.string().optional().nullable(),
   status: z.boolean().optional(),
   ativo: z.boolean().optional(),

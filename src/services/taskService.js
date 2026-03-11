@@ -5,6 +5,7 @@ const path = require('path');
 // src/services/taskService.js
 
 const prisma = require('./prismaService');
+const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
 
 class TaskService {
   // Função auxiliar para executar git
@@ -598,6 +599,7 @@ class TaskService {
         }
       })
     );
+    sseService.broadcast('task_updated', data);
 
     // Add history record if status changed
     if (data.statusId && oldTask && data.statusId !== oldTask.statusId) {
