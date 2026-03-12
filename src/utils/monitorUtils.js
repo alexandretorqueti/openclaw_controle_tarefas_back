@@ -9,3 +9,4 @@ module.exports = {
   segundosToMinutos_Segundos,
   isProcessAlive
 };
+

@@ -122,3 +122,4 @@ class MonitorStateService {
 }
 
 module.exports = MonitorStateService;
+

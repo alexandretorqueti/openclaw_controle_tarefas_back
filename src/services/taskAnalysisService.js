@@ -1,9 +1,6 @@
 // src/services/taskAnalysisService.js
 // Servico de analise de escopo e tipo de tarefas
 const promptFactory = require('../utils/promptFactory');
-const { formatNumberedList, formatInlineList } = require('../utils/formatUtils');
-
-// src/services/taskAnalysisService.js
 const LlmService = require('./llmService');
 const llmService = new LlmService('qwen2.5-coder:32b', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
 
@@ -82,4 +79,5 @@ class TaskAnalysisService {
 }
 
 module.exports = TaskAnalysisService;
+
 

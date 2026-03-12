@@ -204,7 +204,7 @@ QUANDO TERMINAR:
         await OpenClawService.execute(
           `${task.id}-architect`, // Sessão diferente para não misturar logs
           architectInput, 
-          'analista-pleno',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
+          project.agent || 'analista-pleno',            // Nome do agente no seu OpenClaw (crie um com esse nome se não tiver)
           null,                   // Usa o modelo padrão
           TASKS_DIR, 
           architectLogFile, 
@@ -308,3 +308,4 @@ QUANDO TERMINAR:
 }
 
 module.exports = TaskExecutionService;
+
