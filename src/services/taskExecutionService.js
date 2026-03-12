@@ -126,26 +126,113 @@ class TaskExecutionService {
     // Remove .done se o arquiteto criou indevidamente
     await fs.unlink(files.doneFile).catch(() => {});
 
-    let architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
+    let architectPlan = "";
+    let architectSaysTaskDone = false;
+    
     if (await fileExists(files.architectPlanFile)) {
-       architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
+      architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
+      
+      // 1. ANALISAR SE O ARQUITETO JÁ FEZ A TAREFA
+      // Verifica se o arquiteto indica que já concluiu a tarefa
+      const doneIndicators = [
+        /(já (concluí|finalizei|resolvi|executei|fiz) (a tarefa|o trabalho|a implementação))/i,
+        /(tarefa (concluída|finalizada|resolvida|executada|pronta))/i,
+        /(implementação (concluída|finalizada|realizada))/i,
+        /(código (alterado|modificado|implementado|corrigido))/i,
+        /(arquivos (alterados|modificados|criados|atualizados))/i,
+        /(alterei.*arquivo|modifiquei.*código)/i,
+        /(pronto para (teste|validação|verificação))/i
+      ];
+      
+      architectSaysTaskDone = doneIndicators.some(regex => regex.test(architectPlan));
+      
+      if (architectSaysTaskDone) {
+        await log(`✅ [Arquiteto] Indica que já concluiu a tarefa. Verificando alterações...`);
+      } else {
+        await log(`📋 [Arquiteto] Gerou plano de ação para o desenvolvedor.`);
+      }
+    } else {
+      architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
+      await log(`⚠️ [Arquiteto] Não gerou plano. Usando descrição original.`);
     }
 
-    // Anexa o plano ao prompt do Desenvolvedor
-    const updatedPromptContent = `${ctx.currentInput}\n\n=== PLANO DE AÇÃO DO ARQUITETO ===\nSiga estritamente estes passos técnicos para concluir a tarefa:\n${architectPlan}`;
+    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE
+    let updatedPromptContent;
+    
+    if (architectSaysTaskDone && architectPlan.trim()) {
+      // Arquiteto diz que fez - usar APENAS a análise do arquiteto
+      updatedPromptContent = `=== ANÁLISE E EXECUÇÃO DO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
+      await log(`🔄 [Arquiteto] Fluxo: Usando análise do arquiteto (ele diz que já fez).`);
+    } else if (architectPlan.trim()) {
+      // Arquiteto gerou plano mas não fez a tarefa - concatenar
+      updatedPromptContent = `${ctx.currentInput}\n\n=== PLANO DE AÇÃO DO ARQUITETO ===\nSiga estritamente estes passos técnicos para concluir a tarefa:\n${architectPlan}`;
+      await log(`🔄 [Arquiteto] Fluxo: Concatenando plano ao prompt original.`);
+    } else {
+      // Arquiteto não gerou nada - manter original
+      updatedPromptContent = ctx.currentInput;
+      await log(`🔄 [Arquiteto] Fluxo: Mantendo prompt original (sem plano).`);
+    }
+    
     await fs.writeFile(files.promptFile, updatedPromptContent);
 
-    return { ...ctx, currentInput: updatedPromptContent };
+    return { 
+      ...ctx, 
+      currentInput: updatedPromptContent,
+      architectSaysTaskDone, // Flag para stepDeveloperLoop verificar
+      architectPlan
+    };
   }
 
   /**
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
    */
   static async stepDeveloperLoop(ctx) {
-    let { task, project, analysisPlan, files, initialSnapshot, currentInput, config } = ctx;
+    let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectSaysTaskDone, architectPlan } = ctx;
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
     
     const evidence = EvidenceService.createEmptyEvidence();
+    
+    // 1. VERIFICAR SE O ARQUITETO JÁ FEZ A TAREFA E SE HOUVE ALTERAÇÕES
+    if (architectSaysTaskDone) {
+      await log(`🔍 [Desenvolvedor] Verificando se arquiteto realmente alterou arquivos...`);
+      
+      // Verificar se há arquivos .done ou relatório do arquiteto
+      const architectDoneExists = await fileExists(files.doneFile);
+      const architectReportExists = await fileExists(files.relatorioFile);
+      
+      // Verificar se houve alterações no workspace
+      const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+      const changes = WorkspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
+      
+      const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+      const architectLeftEvidence = architectDoneExists || architectReportExists || hasRealChanges;
+      
+      if (architectLeftEvidence) {
+        await log(`✅ [Desenvolvedor] Arquiteto deixou evidências de execução.`);
+        
+        if (hasRealChanges) {
+          await log(`📁 [Desenvolvedor] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+          // Arquiteto realmente fez alterações - podemos pular o desenvolvedor
+          return { 
+            ...ctx, 
+            finalResult: { 
+              success: true, 
+              executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados.` 
+            } 
+          };
+        } else if (architectDoneExists || architectReportExists) {
+          await log(`📝 [Desenvolvedor] Arquiteto deixou .done ou relatório, mas não alterou arquivos.`);
+          // Arquiteto diz que fez mas não alterou - precisa do desenvolvedor
+          currentInput = `O arquiteto analisou e disse que já fez a tarefa, mas não encontramos alterações nos arquivos.\n\n${architectPlan}\n\nPor favor, execute a tarefa conforme descrito acima.`;
+          await fs.writeFile(files.promptFile, currentInput);
+        }
+      } else {
+        await log(`⚠️ [Desenvolvedor] Arquiteto não deixou evidências de execução.`);
+        // Arquiteto não deixou evidências - precisa do desenvolvedor
+        currentInput = `O arquiteto analisou a tarefa, mas não encontramos evidências de execução.\n\n${architectPlan || 'Siga a descrição original da tarefa.'}`;
+        await fs.writeFile(files.promptFile, currentInput);
+      }
+    }
     let contractResult = { contractFulfilled: false };
     let turnos = 0; 
     let turnosSemProgresso = 0;
