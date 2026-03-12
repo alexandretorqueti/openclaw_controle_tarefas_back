@@ -127,50 +127,65 @@ class TaskExecutionService {
     await fs.unlink(files.doneFile).catch(() => {});
 
     let architectPlan = "";
-    let architectSaysTaskDone = false;
+    let architectAnalysis = null;
     
     if (await fileExists(files.architectPlanFile)) {
       architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
       
-      // 1. ANALISAR SE O ARQUITETO JÁ FEZ A TAREFA
-      // Verifica se o arquiteto indica que já concluiu a tarefa
-      const doneIndicators = [
-        /(já (concluí|finalizei|resolvi|executei|fiz) (a tarefa|o trabalho|a implementação))/i,
-        /(tarefa (concluída|finalizada|resolvida|executada|pronta))/i,
-        /(implementação (concluída|finalizada|realizada))/i,
-        /(código (alterado|modificado|implementado|corrigido))/i,
-        /(arquivos (alterados|modificados|criados|atualizados))/i,
-        /(alterei.*arquivo|modifiquei.*código)/i,
-        /(pronto para (teste|validação|verificação))/i
-      ];
+      // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
+      // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
+      await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
+      architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
       
-      architectSaysTaskDone = doneIndicators.some(regex => regex.test(architectPlan));
+      await log(`📊 [Arquiteto] Análise: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
       
-      if (architectSaysTaskDone) {
-        await log(`✅ [Arquiteto] Indica que já concluiu a tarefa. Verificando alterações...`);
+      if (architectAnalysis.hasExecuted) {
+        await log(`✅ [Arquiteto] Análise indica que já executou a tarefa (${architectAnalysis.confidence}% confiança).`);
+        if (architectAnalysis.executionDetails) {
+          await log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.executionDetails.substring(0, 100)}...`);
+        }
+      } else if (architectAnalysis.hasPlan) {
+        await log(`📋 [Arquiteto] Análise indica que gerou plano de ação (${architectAnalysis.confidence}% confiança).`);
+        if (architectAnalysis.planDetails) {
+          await log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.planDetails.substring(0, 100)}...`);
+        }
+      } else if (architectAnalysis.analysisFailed) {
+        await log(`⚠️ [Arquiteto] Análise falhou ou resposta incompreensível.`);
       } else {
-        await log(`📋 [Arquiteto] Gerou plano de ação para o desenvolvedor.`);
+        await log(`ℹ️ [Arquiteto] Análise não identificou execução nem plano claro.`);
       }
     } else {
       architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
+      architectAnalysis = {
+        hasExecuted: false,
+        hasPlan: false,
+        confidence: 0,
+        executionDetails: null,
+        planDetails: null,
+        analysisFailed: true
+      };
       await log(`⚠️ [Arquiteto] Não gerou plano. Usando descrição original.`);
     }
 
-    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE
+    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
     let updatedPromptContent;
     
-    if (architectSaysTaskDone && architectPlan.trim()) {
-      // Arquiteto diz que fez - usar APENAS a análise do arquiteto
-      updatedPromptContent = `=== ANÁLISE E EXECUÇÃO DO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
-      await log(`🔄 [Arquiteto] Fluxo: Usando análise do arquiteto (ele diz que já fez).`);
-    } else if (architectPlan.trim()) {
-      // Arquiteto gerou plano mas não fez a tarefa - concatenar
+    if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
+      // Arquiteto já executou com alta confiança - usar APENAS a análise do arquiteto
+      updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
+      await log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança).`);
+    } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
+      // Arquiteto gerou plano - concatenar de forma otimizada
       updatedPromptContent = `${ctx.currentInput}\n\n=== PLANO DE AÇÃO DO ARQUITETO ===\nSiga estritamente estes passos técnicos para concluir a tarefa:\n${architectPlan}`;
       await log(`🔄 [Arquiteto] Fluxo: Concatenando plano ao prompt original.`);
-    } else {
-      // Arquiteto não gerou nada - manter original
+    } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
+      // Arquiteto falhou - manter original
       updatedPromptContent = ctx.currentInput;
-      await log(`🔄 [Arquiteto] Fluxo: Mantendo prompt original (sem plano).`);
+      await log(`🔄 [Arquiteto] Fluxo: Mantendo prompt original (análise falhou).`);
+    } else {
+      // Caso padrão (baixa confiança, resposta ambígua)
+      updatedPromptContent = `${ctx.currentInput}\n\n=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\nAnalise a resposta acima e execute conforme necessário.`;
+      await log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência.`);
     }
     
     await fs.writeFile(files.promptFile, updatedPromptContent);
@@ -178,7 +193,7 @@ class TaskExecutionService {
     return { 
       ...ctx, 
       currentInput: updatedPromptContent,
-      architectSaysTaskDone, // Flag para stepDeveloperLoop verificar
+      architectAnalysis, // Análise inteligente para stepDeveloperLoop
       architectPlan
     };
   }
@@ -187,14 +202,14 @@ class TaskExecutionService {
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
    */
   static async stepDeveloperLoop(ctx) {
-    let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectSaysTaskDone, architectPlan } = ctx;
+    let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectAnalysis, architectPlan } = ctx;
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
     
     const evidence = EvidenceService.createEmptyEvidence();
     
     // 1. VERIFICAR SE O ARQUITETO JÁ FEZ A TAREFA E SE HOUVE ALTERAÇÕES
-    if (architectSaysTaskDone) {
-      await log(`🔍 [Desenvolvedor] Verificando se arquiteto realmente alterou arquivos...`);
+    if (architectAnalysis && architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) {
+      await log(`🔍 [Desenvolvedor] Arquiteto indica execução (${architectAnalysis.confidence}% confiança). Verificando alterações...`);
       
       // Verificar se há arquivos .done ou relatório do arquiteto
       const architectDoneExists = await fileExists(files.doneFile);

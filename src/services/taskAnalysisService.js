@@ -76,6 +76,128 @@ class TaskAnalysisService {
     const text = `${task?.title || ''}\n${task?.description || ''}`.toLowerCase();
     return /(relatório|relatorio|gere um texto|retorne um texto|passo a passo|documente|explique|descreva|resuma|diagnóstico|diagnostico)/i.test(text);
   }
+
+  /**
+   * Analisa a resposta do arquiteto para determinar se:
+   * 1. Já executou a tarefa
+   * 2. Gerou um plano para execução
+   * 3. Não conseguiu analisar
+   * @param {string} architectResponse - Resposta do arquiteto
+   * @param {Object} task - Tarefa original
+   * @param {Object} project - Projeto
+   * @returns {Promise<Object>} Análise estruturada
+   */
+  static async analyzeArchitectResponse(architectResponse, task, project) {
+    if (!architectResponse || architectResponse.trim() === '') {
+      return {
+        hasExecuted: false,
+        hasPlan: false,
+        confidence: 0,
+        executionDetails: null,
+        planDetails: null,
+        analysisFailed: true
+      };
+    }
+
+    const prompt = `
+      Você é um analista de respostas de arquitetos de software.
+      Analise a resposta abaixo de um arquiteto e determine:
+
+      1. O arquiteto JÁ EXECUTOU a tarefa? (implementou código, alterou arquivos)
+      2. O arquiteto apenas GEROU UM PLANO? (descreveu passos, mas não executou)
+      3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
+
+      CONTEXTO:
+      - Tarefa: ${task.title}
+      - Descrição: ${task.description}
+      - Projeto: ${project?.name || 'N/A'}
+
+      RESPOSTA DO ARQUITETO:
+      ${architectResponse}
+
+      Responda EXCLUSIVAMENTE em JSON com este formato:
+      {
+        "hasExecuted": true/false,
+        "hasPlan": true/false,
+        "confidence": 0-100,
+        "executionDetails": "Descrição do que foi executado, se aplicável",
+        "planDetails": "Descrição do plano gerado, se aplicável",
+        "analysisFailed": true/false
+      }
+
+      CRITÉRIOS:
+      - "hasExecuted": true apenas se o arquiteto DESCREVE TER FEITO alterações reais em arquivos/código
+      - "hasPlan": true se o arquiteto descreve passos, instruções, ou plano de ação
+      - "analysisFailed": true se a resposta for vazia, incompreensível, ou não relacionada à tarefa
+    `.trim();
+
+    try {
+      let analysis = await llmService.analyze(prompt);
+      
+      if (!analysis) {
+        return this.getFallbackArchitectAnalysis(architectResponse);
+      }
+
+      if (typeof analysis === 'string') {
+        try {
+          analysis = JSON.parse(analysis);
+        } catch (e) {
+          console.warn("⚠️ Falha ao parsear análise da resposta do arquiteto:", e.message);
+          return this.getFallbackArchitectAnalysis(architectResponse);
+        }
+      }
+
+      // Validação básica da estrutura
+      if (typeof analysis.hasExecuted !== 'boolean' || typeof analysis.hasPlan !== 'boolean') {
+        return this.getFallbackArchitectAnalysis(architectResponse);
+      }
+
+      return analysis;
+
+    } catch (error) {
+      console.warn("⚠️ Erro ao analisar resposta do arquiteto:", error.message);
+      return this.getFallbackArchitectAnalysis(architectResponse);
+    }
+  }
+
+  /**
+   * Fallback para análise de resposta do arquiteto (quando LLM falha)
+   * @param {string} architectResponse - Resposta do arquiteto
+   * @returns {Object} Análise fallback
+   */
+  static getFallbackArchitectAnalysis(architectResponse) {
+    // Fallback simples baseado em regex (aproximação do que tinha antes)
+    const response = architectResponse.toLowerCase();
+    
+    const executionIndicators = [
+      /(já (concluí|finalizei|resolvi|executei|fiz|implementei|alterei|modifiquei) (a tarefa|o trabalho|a implementação|o código|os arquivos))/,
+      /(tarefa (concluída|finalizada|resolvida|executada|pronta|implementada))/,
+      /(código (alterado|modificado|implementado|corrigido|escrito))/,
+      /(arquivos? (alterados?|modificados?|criados?|atualizados?|escritos?))/,
+      /(alterei.*arquivo|modifiquei.*código|escrevi.*código)/,
+      /(pronto para (teste|validação|verificação|entrega))/
+    ];
+
+    const planIndicators = [
+      /(plano de ação|passo a passo|instruções|diretrizes|recomendações)/,
+      /(primeiro.*segundo.*terceiro|passo 1.*passo 2)/,
+      /(siga.*estes passos|execute.*os seguintes)/,
+      /(recomendo.*sugiro.*aconselho)/
+    ];
+
+    const hasExecuted = executionIndicators.some(regex => regex.test(response));
+    const hasPlan = planIndicators.some(regex => regex.test(response));
+    const analysisFailed = response.trim() === '' || response.includes('não consegui') || response.includes('erro');
+
+    return {
+      hasExecuted,
+      hasPlan: hasPlan && !hasExecuted, // Se executou, não tem "plano" no sentido de instrução
+      confidence: 50, // Baixa confiança no fallback
+      executionDetails: hasExecuted ? "Detectado por padrões de texto (fallback)" : null,
+      planDetails: hasPlan ? "Detectado por padrões de texto (fallback)" : null,
+      analysisFailed
+    };
+  }
 }
 
 module.exports = TaskAnalysisService;
