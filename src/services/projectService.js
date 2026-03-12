@@ -163,15 +163,15 @@ class ProjectService {
     if (data.projectTypeId !== undefined) updateData.projectTypeId = data.projectTypeId;
     
     // Adicionar novos campos apenas se fornecidos
-    if (data.frontendPath !== undefined) updateData.frontendPath = data.frontendPath;
-    if (data.frontendPort !== undefined) updateData.frontendPort = data.frontendPort;
-    if (data.backendPath !== undefined) updateData.backendPath = data.backendPath;
-    if (data.backendPort !== undefined) updateData.backendPort = data.backendPort;
-    if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl;
-    if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase;
-    if (data.agent !== undefined) updateData.agent = data.agent;
-    if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd;
-    if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd;
+    if (data.frontendPath !== undefined) updateData.frontendPath = data.frontendPath || null;
+    if (data.frontendPort !== undefined) updateData.frontendPort = data.frontendPort || null;
+    if (data.backendPath !== undefined) updateData.backendPath = data.backendPath || null;
+    if (data.backendPort !== undefined) updateData.backendPort = data.backendPort || null;
+    if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl || null;
+    if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
+    if (data.agent !== undefined) updateData.agent = data.agent || null;
+    if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
+    if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;
     
     return await prisma.project.update({
       where: { id },

@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
+const { getAbsoluteAvatarUrl } = require('../utils/avatarUrl');
 
 class UserController {
   // Get all users
@@ -21,9 +22,15 @@ class UserController {
       }
     });
     
+    // Convert relative avatar URLs to absolute URLs
+    const usersWithAbsoluteUrls = users.map(user => ({
+      ...user,
+      avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+    }));
+    
     res.json({
       count: users.length,
-      users,
+      users: usersWithAbsoluteUrls,
       correlationId: req.correlationId
     });
   });
@@ -51,8 +58,14 @@ class UserController {
       throw error;
     }
     
-    res.json({
+    // Convert relative avatar URL to absolute URL
+    const userWithAbsoluteUrl = {
       ...user,
+      avatarUrl: this.getAbsoluteAvatarUrl(req, user.avatarUrl)
+    };
+    
+    res.json({
+      ...userWithAbsoluteUrl,
       correlationId: req.correlationId
     });
   });
@@ -147,10 +160,15 @@ class UserController {
         updatedAt: true
       }
     });
+    // Convert relative avatar URL to absolute URL
+    const userWithAbsoluteUrl = {
+      ...user,
+      avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+    };
     
     res.status(201).json({
       message: 'User created successfully',
-      user,
+      user: userWithAbsoluteUrl,
       correlationId: req.correlationId
     });
   });
@@ -218,9 +236,15 @@ class UserController {
       }
     });
     
+    // Convert relative avatar URL to absolute URL
+    const userWithAbsoluteUrl = {
+      ...updatedUser,
+      avatarUrl: getAbsoluteAvatarUrl(req, updatedUser.avatarUrl)
+    };
+    
     res.json({
       message: 'User updated successfully',
-      user: updatedUser,
+      user: userWithAbsoluteUrl,
       correlationId: req.correlationId
     });
   });
@@ -368,7 +392,8 @@ class UserController {
     }
 
     // Generate avatar URL
-    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
 
     // Update user with new avatar URL
     const updatedUser = await prisma.user.update({

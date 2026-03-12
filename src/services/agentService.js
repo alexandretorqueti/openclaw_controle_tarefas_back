@@ -12,7 +12,9 @@ const agentCache = require('./agentCache');
  */
 exports.execOpenClawCommand = async (command, args = []) => {
   return new Promise((resolve, reject) => {
-    const fullArgs = [command, ...args, '--json'];
+    // Não adicionar --json para comandos 'config set' pois interfere com os valores
+    const shouldAddJson = !(command === 'config' && args[0] === 'set');
+    const fullArgs = [command, ...args, ...(shouldAddJson ? ['--json'] : [])];
     console.log('Executando openclaw:', fullArgs.join(' '));
     
     const child = spawn('openclaw', fullArgs, {
@@ -187,7 +189,7 @@ exports.setAgentIdentity = async (agentId, identity) => {
       if (agentIndex === -1) {
         throw new Error(`Agente '${agentId}' não encontrado.`);
       }
-      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.model`, `'"${identity.model}"'`]);
+      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.model`, identity.model]);
     }
 
     // Atualiza workspace via config (agents.list[<index>].workspace)

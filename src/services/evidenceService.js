@@ -3,7 +3,7 @@
 
 const path = require('path');
 const { mergeUniquePaths, uniquePaths } = require('../utils/pathUtils');
-const { parseCommandEvidence } = require('../utils/commandUtils');
+const { inferReadOnlyEvidenceFromCommand } = require('../utils/commandUtils');
 const { isEphemeralArtifact } = require('../utils/fileUtils');
 
 class EvidenceService {
@@ -80,7 +80,7 @@ class EvidenceService {
            executionEvidence.commandsExecuted.push(args.command);
          }
          
-         const inferred = parseCommandEvidence(args.command, executionDirectory);
+         const inferred = inferReadOnlyEvidenceFromCommand(args.command, executionDirectory);
          // Filtra os backups nas leituras e escritas
          const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
          const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));
@@ -93,7 +93,7 @@ class EvidenceService {
     // Mantém o processamento antigo via toolResult como fallback
     if (toolName === 'exec') {
       for (const command of toolResult.commandsExecuted || []) {
-        const inferred = parseCommandEvidence(command, executionDirectory);
+        const inferred = inferReadOnlyEvidenceFromCommand(command, executionDirectory);
         
         const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
         const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));
@@ -128,7 +128,7 @@ class EvidenceService {
     const commandsExecuted = Array.isArray(toolResult.commandsExecuted) ? toolResult.commandsExecuted : [];
     
     for (const command of commandsExecuted) {
-      const inferred = parseCommandEvidence(command, cwd);
+      const inferred = inferReadOnlyEvidenceFromCommand(command, cwd);
       
       const filteredReads = (inferred.filesRead || []).filter(f => !this.isBackupFile(f));
       const filteredWrites = (inferred.modifiedFiles || []).filter(f => !this.isBackupFile(f));

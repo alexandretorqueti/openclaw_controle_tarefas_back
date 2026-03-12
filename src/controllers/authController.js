@@ -7,6 +7,7 @@
 
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const prisma = require('../services/prismaService');
+const { getAbsoluteAvatarUrl } = require('../utils/avatarUrl');
 
 class AuthController {
   /**
@@ -50,10 +51,16 @@ class AuthController {
 
     console.log(`✅ Login simplificado: ${user.nickname} (${user.name})`);
     
+    // Convert relative avatar URL to absolute URL
+    const userWithAbsoluteUrl = {
+      ...user,
+      avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+    };
+    
     res.json({
       success: true,
       message: 'Login realizado com sucesso',
-      user: user,
+      user: userWithAbsoluteUrl,
       correlationId: req.correlationId
     });
   });
@@ -96,9 +103,15 @@ class AuthController {
       });
     }
 
+    // Convert relative avatar URL to absolute URL
+    const userWithAbsoluteUrl = {
+      ...user,
+      avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+    };
+    
     res.json({
       success: true,
-      user: user,
+      user: userWithAbsoluteUrl,
       correlationId: req.correlationId
     });
   });
@@ -144,9 +157,15 @@ class AuthController {
         }
       });
 
+      // Convert relative avatar URL to absolute URL if user exists
+      const userWithAbsoluteUrl = user ? {
+        ...user,
+        avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+      } : null;
+      
       return res.json({
         isAuthenticated: !!user,
-        user: user || null,
+        user: userWithAbsoluteUrl,
         correlationId: req.correlationId
       });
     }
@@ -167,9 +186,15 @@ class AuthController {
         }
       });
 
+      // Convert relative avatar URL to absolute URL if user exists
+      const userWithAbsoluteUrl = user ? {
+        ...user,
+        avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
+      } : null;
+      
       return res.json({
         isAuthenticated: !!user,
-        user: user || null,
+        user: userWithAbsoluteUrl,
         correlationId: req.correlationId
       });
     }
