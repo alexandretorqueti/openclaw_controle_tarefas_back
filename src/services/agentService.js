@@ -272,7 +272,8 @@ exports.unbindAgent = async (agentId, binding) => {
  */
 exports.deleteAgent = async (agentId) => {
   try {
-    const result = await exports.execOpenClawCommand('agents', ['delete', agentId]);
+    // Adiciona --force para sessões não-interativas
+    const result = await exports.execOpenClawCommand('agents', ['delete', agentId, '--force']);
     
     // Invalida o cache para forçar atualização na próxima requisição
     agentCache.invalidate();

@@ -303,6 +303,8 @@ class TaskExecutionService {
       if (doneExists && contractResult.feedbackToAgent) {
           await fs.unlink(files.doneFile).catch(()=>{});
           currentInput = contractResult.feedbackToAgent;
+          await fs.writeFile(files.promptFile, currentInput); // CRÍTICO: Atualiza arquivo de prompt
+          await log(`📝 [Desenvolvedor] Feedback enviado: ${currentInput.substring(0, 100)}...`);
       } else {
           currentInput = res.toolFeedback || res.rawOutput || 'Continue.';
       }

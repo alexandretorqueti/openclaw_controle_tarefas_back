@@ -237,6 +237,78 @@ function truncateOutput(text, max = 20000) {
   return `${value.slice(0, max)}\n...[OUTPUT TRUNCADO]`;
 }
 
+/**
+ * Verifica se um arquivo é um artefato efêmero (temporário, log, sistema)
+ * que não deve ser considerado como evidência significativa da execução da tarefa.
+ * @param {string} filePath - Caminho do arquivo
+ * @returns {boolean}
+ */
+function isEphemeralArtifact(filePath) {
+  if (!filePath) return false;
+  
+  const fileName = path.basename(filePath).toLowerCase();
+  const fileExt = path.extname(filePath).toLowerCase();
+  const dirName = path.dirname(filePath).toLowerCase();
+  
+  // Extensões de arquivos temporários/efêmeros
+  const ephemeralExtensions = [
+    '.log', '.tmp', '.temp', '.bak', '.backup', '.old', '.orig', '.swp',
+    '.pid', '.lock', '.cache', '.db', '.sqlite', '.sqlite3'
+  ];
+  
+  // Nomes de arquivos efêmeros
+  const ephemeralFileNames = [
+    '.done', '.ds_store', 'thumbs.db', 'desktop.ini',
+    'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
+    'node_modules', '.git', '.svn', '.hg', '.vscode', '.idea'
+  ];
+  
+  // Padrões de caminhos de sistema/processo
+  const systemPathPatterns = [
+    /node_modules/,
+    /\.git/,
+    /\.cache/,
+    /\.npm/,
+    /\.yarn/,
+    /\.pnpm/,
+    /tmp\//,
+    /temp\//,
+    /\/log(s?)\//,
+    /\/var\/log\//,
+    /\/proc\//,
+    /\/sys\//,
+    /\/dev\//
+  ];
+  
+  // Verificar por extensão
+  if (ephemeralExtensions.includes(fileExt)) {
+    return true;
+  }
+  
+  // Verificar por nome de arquivo
+  if (ephemeralFileNames.some(name => fileName.includes(name))) {
+    return true;
+  }
+  
+  // Verificar por padrões de caminho
+  const normalizedPath = filePath.toLowerCase();
+  if (systemPathPatterns.some(pattern => pattern.test(normalizedPath))) {
+    return true;
+  }
+  
+  // Arquivos muito pequenos (menos de 10 bytes) provavelmente são marcadores
+  try {
+    const stats = fsSync.statSync(filePath);
+    if (stats.size < 10) {
+      return true;
+    }
+  } catch (e) {
+    // Se não conseguir verificar tamanho, assume não é efêmero
+  }
+  
+  return false;
+}
+
 module.exports = {
   fileExists,
   fileExistsSync,
@@ -249,5 +321,6 @@ module.exports = {
   collectFingerprints,
   diffFingerprints,
   didFingerprintChange,
-  truncateOutput
+  truncateOutput,
+  isEphemeralArtifact
 };
