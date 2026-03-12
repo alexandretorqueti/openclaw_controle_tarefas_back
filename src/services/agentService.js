@@ -200,7 +200,7 @@ exports.setAgentIdentity = async (agentId, identity) => {
       if (agentIndex === -1) {
         throw new Error(`Agente '${agentId}' não encontrado.`);
       }
-      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.workspace`, `'"${identity.workspace}"'`]);
+      await exports.execOpenClawCommand('config', ['set', `agents.list.${agentIndex}.workspace`, identity.workspace]);
     }
 
     // Invalida o cache para forçar atualização na próxima requisição

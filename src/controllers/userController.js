@@ -339,6 +339,61 @@ class UserController {
       correlationId: req.correlationId
     });
   });
+
+  // Upload avatar for user
+  uploadAvatar = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      const error = new Error('User ID is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (!req.file) {
+      const error = new Error('No file uploaded');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    
+    if (!user) {
+      const error = new Error(`User with ID ${userId} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Generate avatar URL
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+
+    // Update user with new avatar URL
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        nickname: true,
+        avatarUrl: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Avatar uploaded successfully',
+      user: updatedUser,
+      avatarUrl: avatarUrl,
+      correlationId: req.correlationId
+    });
+  });
 }
 
 module.exports = new UserController();

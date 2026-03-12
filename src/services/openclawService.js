@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const ToolCallService = require('./toolCallService');
 const CommandExecutor = require('./commandExecutor');
-
+const { log } =  require('../../aux/logger');
 class OpenClawService {
   /**
    * Executa uma chamada ao agente via CLI do OpenClaw
@@ -57,6 +57,8 @@ class OpenClawService {
         source === 'stdout' ? (stdout += text) : (stderr += text);
         streamBuffer += text;
         
+        log(text);
+
         fs.appendFile(terminalLogFile, text).catch(() => {});
         
         const toolCall = ToolCallService.extractToolCallFromText(streamBuffer);

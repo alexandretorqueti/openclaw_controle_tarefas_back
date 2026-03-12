@@ -2,7 +2,7 @@
 // Servico de analise de escopo e tipo de tarefas
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
-const llmService = new LlmService('qwen2.5-coder:32b', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
+const llmService = new LlmService('llama3.2:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
 
 
 class TaskAnalysisService {

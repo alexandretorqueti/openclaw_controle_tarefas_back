@@ -6,16 +6,21 @@ async function main() {
   const axios = require('axios');
   const path = require('path');
   
-  axios.defaults.timeout = 180000;
+  axios.defaults.timeout = 180000; // 3 minutos
 
   // Configuracoes
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
-  const { log } = require('./aux/logger');
-
+  const  { log } = require('./aux/logger');
   // Servicos modularizados
   const LockService = require('./src/services/lockService');
   const MonitorStateService = require('./src/services/monitorStateService');
-  const TaskExecutionService = require('./src/services/taskExecutionService');
+  let TaskExecutionService;
+  try {
+    TaskExecutionService = require('./src/services/taskExecutionService');
+  } catch (err) {
+    console.error("🔥 ERRO FATAL AO CARREGAR O SERVIÇO:", err);
+    debugger; // O seu debug vai PAUSAR AQUI, e você poderá inspecionar a variável 'err'
+  }
   const TaskFileService = require('./src/services/taskFileService');
 
   // Utilitarios

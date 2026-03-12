@@ -82,6 +82,19 @@ class PromptFactory {
        Escreva um relatório detalhado.
      `.trim();
   }
+
+  static buildEngineRulesPrompt(
+    files
+  ) {
+    return `
+[REGRA DE OURO]
+1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
+2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
+3. SÓ FINALIZE criando o arquivo .done QUANDO TUDO ESTIVER CONCLUÍDO.
+QUANDO TERMINAR:
+1. Escreva em: ${files.relatorioFile}
+2. Use: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}`;
+  }
 }
 
 module.exports = PromptFactory;
