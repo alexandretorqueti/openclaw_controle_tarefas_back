@@ -80,10 +80,9 @@ class TaskExecutionService {
       architectLogFile: path.join(TASKS_DIR, `terminal-arquiteto-${taskId}.log`)
     };
 
-    // Cria as regras de ouro
+    // Cria o prompt LIMPO para o arquiteto (apenas tarefa + contexto)
     const dirBase = project?.pastaBase || 'Diretório atual';
-    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
-
+    
     // Adiciona comentários ao prompt se existirem
     let commentsSection = '';
     if (task.comments && task.comments.length > 0) {
@@ -95,7 +94,11 @@ class TaskExecutionService {
       });
     }
 
-    const promptContent = `Agente Jarbas. TAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
+    const architectPrompt = `ARQUITETO: Analise esta tarefa e crie um plano de ação.\n\nTAREFA: ${task.title}\nDESCRIÇÃO: ${task.description}\nBASE: ${dirBase}${commentsSection}`;
+    
+    // Engine rules serão adicionadas APENAS para o desenvolvedor depois
+    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
+    const developerPrompt = `Agente Jarbas. TAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
     
     await fs.writeFile(files.promptFile, promptContent);
     await fs.writeFile(files.relatorioFile, '');
@@ -104,7 +107,7 @@ class TaskExecutionService {
     const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
     const executionLog = await TaskExecutionService.createExecutionLog(task, userId, task.agent);
 
-    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: promptContent };
+    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: architectPrompt, developerPrompt };
   }
 
   /**
@@ -140,17 +143,60 @@ class TaskExecutionService {
     let architectPlan = "";
     let architectAnalysis = null;
     
-    // Usar a saída direta do OpenClaw em vez de ler arquivo
-    if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
-      architectPlan = architectResult.rawOutput;
-      await log(`📝 [Arquiteto] Resposta recebida (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
-      
+    // Primeiro tenta ler do arquivo de plano do arquiteto, depois do rawOutput
+    try {
+      if (await fileExists(files.architectPlanFile)) {
+        architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
+        await log(`📝 [Arquiteto] Plano lido do arquivo (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
+      } else if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
+        architectPlan = architectResult.rawOutput;
+        await log(`📝 [Arquiteto] Resposta recebida (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
+      }
+    } catch (error) {
+      await log(`⚠️ [Arquiteto] Erro ao ler arquivo de plano: ${error.message}`);
+      if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
+        architectPlan = architectResult.rawOutput;
+        await log(`📝 [Arquiteto] Usando rawOutput como fallback (${architectPlan.length} chars)`);
+      }
+    }
+    
+    // Verificar se temos um plano do arquiteto
+    if (architectPlan && architectPlan.trim().length > 0) {
       // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
       // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
       await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
       architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
+        
+      await log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
       
-      await log(`📊 [Arquiteto] Análise: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
+      // VALIDAÇÃO CRÍTICA: Se a IA diz que executou, verificar evidências reais
+      if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) {
+        await log(`🔍 [Validação] IA diz que arquiteto executou. Verificando evidências...`);
+        
+        // Verificar se há evidências reais de execução
+        const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
+        const changes = WorkspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
+        const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+        const architectDoneExists = await fileExists(files.doneFile);
+        const architectReportExists = await fileExists(files.relatorioFile);
+        const hasEvidence = hasRealChanges || architectDoneExists || architectReportExists;
+        
+        if (!hasEvidence) {
+          await log(`⚠️ [Validação] NENHUMA evidência encontrada! IA provavelmente errou. Corrigindo análise...`);
+          // Corrigir a análise: não executou, apenas planejou
+          architectAnalysis = {
+            hasExecuted: false,
+            hasPlan: true,  // Se gerou resposta detalhada, tem plano
+            confidence: 80,
+            executionDetails: null,
+            planDetails: "Arquiteto gerou plano detalhado, mas não executou alterações (validação de evidências falhou)",
+            analysisFailed: false
+          };
+          await log(`📊 [Arquiteto] Análise CORRIGIDA: hasExecuted=false, hasPlan=true (falta de evidências)`);
+        } else {
+          await log(`✅ [Validação] Evidências confirmadas: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados`);
+        }
+      }
       
       if (architectAnalysis.hasExecuted) {
         await log(`✅ [Arquiteto] Análise indica que já executou a tarefa (${architectAnalysis.confidence}% confiança).`);
@@ -192,13 +238,13 @@ class TaskExecutionService {
     let updatedPromptContent;
     
     if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
-      // Arquiteto já executou com alta confiança - usar APENAS a análise do arquiteto
+      // Arquiteto já executou com alta confiança (E PASSOU NA VALIDAÇÃO) - usar APENAS a análise do arquiteto
       updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
-      await log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança).`);
+      await log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança + evidências validadas).`);
     } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
-      // Arquiteto gerou plano - concatenar de forma otimizada
-      updatedPromptContent = `${ctx.currentInput}\n\n=== PLANO DE AÇÃO DO ARQUITETO ===\nSiga estritamente estes passos técnicos para concluir a tarefa:\n${architectPlan}`;
-      await log(`🔄 [Arquiteto] Fluxo: Concatenando plano ao prompt original.`);
+      // Arquiteto gerou plano - SUBSTITUIR pelo plano + adicionar instruções do desenvolvedor
+      updatedPromptContent = `=== PLANO DE AÇÃO DO ARQUITETO ===\n${architectPlan}\n\n${ctx.developerPrompt}`;
+      await log(`🔄 [Arquiteto] Fluxo: Substituindo prompt pelo plano + instruções do desenvolvedor.`);
     } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
       // Arquiteto falhou - manter original
       updatedPromptContent = ctx.currentInput;
@@ -400,7 +446,43 @@ class TaskExecutionService {
           await fs.writeFile(files.promptFile, currentInput); // CRÍTICO: Atualiza arquivo de prompt
           await log(`📝 [Desenvolvedor] Feedback enviado: ${currentInput.substring(0, 100)}...`);
       } else {
-          currentInput = res.toolFeedback || res.rawOutput || 'Continue.';
+          // Tentar ler o conteúdo do arquivo gerado pela IA (relatório) primeiro
+          let fileContent = null;
+          try {
+            // Primeiro tenta o arquivo de relatório principal
+            if (await fileExists(files.relatorioFile)) {
+              fileContent = await fs.readFile(files.relatorioFile, 'utf8');
+              await log(`📄 [Desenvolvedor] Lendo conteúdo do relatório (${fileContent.length} chars)`);
+            }
+            // Se não, tenta outros arquivos comuns de saída
+            if (!fileContent || fileContent.trim().length === 0) {
+              const workspaceDir = project?.pastaBase || TASKS_DIR;
+              const possibleOutputFiles = [
+                path.join(workspaceDir, 'resultado.txt'),
+                path.join(workspaceDir, 'output.txt'),
+                path.join(workspaceDir, 'result.md'),
+                path.join(workspaceDir, 'output.md'),
+                path.join(workspaceDir, 'README.md'),
+                path.join(workspaceDir, 'solution.txt')
+              ];
+              
+              for (const outputFile of possibleOutputFiles) {
+                if (await fileExists(outputFile)) {
+                  const content = await fs.readFile(outputFile, 'utf8');
+                  if (content && content.trim().length > 0) {
+                    fileContent = content;
+                    await log(`📄 [Desenvolvedor] Lendo conteúdo de ${path.basename(outputFile)} (${content.length} chars)`);
+                    break;
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            await log(`⚠️ [Desenvolvedor] Erro ao ler arquivos de saída: ${error.message}`);
+          }
+          
+          // Usa conteúdo do arquivo se encontrou, senão usa rawOutput
+          currentInput = res.toolFeedback || fileContent || res.rawOutput || 'Continue.';
       }
       
       const prog = EvidenceService.computeTurnProgress(res.toolResult || {}, contractResult, project?.pastaBase || TASKS_DIR);

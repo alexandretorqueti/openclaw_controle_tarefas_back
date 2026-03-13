@@ -100,6 +100,7 @@ exports._fetchAgentsDirectly = async () => {
       
       return {
         id: agent.id || '',
+        name: cleanString(agent.name || agent.identityName || ''),
         identity: {
           name: cleanString(agent.identity?.name || agent.identityName || agent.name || ''),
           emoji: finalEmoji,
@@ -319,5 +320,98 @@ exports.agentExists = async (agentId) => {
   } catch (error) {
     console.error('Erro ao verificar existência do agente:', error.message);
     return false;
+  }
+};
+
+/**
+ * Lê um arquivo do workspace do agente
+ * @param {string} agentId - ID do agente
+ * @param {string} filename - Nome do arquivo (IDENTITY.md ou SOUL.md)
+ * @returns {Promise<string>} - Conteúdo do arquivo
+ */
+exports.readAgentFile = async (agentId, filename) => {
+  try {
+    // Primeiro verificar se o agente existe
+    const exists = await exports.agentExists(agentId);
+    if (!exists) {
+      throw new Error(`Agente com ID ${agentId} não encontrado`);
+    }
+    
+    // Obter detalhes do agente para pegar o workspace
+    const agentDetails = await exports.getAgentDetails(agentId);
+    const workspace = agentDetails.workspace;
+    
+    if (!workspace) {
+      throw new Error(`Agente ${agentId} não tem workspace configurado`);
+    }
+    
+    // Construir caminho completo do arquivo
+    const filePath = path.join(workspace, filename);
+    
+    // Verificar se o arquivo existe
+    try {
+      await fs.access(filePath);
+    } catch (accessError) {
+      // Arquivo não existe, retornar string vazia
+      return '';
+    }
+    
+    // Ler o conteúdo do arquivo
+    const content = await fs.readFile(filePath, 'utf8');
+    return content;
+  } catch (error) {
+    console.error(`Erro ao ler arquivo ${filename} do agente ${agentId}:`, error.message);
+    
+    // Se o arquivo não existir, retornar string vazia (não é erro)
+    if (error.code === 'ENOENT' || error.message.includes('ENOENT')) {
+      return '';
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Escreve em um arquivo do workspace do agente
+ * @param {string} agentId - ID do agente
+ * @param {string} filename - Nome do arquivo (IDENTITY.md ou SOUL.md)
+ * @param {string} content - Conteúdo a ser escrito
+ * @returns {Promise<Object>} - Resultado da operação
+ */
+exports.writeAgentFile = async (agentId, filename, content) => {
+  try {
+    // Primeiro verificar se o agente existe
+    const exists = await exports.agentExists(agentId);
+    if (!exists) {
+      throw new Error(`Agente com ID ${agentId} não encontrado`);
+    }
+    
+    // Obter detalhes do agente para pegar o workspace
+    const agentDetails = await exports.getAgentDetails(agentId);
+    const workspace = agentDetails.workspace;
+    
+    if (!workspace) {
+      throw new Error(`Agente ${agentId} não tem workspace configurado`);
+    }
+    
+    // Construir caminho completo do arquivo
+    const filePath = path.join(workspace, filename);
+    
+    // Garantir que o diretório existe
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    
+    // Escrever o conteúdo no arquivo
+    await fs.writeFile(filePath, content, 'utf8');
+    
+    return {
+      success: true,
+      message: `Arquivo ${filename} atualizado com sucesso no workspace do agente`,
+      filePath,
+      agentId,
+      workspace
+    };
+  } catch (error) {
+    console.error(`Erro ao escrever no arquivo ${filename} do agente ${agentId}:`, error.message);
+    throw error;
   }
 };

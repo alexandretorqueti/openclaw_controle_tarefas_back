@@ -8,7 +8,14 @@ const agentCache = require('../services/agentCache');
 exports.listAgents = async (req, res) => {
   try {
     const agents = await agentService.listAgents();
-agents.sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Ordenar agentes por nome de forma segura
+    agents.sort((a, b) => {
+      const nameA = a.identity?.name || a.name || a.id || '';
+      const nameB = b.identity?.name || b.name || b.id || '';
+      return nameA.localeCompare(nameB);
+    });
+    
     res.json({
       success: true,
       data: agents,
@@ -264,6 +271,107 @@ exports.invalidateCache = async (req, res) => {
     });
   } catch (error) {
     console.error('Erro no controller invalidateCache:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Lê um arquivo do workspace do agente usando openclaw
+ * @route GET /api/agents/:id/files/:filename
+ */
+exports.readAgentFile = async (req, res) => {
+  try {
+    const { id, filename } = req.params;
+    
+    // Validar nome do arquivo
+    const validFiles = ['IDENTITY.md', 'SOUL.md'];
+    if (!validFiles.includes(filename)) {
+      return res.status(400).json({
+        success: false,
+        error: `Arquivo inválido. Apenas ${validFiles.join(', ')} são permitidos.`
+      });
+    }
+    
+    // Executar comando openclaw para ler o arquivo do workspace do agente
+    const content = await agentService.readAgentFile(id, filename);
+    
+    res.json({
+      success: true,
+      data: content,
+      message: `Arquivo ${filename} lido com sucesso do workspace do agente`
+    });
+  } catch (error) {
+    console.error('Erro no controller readAgentFile:', error.message);
+    
+    if (error.message.includes('não encontrado') || error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    
+    // Se o arquivo não existir, retornar vazio (não é erro)
+    if (error.message.includes('No such file') || error.message.includes('ENOENT')) {
+      return res.json({
+        success: true,
+        data: '',
+        message: `Arquivo ${filename} não existe no workspace do agente`
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Escreve em um arquivo do workspace do agente usando openclaw
+ * @route PUT /api/agents/:id/files/:filename
+ */
+exports.writeAgentFile = async (req, res) => {
+  try {
+    const { id, filename } = req.params;
+    const { content } = req.body;
+    
+    if (content === undefined || content === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'O conteúdo do arquivo é obrigatório'
+      });
+    }
+    
+    // Validar nome do arquivo
+    const validFiles = ['IDENTITY.md', 'SOUL.md'];
+    if (!validFiles.includes(filename)) {
+      return res.status(400).json({
+        success: false,
+        error: `Arquivo inválido. Apenas ${validFiles.join(', ')} são permitidos.`
+      });
+    }
+    
+    // Executar comando openclaw para escrever no arquivo do workspace do agente
+    const result = await agentService.writeAgentFile(id, filename, String(content));
+    
+    res.json({
+      success: true,
+      data: result,
+      message: `Arquivo ${filename} atualizado com sucesso no workspace do agente`
+    });
+  } catch (error) {
+    console.error('Erro no controller writeAgentFile:', error.message);
+    
+    if (error.message.includes('não encontrado') || error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    
     res.status(500).json({
       success: false,
       error: error.message

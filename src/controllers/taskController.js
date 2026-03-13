@@ -5,6 +5,7 @@ const { validateTask, validateTaskUpdate, validateTaskFilters } = require('../va
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { snakeToCamel } = require('../utils/caseConverter');
 const prisma = require('../services/prismaService');
+const UserResolver = require('../utils/userResolver');
 
 class TaskController {
   /**
@@ -13,17 +14,7 @@ class TaskController {
    *         body.createdById, header X-User-Nickname, body.createBy
    */
   async _resolveUser(req) {
-    const nickname = req.body?.created_by?.nickname;
-    if (nickname) {
-      // Buscar usuário pelo nickname
-      const user = await prisma.user.findUnique({
-        where: { nickname: nickname.trim() },
-        select: { id: true, name: true, nickname: true, email: true, role: true }
-      });
-      if (user) return user;
-    }
-  
-    return null;
+    return await UserResolver.resolveUserFromRequest(req);
   }
 
   // Create a new task
@@ -43,11 +34,29 @@ class TaskController {
       assignedToId = assignedToId || user.id;
     }
 
-    // Se não temos createdById, retornar erro
+    // Se não temos createdById, tentar obter usuário padrão
     if (!createdById) {
-      const error = new Error('É necessário informar o usuário (nickname, createdById ou header X-User-Nickname)');
-      error.statusCode = 400;
-      throw error;
+      try {
+        // Usar o helper UserResolver para obter ID do usuário padrão
+        const defaultUserId = await UserResolver.getDefaultUserId();
+        
+        if (defaultUserId) {
+          createdById = defaultUserId;
+          assignedToId = assignedToId || defaultUserId;
+          console.log(`Usando usuário padrão para criação de tarefa: ${defaultUserId}`);
+        } else {
+          // Se não houver usuários, retornar erro
+          const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
+          error.statusCode = 400;
+          throw error;
+        }
+      } catch (error) {
+        console.error('Erro ao buscar usuário padrão:', error.message);
+        // Não usar mais ID fixo - retornar erro
+        const fallbackError = new Error('Não foi possível determinar o usuário para criar a tarefa. Certifique-se de que existem usuários no sistema.');
+        fallbackError.statusCode = 400;
+        throw fallbackError;
+      }
     }
     
     // Update body with user's IDs

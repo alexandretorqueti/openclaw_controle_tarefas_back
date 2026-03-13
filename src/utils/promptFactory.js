@@ -114,7 +114,13 @@ QUANDO TERMINAR:
       RESPOSTA DO ARQUITETO:
       ${architectResponse}
 
-      Responda EXCLUSIVAMENTE em JSON com este formato:
+      Analise PALAVRA POR PALAVRA. Procure por TEMPO VERBAL:
+      - PASSADO = execução
+      - IMPERATIVO/FUTURO = plano
+      
+      Se houver DÚVIDA, considere como PLANO (hasPlan: true, hasExecuted: false).
+
+      Responda EXCLUSIVAMENTE em JSON:
       {
         "hasExecuted": true/false,
         "hasPlan": true/false,
@@ -124,10 +130,23 @@ QUANDO TERMINAR:
         "analysisFailed": true/false
       }
 
-      CRITÉRIOS:
-      - "hasExecuted": true apenas se o arquiteto DESCREVE TER FEITO alterações reais em arquivos/código
-      - "hasPlan": true se o arquiteto descreve passos, instruções, ou plano de ação
-      - "analysisFailed": true se a resposta for vazia, incompreensível, ou não relacionada à tarefa
+      CRITÉRIOS CLAROS E EXCLUSIVOS:
+      1. "hasExecuted": true APENAS SE o arquiteto DESCREVE TER FEITO alterações reais.
+         - Palavras-chave de EXECUÇÃO (PASSADO): "modifiquei", "alterei", "implementei", "adicionei", "removi", "testei e funcionou", "arquivo atualizado", "código executado", "fiz", "concluí", "finalizei"
+         - Evidência de AÇÃO CONCLUÍDA, não de intenção.
+         - EXEMPLO DE EXECUÇÃO: "Já alterei o arquivo X e adicionei o código Y"
+         
+      2. "hasPlan": true SE o arquiteto descreve passos FUTUROS, instruções, ou plano de ação.
+         - Palavras-chave de PLANO (FUTURO/IMPERATIVO): "deve", "precisa", "siga", "passo a passo", "modifique", "adicione", "localize", "teste", "faça", "execute", "crie"
+         - Descreve O QUE FAZER, não O QUE FOI FEITO.
+         - EXEMPLO DE PLANO: "Você deve modificar o arquivo X e adicionar o código Y"
+         
+      3. "analysisFailed": true SE a resposta for vazia, incompreensível, ou não relacionada.
+
+      REGRA DE OURO CRÍTICA: 
+      - Se o arquiteto usa verbos no IMPERATIVO ou FUTURO ("faça", "modifique", "adicione") → É PLANO (hasPlan: true)
+      - Se o arquiteto usa verbos no PASSADO ("fiz", "modifiquei", "alterei") → É EXECUÇÃO (hasExecuted: true)
+      - Plano detalhado NÃO é execução! Um plano com 100 passos ainda é apenas um plano.
     `.trim();
     return prompt;
   }

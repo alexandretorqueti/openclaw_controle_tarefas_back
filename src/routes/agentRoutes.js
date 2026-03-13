@@ -65,4 +65,18 @@ router.get('/cache/info', agentController.getCacheInfo);
  */
 router.post('/cache/invalidate', agentController.invalidateCache);
 
+/**
+ * @route   GET /api/agents/:id/files/:filename
+ * @desc    Lê um arquivo do workspace do agente (IDENTITY.md ou SOUL.md)
+ * @access  Private
+ */
+router.get('/:id/files/:filename', agentController.readAgentFile);
+
+/**
+ * @route   PUT /api/agents/:id/files/:filename
+ * @desc    Escreve em um arquivo do workspace do agente (IDENTITY.md ou SOUL.md)
+ * @access  Private
+ */
+router.put('/:id/files/:filename', agentController.writeAgentFile);
+
 module.exports = router;

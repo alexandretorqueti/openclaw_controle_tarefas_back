@@ -4,6 +4,8 @@ const commentService = require('../services/commentService');
 const { validateComment, validateCommentUpdate } = require('../validators/commentValidator');
 const { snakeToCamel } = require('../utils/caseConverter');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
+const prisma = require('../services/prismaService');
+const UserResolver = require('../utils/userResolver');
 
 class CommentController {
   // Create a new comment
@@ -20,11 +22,28 @@ class CommentController {
         userId = req.user.id;
       }
       
-      // If still no userId, throw error
+      // If still no userId, use default user
       if (!userId || userId.trim() === '') {
-        const error = new Error('User must be authenticated or provide userId');
-        error.statusCode = 401;
-        throw error;
+        try {
+          // Usar o helper UserResolver para obter ID do usuário padrão
+          const defaultUserId = await UserResolver.getDefaultUserId();
+          
+          if (defaultUserId) {
+            userId = defaultUserId;
+            console.log(`Usando usuário padrão para criação de comentário: ${defaultUserId}`);
+          } else {
+            // Se não houver usuários, retornar erro
+            const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
+            error.statusCode = 400;
+            throw error;
+          }
+        } catch (error) {
+          console.error('Erro ao buscar usuário padrão:', error.message);
+          // Não usar mais ID fixo - retornar erro
+          const fallbackError = new Error('Não foi possível determinar o usuário para criar o comentário. Certifique-se de que existem usuários no sistema.');
+          fallbackError.statusCode = 400;
+          throw fallbackError;
+        }
       }
       
       // Prepare data for validation

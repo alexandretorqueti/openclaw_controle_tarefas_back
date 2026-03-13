@@ -2,12 +2,11 @@
 // monitor.js (Arquitetura Modularizada)
 // Orquestrador de tarefas refatorado com servicos especializados
 const  { log } = require('./aux/logger');
-async function main() {
-  const axios = require('axios');
-  const path = require('path');
-  
-  axios.defaults.timeout = 180000; // 3 minutos
+const axios = require('axios');
+const path = require('path');
+axios.defaults.timeout = 180000; // 3 minutos
 
+async function main() {
   // Configuracoes
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
 
@@ -176,10 +175,12 @@ async function main() {
       }
 
       // 2. Busca nova tarefa
-      const address = `${API_URL}/api/tasks/next/Jarbas`;
+
+      const address = `${API_URL}/api/tasks/next/${MY_USER_NICKNAME}`;
       const response = await axios.get(address);
       
       if (!response.data.success || !response.data.task) {
+        await log(`🔍 Nenhuma tarefa disponivel para ${MY_USER_NICKNAME}.`);
         return;
       }
 
@@ -187,9 +188,25 @@ async function main() {
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
       
       await stateService.registerActiveTask(task.id);
+      // Buscar ID do status "Em Andamento" - endpoint correto é /api/statuses (plural)
+      let STATUS_ID = null;
+      try {
+        const statusResponse = await axios.get(`${API_URL}/api/statuses`);
+        if (statusResponse.data && statusResponse.data.statuses) {
+          const inProgressStatus = statusResponse.data.statuses.find(s => s.name === STATUS.IN_PROGRESS);
+          STATUS_ID = inProgressStatus ? inProgressStatus.id : null;
+        }
+      } catch (error) {
+        console.error('Erro ao buscar status:', error.message);
+        STATUS_ID = null;
+      }
       
-      // Atualiza status para "Em Andamento"
-      await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS.IN_PROGRESS });
+      // Atualiza status para "Em Andamento" se encontrou o ID
+      if (STATUS_ID) {
+        await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS_ID });
+      } else {
+        await log(`⚠️ Não foi possível encontrar o status "${STATUS.IN_PROGRESS}" para atualizar a tarefa ${task.id}`);
+      }
 
       // 3. Executa a tarefa usando o servico
       const config = {

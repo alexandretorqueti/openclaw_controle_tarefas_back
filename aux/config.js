@@ -13,7 +13,7 @@ const ERROR_DIR = path.join(TASKS_DIR, 'error');
 const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
-const MY_USER_NICKNAME = process.env.MY_USER_NICKNAME || 'Jarbas';
+const MY_USER_NICKNAME = process.env.MY_USER_NICKNAME || 'jarbas';
 
 const MAX_LOG_LINES = 1000;
 const TASK_DEFAULT_TIMEOUT_MINUTES = parseInt(process.env.TASK_DEFAULT_TIMEOUT_MINUTES) || 30;
@@ -24,9 +24,12 @@ const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
 const LOCK_FILE = process.env.LOCK_FILE_PATH || '/home/alexandrebragatorqueti/tmp/.monitor.lock';
 
 
+const STATUS_IN_PROGRESS = process.env.STATUS_IN_PROGRESS;
+const STATUS_COMPLETED = process.env.STATUS_COMPLETED;
+
 const STATUS = {
-  IN_PROGRESS: process.env.STATUS_IN_PROGRESS_ID,
-  COMPLETED: process.env.STATUS_COMPLETED_ID,
+  IN_PROGRESS: STATUS_IN_PROGRESS,
+  COMPLETED: STATUS_COMPLETED,
 };
 
 // Garante que as pastas físicas existam

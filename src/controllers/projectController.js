@@ -2,6 +2,8 @@ const projectService = require('../services/projectService');
 const { validateProject, validateProjectUpdate } = require('../validators/projectValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { snakeToCamel } = require('../utils/caseConverter');
+const prisma = require('../services/prismaService');
+const UserResolver = require('../utils/userResolver');
 class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete projects have priority - no backend change
   // 2026-03-10: Frontend fix - buttons edit/delete now have priority over row click to tasks screen (no backend change needed)
   createProject = ErrorMiddleware.catchAsync(async (req, res, next) => {
@@ -15,10 +17,27 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
       // Use authenticated user's ID (overrides any provided value)
       createdById = req.user.id;
     } else if (!createdById || createdById.trim() === '') {
-      // No authenticated user and no provided ID
-      const error = new Error('User must be authenticated or provide createdById');
-      error.statusCode = 401;
-      throw error;
+      // No authenticated user and no provided ID - use default user
+      try {
+        // Usar o helper UserResolver para obter ID do usuário padrão
+        const defaultUserId = await UserResolver.getDefaultUserId();
+        
+        if (defaultUserId) {
+          createdById = defaultUserId;
+          console.log(`Usando usuário padrão para criação de projeto: ${defaultUserId}`);
+        } else {
+          // Se não houver usuários, retornar erro
+          const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
+          error.statusCode = 400;
+          throw error;
+        }
+      } catch (error) {
+        console.error('Erro ao buscar usuário padrão:', error.message);
+        // Não usar mais ID fixo - retornar erro
+        const fallbackError = new Error('Não foi possível determinar o usuário para criar o projeto. Certifique-se de que existem usuários no sistema.');
+        fallbackError.statusCode = 400;
+        throw fallbackError;
+      }
     }
     
     // Update body with determined createdById
