@@ -18,7 +18,7 @@ class PromptFactory {
       - Descrição: ${task.description}
 
       REGRAS:
-      1. Se a tarefa pede para criar/alterar/corrigir código, o tipo é 'development'.
+      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
       2. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
       3. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
       4. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
@@ -94,6 +94,41 @@ class PromptFactory {
 QUANDO TERMINAR:
 1. Escreva em: ${files.relatorioFile}
 2. Use: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}`;
+  }
+
+  static buildArchitectAnalysisPrompt(architectResponse, task, project) {
+    const prompt = `
+      Você é um analista de respostas de arquitetos de software.
+      Analise a resposta abaixo de um arquiteto e determine:
+
+      1. O arquiteto JÁ EXECUTOU a tarefa? (implementou código, alterou arquivos)
+      2. O arquiteto apenas GEROU UM PLANO? (descreveu passos, mas não executou)
+      3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
+
+      CONTEXTO:
+      - Tarefa: ${task.title}
+      - Descrição: ${task.description}
+      - Projeto: ${project?.name || 'N/A'}
+
+      RESPOSTA DO ARQUITETO:
+      ${architectResponse}
+
+      Responda EXCLUSIVAMENTE em JSON com este formato:
+      {
+        "hasExecuted": true/false,
+        "hasPlan": true/false,
+        "confidence": 0-100,
+        "executionDetails": "Descrição do que foi executado, se aplicável",
+        "planDetails": "Descrição do plano gerado, se aplicável",
+        "analysisFailed": true/false
+      }
+
+      CRITÉRIOS:
+      - "hasExecuted": true apenas se o arquiteto DESCREVE TER FEITO alterações reais em arquivos/código
+      - "hasPlan": true se o arquiteto descreve passos, instruções, ou plano de ação
+      - "analysisFailed": true se a resposta for vazia, incompreensível, ou não relacionada à tarefa
+    `.trim();
+    return prompt;
   }
 }
 

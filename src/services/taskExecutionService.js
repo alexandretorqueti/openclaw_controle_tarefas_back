@@ -252,7 +252,7 @@ class TaskExecutionService {
     let turnos = 0; 
     let turnosSemProgresso = 0;
 
-    while (!contractResult.contractFulfilled && turnos < 100) {
+    while (!contractResult.contractFulfilled && turnos < 10 && turnosSemProgresso < 3) {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       

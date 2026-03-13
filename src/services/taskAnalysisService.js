@@ -2,7 +2,7 @@
 // Servico de analise de escopo e tipo de tarefas
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
-const llmService = new LlmService('llama3.2:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
+const llmService = new LlmService('llama3.1:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
 
 
 class TaskAnalysisService {
@@ -99,37 +99,7 @@ class TaskAnalysisService {
       };
     }
 
-    const prompt = `
-      Você é um analista de respostas de arquitetos de software.
-      Analise a resposta abaixo de um arquiteto e determine:
-
-      1. O arquiteto JÁ EXECUTOU a tarefa? (implementou código, alterou arquivos)
-      2. O arquiteto apenas GEROU UM PLANO? (descreveu passos, mas não executou)
-      3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
-
-      CONTEXTO:
-      - Tarefa: ${task.title}
-      - Descrição: ${task.description}
-      - Projeto: ${project?.name || 'N/A'}
-
-      RESPOSTA DO ARQUITETO:
-      ${architectResponse}
-
-      Responda EXCLUSIVAMENTE em JSON com este formato:
-      {
-        "hasExecuted": true/false,
-        "hasPlan": true/false,
-        "confidence": 0-100,
-        "executionDetails": "Descrição do que foi executado, se aplicável",
-        "planDetails": "Descrição do plano gerado, se aplicável",
-        "analysisFailed": true/false
-      }
-
-      CRITÉRIOS:
-      - "hasExecuted": true apenas se o arquiteto DESCREVE TER FEITO alterações reais em arquivos/código
-      - "hasPlan": true se o arquiteto descreve passos, instruções, ou plano de ação
-      - "analysisFailed": true se a resposta for vazia, incompreensível, ou não relacionada à tarefa
-    `.trim();
+    const prompt = promptFactory.buildArchitectAnalysisPrompt(architectResponse, task, project);
 
     try {
       let analysis = await llmService.analyze(prompt);
