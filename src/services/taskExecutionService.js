@@ -199,6 +199,99 @@ class TaskExecutionService {
   }
 
   /**
+   * Verifica se o arquiteto já executou a tarefa e se está tudo correto
+   * @returns {Object|null} Retorna finalResult se arquiteto concluiu, ou null se precisa do desenvolvedor
+   */
+  static async verifyArchitectWork(ctx) {
+    const { task, project, analysisPlan, files, initialSnapshot, architectAnalysis, architectPlan } = ctx;
+    
+    if (!architectAnalysis || !architectAnalysis.hasExecuted || architectAnalysis.confidence <= 70) {
+      return null; // Arquiteto não executou ou baixa confiança
+    }
+    
+    await log(`🔍 [Verificação] Arquiteto indica execução (${architectAnalysis.confidence}% confiança).`);
+    
+    // Verificar evidências do arquiteto
+    const architectDoneExists = await fileExists(files.doneFile);
+    const architectReportExists = await fileExists(files.relatorioFile);
+    const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
+    const changes = WorkspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
+    const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+    const architectLeftEvidence = architectDoneExists || architectReportExists || hasRealChanges;
+    
+    if (!architectLeftEvidence) {
+      await log(`⚠️ [Verificação] Arquiteto não deixou evidências de execução.`);
+      return { needsDeveloper: true, message: `O arquiteto analisou a tarefa, mas não encontramos evidências de execução.\n\n${architectPlan || 'Siga a descrição original da tarefa.'}` };
+    }
+    
+    if (!hasRealChanges) {
+      await log(`📝 [Verificação] Arquiteto deixou .done/relatório, mas não alterou arquivos.`);
+      return { needsDeveloper: true, message: `O arquiteto analisou e disse que já fez a tarefa, mas não encontramos alterações nos arquivos.\n\n${architectPlan}\n\nPor favor, execute a tarefa conforme descrito acima.` };
+    }
+    
+    await log(`📁 [Verificação] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+    
+    // Verificar contrato
+    const contractResult = await ContractVerificationService.verifyContract(
+      files.doneFile, 
+      files.relatorioFile, 
+      files.terminalLogFile, { 
+        taskType: analysisPlan.taskType, 
+        evidence: EvidenceService.createEmptyEvidence(),
+        task, 
+        project, 
+        analysisPlan, 
+        initialSnapshot
+      }
+    );
+    
+    if (!contractResult.contractFulfilled) {
+      await log(`⚠️ [Verificação] Contrato não cumprido pelo arquiteto: ${contractResult.executionNotes}`);
+      return { needsDeveloper: true, message: contractResult.feedbackToAgent || `O arquiteto fez alterações, mas não cumpriu o contrato: ${contractResult.executionNotes}\n\nPor favor, corrija.` };
+    }
+    
+    await log(`✅ [Verificação] Contrato cumprido pelo arquiteto. Verificando build...`);
+    
+    // QA/Build validation
+    let qa = { passed: true };
+    if (project) {
+      const BUILD_TIMEOUT = 60000;
+      if (project.backendBuildCmd && project.backendPath) {
+        try {
+          await log(`⏳ Testando build Backend...`);
+          execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+        } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
+      }
+      if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
+        try {
+          await log(`⏳ Testando build Frontend...`);
+          execSync(project.frontendBuildCmd, { cwd: path.join(project.pastaBase, project.frontendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+        } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
+      }
+    }
+    
+    if (!qa.passed) {
+      await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
+      await fs.unlink(files.doneFile).catch(()=>{});
+      return { needsDeveloper: true, message: `Build falhou: ${qa.message}. O arquiteto fez alterações, mas o build não passa. Corrija o código e finalize novamente com .done.` };
+    }
+    
+    await log(`✅ [Verificação] Tudo verificado! Arquiteto concluiu tarefa com sucesso.`);
+    
+    return {
+      success: true,
+      contractResult: {
+        contractFulfilled: true,
+        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.`
+      },
+      finalResult: { 
+        success: true, 
+        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.` 
+      }
+    };
+  }
+
+  /**
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
    */
   static async stepDeveloperLoop(ctx) {
@@ -207,50 +300,30 @@ class TaskExecutionService {
     
     const evidence = EvidenceService.createEmptyEvidence();
     
-    // 1. VERIFICAR SE O ARQUITETO JÁ FEZ A TAREFA E SE HOUVE ALTERAÇÕES
-    if (architectAnalysis && architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) {
-      await log(`🔍 [Desenvolvedor] Arquiteto indica execução (${architectAnalysis.confidence}% confiança). Verificando alterações...`);
-      
-      // Verificar se há arquivos .done ou relatório do arquiteto
-      const architectDoneExists = await fileExists(files.doneFile);
-      const architectReportExists = await fileExists(files.relatorioFile);
-      
-      // Verificar se houve alterações no workspace
-      const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
-      const changes = WorkspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
-      
-      const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
-      const architectLeftEvidence = architectDoneExists || architectReportExists || hasRealChanges;
-      
-      if (architectLeftEvidence) {
-        await log(`✅ [Desenvolvedor] Arquiteto deixou evidências de execução.`);
-        
-        if (hasRealChanges) {
-          await log(`📁 [Desenvolvedor] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
-          // Arquiteto realmente fez alterações - podemos pular o desenvolvedor
-          return { 
-            ...ctx, 
-            finalResult: { 
-              success: true, 
-              executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados.` 
-            } 
-          };
-        } else if (architectDoneExists || architectReportExists) {
-          await log(`📝 [Desenvolvedor] Arquiteto deixou .done ou relatório, mas não alterou arquivos.`);
-          // Arquiteto diz que fez mas não alterou - precisa do desenvolvedor
-          currentInput = `O arquiteto analisou e disse que já fez a tarefa, mas não encontramos alterações nos arquivos.\n\n${architectPlan}\n\nPor favor, execute a tarefa conforme descrito acima.`;
-          await fs.writeFile(files.promptFile, currentInput);
-        }
-      } else {
-        await log(`⚠️ [Desenvolvedor] Arquiteto não deixou evidências de execução.`);
-        // Arquiteto não deixou evidências - precisa do desenvolvedor
-        currentInput = `O arquiteto analisou a tarefa, mas não encontramos evidências de execução.\n\n${architectPlan || 'Siga a descrição original da tarefa.'}`;
+    // 1. VERIFICAR SE O ARQUITETO JÁ FEZ A TAREFA
+    const architectVerification = await TaskExecutionService.verifyArchitectWork(ctx);
+    
+    if (architectVerification) {
+      if (architectVerification.success) {
+        // Arquiteto concluiu com sucesso
+        return { 
+          ...ctx, 
+          contractResult: architectVerification.contractResult,
+          finalResult: architectVerification.finalResult
+        };
+      } else if (architectVerification.needsDeveloper) {
+        // Arquiteto falhou em algum aspecto - desenvolvedor precisa intervir
+        currentInput = architectVerification.message;
         await fs.writeFile(files.promptFile, currentInput);
+        await log(`🔄 [Desenvolvedor] Necessita intervenção: ${architectVerification.message.substring(0, 100)}...`);
       }
     }
     let contractResult = { contractFulfilled: false };
     let turnos = 0; 
     let turnosSemProgresso = 0;
+
+    // Se chegou aqui, precisa do desenvolvedor
+    await log(`🔄 [Desenvolvedor] Iniciando loop de execução...`);
 
     while (!contractResult.contractFulfilled && turnos < 10 && turnosSemProgresso < 3) {
       await log(`🤖 Turno ${turnos + 1}...`);
@@ -318,6 +391,7 @@ class TaskExecutionService {
       }
     }
 
+    await log(`📊 [Desenvolvedor] Loop finalizado. contractResult:`, contractResult);
     return { ...ctx, contractResult };
   }
 
@@ -326,6 +400,12 @@ class TaskExecutionService {
    */
   static async stepTeardown(ctx) {
     const { executionLog, contractResult } = ctx;
+    
+    // Validação de segurança
+    if (!contractResult) {
+      console.error('❌ stepTeardown: contractResult é undefined!', { ctxKeys: Object.keys(ctx) });
+      contractResult = { contractFulfilled: false, executionNotes: 'Erro: contractResult não definido' };
+    }
     
     const finalResult = { 
       success: contractResult.contractFulfilled, 

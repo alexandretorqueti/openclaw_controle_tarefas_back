@@ -23,6 +23,7 @@ const projectSchema = z.object({
   repositoryUrl: z.string().url('Invalid URL format').optional().nullable().or(z.literal('')),
   pastaBase: z.string().optional().nullable(),
   agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
+  modeloAuxiliar: z.string().max(100).optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
 });

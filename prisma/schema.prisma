@@ -65,11 +65,11 @@ model Project {
   repositoryUrl  String?  // URL do repositório principal (GitHub, GitLab, etc.)
   pastaBase      String?  // Campo pasta base (não obrigatório)
   agent          String?  // Agente padrão para tarefas do projeto
-
+  modeloAuxiliar String?
   frontendBuildCmd String?
   backendBuildCmd  String?
   @@map("projects")
-}
+)
 
 model Status {
   id           String  @id @default(uuid())

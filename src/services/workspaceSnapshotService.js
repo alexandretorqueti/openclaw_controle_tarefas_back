@@ -56,6 +56,45 @@ class WorkspaceSnapshotService {
 
     return modifiedFiles;
   }
+
+  /**
+   * Compara dois snapshots e retorna detalhes das mudanças
+   * @param {Map} initialSnapshot - Snapshot inicial
+   * @param {Map} currentSnapshot - Snapshot atual
+   * @returns {Object} Objeto com arrays de arquivos modificados, criados e deletados
+   */
+  static compareSnapshots(initialSnapshot, currentSnapshot) {
+    const modified = [];
+    const created = [];
+    const deleted = [];
+
+    // Verifica arquivos no snapshot atual
+    for (const [filePath, currentMtime] of currentSnapshot.entries()) {
+      const initialMtime = initialSnapshot.get(filePath);
+      
+      if (!initialMtime) {
+        // Arquivo não existia no snapshot inicial (criado)
+        created.push(filePath);
+      } else if (currentMtime > initialMtime) {
+        // Arquivo modificado (mtime maior)
+        modified.push(filePath);
+      }
+    }
+
+    // Verifica arquivos que existiam no inicial mas não no atual (deletados)
+    for (const [filePath] of initialSnapshot.entries()) {
+      if (!currentSnapshot.has(filePath)) {
+        deleted.push(filePath);
+      }
+    }
+
+    return {
+      modified,
+      created,
+      deleted,
+      totalChanges: modified.length + created.length + deleted.length
+    };
+  }
 }
 
 module.exports = WorkspaceSnapshotService;

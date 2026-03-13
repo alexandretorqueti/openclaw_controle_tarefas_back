@@ -4,6 +4,13 @@
 const path = require('path');
 const { mergeUniquePaths, uniquePaths } = require('../utils/pathUtils');
 const { inferReadOnlyEvidenceFromCommand } = require('../utils/commandUtils');
+
+// Validação de import em desenvolvimento
+if (process.env.NODE_ENV !== 'production') {
+  if (typeof inferReadOnlyEvidenceFromCommand !== 'function') {
+    console.error('❌ evidenceService: inferReadOnlyEvidenceFromCommand não é uma função');
+  }
+}
 const { isEphemeralArtifact } = require('../utils/fileUtils');
 
 class EvidenceService {
