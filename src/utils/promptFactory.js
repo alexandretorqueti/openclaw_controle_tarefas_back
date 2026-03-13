@@ -19,9 +19,10 @@ class PromptFactory {
 
       REGRAS:
       1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
-      2. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
-      3. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
-      4. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
+      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
+      3. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
+      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
+      5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
 
       Responda EXCLUSIVAMENTE em JSON com este formato:
       {

@@ -84,7 +84,18 @@ class TaskExecutionService {
     const dirBase = project?.pastaBase || 'Diretório atual';
     const engineRules = PromptFactory.buildEngineRulesPrompt(files);
 
-    const promptContent = `Agente Jarbas. TAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}. ${engineRules}`;
+    // Adiciona comentários ao prompt se existirem
+    let commentsSection = '';
+    if (task.comments && task.comments.length > 0) {
+      commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
+      task.comments.forEach((comment, index) => {
+        const userInfo = comment.user ? `${comment.user.name} (${comment.user.nickname})` : 'Usuário';
+        const timestamp = new Date(comment.createdAt).toLocaleString('pt-BR');
+        commentsSection += `\n${index + 1}. [${timestamp}] ${userInfo}: ${comment.content}`;
+      });
+    }
+
+    const promptContent = `Agente Jarbas. TAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
     
     await fs.writeFile(files.promptFile, promptContent);
     await fs.writeFile(files.relatorioFile, '');
@@ -112,7 +123,7 @@ class TaskExecutionService {
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
 
     // Roda o Arquiteto com timeout de 10 minutos (600000ms)
-    await OpenClawService.execute(
+    const architectResult = await OpenClawService.execute(
       `${task.id}-architect`, 
       architectInput, 
       project.agent || 'analista-pleno',            
@@ -125,12 +136,14 @@ class TaskExecutionService {
 
     // Remove .done se o arquiteto criou indevidamente
     await fs.unlink(files.doneFile).catch(() => {});
-
+    
     let architectPlan = "";
     let architectAnalysis = null;
     
-    if (await fileExists(files.architectPlanFile)) {
-      architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
+    // Usar a saída direta do OpenClaw em vez de ler arquivo
+    if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
+      architectPlan = architectResult.rawOutput;
+      await log(`📝 [Arquiteto] Resposta recebida (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
       
       // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
       // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
@@ -154,6 +167,14 @@ class TaskExecutionService {
       } else {
         await log(`ℹ️ [Arquiteto] Análise não identificou execução nem plano claro.`);
       }
+      
+      // Opcional: Salvar plano em arquivo para referência (mas não dependemos mais dele)
+      try {
+        await fs.writeFile(files.architectPlanFile, architectPlan);
+        await log(`💾 [Arquiteto] Plano salvo em arquivo para referência: ${files.architectPlanFile}`);
+      } catch (error) {
+        await log(`⚠️ [Arquiteto] Não foi possível salvar plano em arquivo: ${error.message}`);
+      }
     } else {
       architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
       architectAnalysis = {
@@ -164,7 +185,7 @@ class TaskExecutionService {
         planDetails: null,
         analysisFailed: true
       };
-      await log(`⚠️ [Arquiteto] Não gerou plano. Usando descrição original.`);
+      await log(`⚠️ [Arquiteto] Resposta vazia ou inválida. Usando descrição original.`);
     }
 
     // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
@@ -391,7 +412,16 @@ class TaskExecutionService {
       }
     }
 
-    await log(`📊 [Desenvolvedor] Loop finalizado. contractResult:`, contractResult);
+    // Garantir que contractResult está definido
+    if (!contractResult || contractResult.contractFulfilled === undefined) {
+      contractResult = { 
+        contractFulfilled: false, 
+        executionNotes: 'Loop finalizado sem verificação de contrato' 
+      };
+      await log(`⚠️ [Desenvolvedor] contractResult indefinido, definindo como falha`);
+    }
+    
+    await log(`📊 [Desenvolvedor] Loop finalizado. contractResult: ${JSON.stringify(contractResult)}`);
     return { ...ctx, contractResult };
   }
 
@@ -399,7 +429,8 @@ class TaskExecutionService {
    * Passo 4: Finaliza o log no banco e consolida o resultado.
    */
   static async stepTeardown(ctx) {
-    const { executionLog, contractResult } = ctx;
+    const { executionLog } = ctx;
+    let { contractResult } = ctx; // Mudar para let para permitir reatribuição
     
     // Validação de segurança
     if (!contractResult) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // monitor.js (Arquitetura Modularizada)
 // Orquestrador de tarefas refatorado com servicos especializados
-
+const  { log } = require('./aux/logger');
 async function main() {
   const axios = require('axios');
   const path = require('path');
@@ -10,7 +10,7 @@ async function main() {
 
   // Configuracoes
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
-  const  { log } = require('./aux/logger');
+
   // Servicos modularizados
   const LockService = require('./src/services/lockService');
   const MonitorStateService = require('./src/services/monitorStateService');
@@ -224,6 +224,7 @@ async function main() {
       await lockService.releaseLock();
     }
   }
+  log("🚀 Iniciando monitor de tarefas...");
 
   await run();
 }

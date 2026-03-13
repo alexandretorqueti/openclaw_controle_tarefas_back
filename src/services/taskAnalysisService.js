@@ -3,7 +3,7 @@
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
 const llmService = new LlmService('llama3.1:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
-
+const { log } = require('../../aux/logger');
 
 class TaskAnalysisService {
   static lastAnalysis = null;
@@ -12,7 +12,7 @@ class TaskAnalysisService {
 
     // Chama a IA local
     let analysis = await llmService.analyze(prompt);
-
+    log(`🔍 Análise da IA para a tarefa "${task.title}": ${analysis}`);
     // Fallback caso a IA falhe
     if (!analysis) {
       return this.getFallbackScope(task); 
@@ -28,11 +28,25 @@ class TaskAnalysisService {
         return this.getFallbackScope(task);
       }
     }
+    // Validação defensiva: garantir que analysis tem estrutura esperada
+    if (!analysis.mandatoryChecks || !Array.isArray(analysis.mandatoryChecks)) {
+      analysis.mandatoryChecks = ['Verificar se a tarefa foi concluída corretamente'];
+    }
+    
+    if (!analysis.taskType) {
+      analysis.taskType = 'automation';
+    }
+    
+    if (!analysis.scope) {
+      analysis.scope = 'Moderate';
+    }
+    
     // Injeta instruções padrão de finalização
     analysis.finalizationInstructions = [
       'Escrever o resultado final no arquivo de relatorio.',
       'Criar o arquivo .done ao finalizar.'
     ];
+    
     analysis.definitionOfDone = analysis.mandatoryChecks.map(c => `Concluído: ${c}`);
 
     return analysis;

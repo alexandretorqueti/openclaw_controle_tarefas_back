@@ -8,6 +8,7 @@ const agentCache = require('../services/agentCache');
 exports.listAgents = async (req, res) => {
   try {
     const agents = await agentService.listAgents();
+agents.sort((a, b) => a.name.localeCompare(b.name));
     res.json({
       success: true,
       data: agents,

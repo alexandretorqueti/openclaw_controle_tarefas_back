@@ -980,7 +980,21 @@ class TaskService {
       },
       include: {
         priority: true,
-        dependencies: { include: { task: true } }
+        dependencies: { include: { task: true } },
+        comments: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                nickname: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'asc'
+          }
+        }
       }
     });
 

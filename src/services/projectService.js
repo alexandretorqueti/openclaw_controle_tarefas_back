@@ -20,6 +20,7 @@ class ProjectService {
         repositoryUrl: data.repositoryUrl || null,
         pastaBase: data.pastaBase || null,
         agent: data.agent || null,
+        modeloAuxiliar: data.modeloAuxiliar || null,
         frontendBuildCmd: data.frontendBuildCmd || null,
         backendBuildCmd: data.backendBuildCmd || null
       },
@@ -170,6 +171,7 @@ class ProjectService {
     if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl || null;
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
     if (data.agent !== undefined) updateData.agent = data.agent || null;
+    if (data.modeloAuxiliar !== undefined) updateData.modeloAuxiliar = data.modeloAuxiliar || null;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;
     
