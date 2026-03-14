@@ -166,12 +166,43 @@ if (typeof jest !== 'undefined') {
 
   // Hooks do Jest
   beforeAll(async () => {
-    // Garantir que as migrações estão aplicadas
     try {
+      // Conectar ao banco
       await prisma.$connect();
+      
+      // Aplicar migrações do Prisma
+      const { execSync } = require('child_process');
+      console.log('📦 Aplicando migrações do Prisma no banco de testes...');
+      
+      try {
+        execSync('npx prisma migrate deploy', { 
+          stdio: 'pipe',
+          env: { ...process.env, DATABASE_URL: 'file:test.db?mode=memory&cache=shared' }
+        });
+        console.log('✅ Migrações aplicadas com sucesso');
+      } catch (migrationError) {
+        console.warn('⚠️  Erro ao aplicar migrações:', migrationError.message);
+        // Tentar criar tabelas manualmente se as migrações falharem
+        try {
+          const fs = require('fs');
+          const migrationPath = require('path').join(__dirname, '../prisma/migrations');
+          if (fs.existsSync(migrationPath)) {
+            const migrations = fs.readdirSync(migrationPath).filter(dir => dir.endsWith('.sql'));
+            if (migrations.length > 0) {
+              const latestMigration = migrations.sort().pop();
+              const sql = fs.readFileSync(require('path').join(migrationPath, latestMigration, 'migration.sql'), 'utf8');
+              await prisma.$executeRawUnsafe(sql);
+              console.log('✅ Tabelas criadas manualmente');
+            }
+          }
+        } catch (manualError) {
+          console.error('❌ Erro ao criar tabelas manualmente:', manualError.message);
+        }
+      }
+      
       await prisma.$executeRaw`PRAGMA foreign_keys = OFF`;
     } catch (error) {
-      console.error('Erro ao conectar ao banco de testes:', error.message);
+      console.error('Erro ao configurar banco de testes:', error.message);
     }
   });
 

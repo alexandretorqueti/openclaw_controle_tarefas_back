@@ -4,6 +4,9 @@ const fs = require('fs').promises;
 const ToolCallService = require('./toolCallService');
 const CommandExecutor = require('./commandExecutor');
 const { log } =  require('../../aux/logger');
+
+const OPENCLAW_NODE = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
+const OPENCLAW_MJS = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
 class OpenClawService {
   /**
    * Executa uma chamada ao agente via CLI do OpenClaw
@@ -25,8 +28,14 @@ class OpenClawService {
         env.OPENCLAW_MODEL = model;
       }
 
-      const child = spawn('openclaw', childArgs, { 
-        cwd: projectPath || tasksDir, 
+      // Valida o cwd antes do spawn: se não existir, causa ENOENT no spawn (mesmo com executável válido)
+      const fsSync = require('fs');
+      const spawnCwd = (projectPath && fsSync.existsSync(projectPath)) ? projectPath
+                     : (tasksDir && fsSync.existsSync(tasksDir)) ? tasksDir
+                     : require('os').homedir();
+
+      const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], { 
+        cwd: spawnCwd, 
         env, 
         shell: false, 
         stdio: ['ignore', 'pipe', 'pipe'] 

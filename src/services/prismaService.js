@@ -2,7 +2,8 @@ const { PrismaClient } = require('@prisma/client');
 
 const getDatabaseUrl = () => {
   if (process.env.NODE_ENV === 'test') {
-    return 'file:./prisma/test.db';
+    // Usar banco em memória para testes
+    return process.env.DATABASE_URL || 'file:test.db?mode=memory&cache=shared';
   }
   return process.env.DATABASE_URL || 'file:./prisma/dev.db';
 };

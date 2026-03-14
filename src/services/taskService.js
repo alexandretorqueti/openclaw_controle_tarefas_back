@@ -985,6 +985,7 @@ class TaskService {
       },
       include: {
         priority: true,
+        status: true,
         project: {
           select: {
             id: true,
