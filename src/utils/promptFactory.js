@@ -4,37 +4,41 @@ class PromptFactory {
   /**
    * Gera o prompt para a análise inicial de escopo da tarefa.
    */
-  static buildTaskAnalysisPrompt(task, project) {
-    return `
-      Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
-      
-      PROJETO:
-      - Base: ${project?.pastaBase}
-      - Frontend Path: ${project?.frontendPath || 'N/A'}
-      - Backend Path: ${project?.backendPath || 'N/A'}
+/**
+     * Gera o prompt para a análise inicial de escopo da tarefa.
+     */
+   static buildTaskAnalysisPrompt(task, project) {
+      return `
+         Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
+         
+         PROJETO:
+         - Base: ${project?.pastaBase}
+         - Frontend Path: ${project?.frontendPath || 'N/A'}
+         - Backend Path: ${project?.backendPath || 'N/A'}
 
-      TAREFA:
-      - Título: ${task.title}
-      - Descrição: ${task.description}
+         TAREFA:
+         - Título: ${task.title}
+         - Descrição: ${task.description}
 
-      REGRAS:
-      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
-      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
-      3. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
-      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
-      5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
+         REGRAS:
+         1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
+         2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
+         3. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
+         4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
+         5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
+         6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
 
-      Responda EXCLUSIVAMENTE em JSON com este formato:
-      {
-        "taskType": "development" | "analysis" | "automation",
-        "requiresReport": true | false,
-        "expectedLayers": ["frontend", "backend"],
-        "requiredModifiedLayers": ["backend"],
-        "mandatoryChecks": ["passo 1", "passo 2"],
-        "risks": ["risco 1"]
-      }
-    `.trim();
-  }
+         Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
+         {
+            "taskType": "development" | "analysis" | "automation",
+            "requiresReport": true | false,
+            "expectedLayers": ["frontend"],
+            "requiredModifiedLayers": ["frontend"],
+            "mandatoryChecks": ["Verificar se os componentes foram criados", "Garantir a fidelidade do layout"],
+            "risks": ["Risco de quebrar layouts existentes"]
+         }
+      `.trim();
+   }
 
   static buildArchitectPrompt(task, project, fileList, planFilePath) {
     const truncatedFiles = fileList.slice(0, 500).join('\n');

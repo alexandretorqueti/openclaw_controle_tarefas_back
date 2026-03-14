@@ -144,7 +144,7 @@ class CommandExecutor {
     let finalError = null;
     if (!success) {
       if (noOpMutation) {
-        finalError = 'Comando mutante executou sem erro, mas não alterou nenhum arquivo real.';
+        finalError = "[ERRO DE MUTAÇÃO FANTASMA] O comando shell executou sem erros, MAS nenhum arquivo foi alterado no disco. Se você usou 'sed', sua Regex falhou e não encontrou o alvo. PROIBIDO repetir o mesmo comando. AÇÃO OBRIGATÓRIA: Use a ferramenta 'read' no arquivo alvo para ver como ele realmente está, e tente alterá-lo usando a ferramenta 'edit' em vez de 'exec'.";
       } else {
         const errorParts = [];
         if (shellResult.errorMessage) errorParts.push(shellResult.errorMessage);
@@ -318,8 +318,8 @@ class CommandExecutor {
         console.log(`   [CommandExecutor] ⚠️ 'oldText' não encontrado no arquivo`);
 
         return this.buildResult(false, {
-          error: "O texto exato fornecido em 'oldText' não foi encontrado no arquivo. Use a ferramenta 'read' primeiro para copiar o trecho exato do código-fonte.",
-          output: "O texto exato fornecido em 'oldText' não foi encontrado no arquivo. Use a ferramenta 'read' primeiro para copiar o trecho exato do código-fonte.",
+          error: "[ERRO 'EDIT' FALHOU] O texto fornecido em 'oldText' NÃO EXISTE exatamente dessa forma no arquivo (espaços, indentação ou quebras de linha estão diferentes). PARE de tentar adivinhar a formatação. AÇÃO OBRIGATÓRIA: Use a ferramenta 'read' neste arquivo AGORA, copie o trecho EXATAMENTE como o terminal cuspir, e chame o 'edit' novamente.",
+          output: "[ERRO 'EDIT' FALHOU] O texto fornecido em 'oldText' NÃO EXISTE exatamente dessa forma no arquivo (espaços, indentação ou quebras de linha estão diferentes). PARE de tentar adivinhar a formatação. AÇÃO OBRIGATÓRIA: Use a ferramenta 'read' neste arquivo AGORA, copie o trecho EXATAMENTE como o terminal cuspir, e chame o 'edit' novamente.",
           filesRead: [resolvedPath],
           touchedFiles: [resolvedPath]
         });
@@ -331,9 +331,8 @@ class CommandExecutor {
         console.log(`   [CommandExecutor] ℹ️ oldText e newText são idênticos`);
 
         return this.buildResult(false, {
-          error: 'A operação de edit não produziria alteração real porque oldText e newText são idênticos.',
-          output: 'A operação de edit não produziria alteração real porque oldText e newText são idênticos.',
-          filesRead: [resolvedPath],
+          error: "[ERRO 'EDIT' INÚTIL] A sua substituição não alterou absolutamente nada. O arquivo continua idêntico. Verifique se você não está sobrescrevendo o código com ele mesmo. Revise a lógica e tente novamente.",
+          output: "[ERRO 'EDIT' INÚTIL] A sua substituição não alterou absolutamente nada. O arquivo continua idêntico. Verifique se você não está sobrescrevendo o código com ele mesmo. Revise a lógica e tente novamente.",          filesRead: [resolvedPath],
           touchedFiles: [resolvedPath],
           executionDiagnostics: {
             commandType: 'edit',
@@ -349,9 +348,8 @@ class CommandExecutor {
         console.log(`   [CommandExecutor] ℹ️ A substituição não gerou mudança real`);
 
         return this.buildResult(false, {
-          error: 'A substituição foi avaliada, mas não gerou alteração real no conteúdo do arquivo.',
-          output: 'A substituição foi avaliada, mas não gerou alteração real no conteúdo do arquivo.',
-          filesRead: [resolvedPath],
+          error: "[ERRO 'EDIT' INÚTIL] A substituição foi avaliada, mas não gerou alteração real no conteúdo do arquivo. O resultado final é idêntico ao original.",
+          output: "[ERRO 'EDIT' INÚTIL] A substituição foi avaliada, mas não gerou alteração real no conteúdo do arquivo. O resultado final é idêntico ao original.",          filesRead: [resolvedPath],
           touchedFiles: [resolvedPath],
           executionDiagnostics: {
             commandType: 'edit',

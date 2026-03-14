@@ -438,51 +438,38 @@ class TaskExecutionService {
         break; // Passou no contrato e no QA
       }
 
-      // Trata feedback de falha de contrato
+      // Trata feedback do turno
       const doneExists = await fs.access(files.doneFile).then(() => true).catch(() => false);
-      if (doneExists && contractResult.feedbackToAgent) {
+
+      if (res.toolFeedback) {
+          // 1. Prioridade Máxima: A IA usou uma ferramenta. Devolver o resultado dela!
+          currentInput = res.toolFeedback;
+          await log(`🛠️ [Desenvolvedor] Retornando resultado da ferramenta (${currentInput.length} chars)`);
+          
+      } else if (doneExists && contractResult.feedbackToAgent) {
+          // 2. A IA tentou finalizar (.done criado), mas fez besteira.
           await fs.unlink(files.doneFile).catch(()=>{});
           currentInput = contractResult.feedbackToAgent;
-          await fs.writeFile(files.promptFile, currentInput); // CRÍTICO: Atualiza arquivo de prompt
-          await log(`📝 [Desenvolvedor] Feedback enviado: ${currentInput.substring(0, 100)}...`);
+          await fs.writeFile(files.promptFile, currentInput);
+          await log(`📝 [Desenvolvedor] Feedback de validação: ${currentInput.substring(0, 100)}...`);
+          
       } else {
-          // Tentar ler o conteúdo do arquivo gerado pela IA (relatório) primeiro
+          // 3. A IA não usou ferramenta explícita e não finalizou.
+          // Vamos ver se ela escreveu no relatório sorrateiramente.
           let fileContent = null;
           try {
-            // Primeiro tenta o arquivo de relatório principal
-            if (await fileExists(files.relatorioFile)) {
-              fileContent = await fs.readFile(files.relatorioFile, 'utf8');
-              await log(`📄 [Desenvolvedor] Lendo conteúdo do relatório (${fileContent.length} chars)`);
-            }
-            // Se não, tenta outros arquivos comuns de saída
-            if (!fileContent || fileContent.trim().length === 0) {
-              const workspaceDir = project?.pastaBase || TASKS_DIR;
-              const possibleOutputFiles = [
-                path.join(workspaceDir, 'resultado.txt'),
-                path.join(workspaceDir, 'output.txt'),
-                path.join(workspaceDir, 'result.md'),
-                path.join(workspaceDir, 'output.md'),
-                path.join(workspaceDir, 'README.md'),
-                path.join(workspaceDir, 'solution.txt')
-              ];
-              
-              for (const outputFile of possibleOutputFiles) {
-                if (await fileExists(outputFile)) {
-                  const content = await fs.readFile(outputFile, 'utf8');
-                  if (content && content.trim().length > 0) {
-                    fileContent = content;
-                    await log(`📄 [Desenvolvedor] Lendo conteúdo de ${path.basename(outputFile)} (${content.length} chars)`);
-                    break;
-                  }
-                }
+              if (await fileExists(files.relatorioFile)) {
+                  fileContent = await fs.readFile(files.relatorioFile, 'utf8');
               }
-            }
-          } catch (error) {
-            await log(`⚠️ [Desenvolvedor] Erro ao ler arquivos de saída: ${error.message}`);
+          } catch (error) {}
+
+          if (fileContent && fileContent.trim().length > 0 && !(res.rawOutput || '').includes(fileContent)) {
+              currentInput = `[SISTEMA] Conteúdo atual do relatório detectado:\n${fileContent.substring(0, 500)}...\n\nContinue a execução usando as ferramentas JSON.`;
+          } else {
+              // AQUI MATAMOS O BUG DO PROMPT REPETIDO!
+              currentInput = "[SISTEMA] ATENÇÃO: Você respondeu apenas com texto ou seu JSON de ferramenta estava inválido/incompleto. O sistema OBRIGA que você utilize um bloco JSON válido chamando uma ferramenta (exec, read, write, edit) para progredir na tarefa. Se você já terminou todas as alterações reais, use o 'exec' para criar o arquivo .done.";
           }
-          
-          // Usa conteúdo do arquivo se encontrou, senão usa rawOutput
-          currentInput = res.toolFeedback || fileContent || res.rawOutput || 'Continue.';
+          await log(`⚠️ [Desenvolvedor] IA inativa ou JSON quebrado. Enviando nudge corretivo.`);
       }
       
       const prog = EvidenceService.computeTurnProgress(res.toolResult || {}, contractResult, project?.pastaBase || TASKS_DIR);

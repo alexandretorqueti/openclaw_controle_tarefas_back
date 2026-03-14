@@ -152,12 +152,14 @@ ATENCAO:
 2. OBRIGATORIO: Seu primeiro comando deve usar "exec" com 'find', 'ls -la' ou comando equivalente direcionado as pastas da Arquitetura do Projeto.
 3. [REGRA ANTI-LOOP]: Se um comando nao retornar nada, E PROIBIDO repeti-lo. Use 'ls -la' ou 'pwd' para se localizar, ou consulte a [ARQUITETURA DO PROJETO] no prompt original.
 4. Se a tarefa for de desenvolvimento, relatorio e arquivo .done NAO substituem implementacao real.
+   4.1 [PROTOCOLO DE FALHA]: Se o sistema te devolver um erro começando com [ERRO...] ou [FALHA...], VOCÊ ESTÁ PROIBIDO de criar o arquivo .done. Você deve recuar, ler a instrução do erro e tentar uma nova abordagem.
 5. Se a tarefa for de analise, o relatorio final deve refletir o que foi realmente inspecionado.
 6. Respeite obrigatoriamente a [PRE-ANALISE DE ESCOPO].
 7. Se a pre-analise indicar frontend e backend, voce NAO pode concluir a tarefa mexendo em apenas uma das camadas.
 8. Antes de concluir, confira se todos os itens da Definicao de pronto foram realmente atendidos.
 9. E PROIBIDO usar o arquivo .done para "forcar" conclusao.
 10. Voce NAO DEVE apagar e recriar o .done em loop. Crie o .done apenas uma vez, no final, quando tudo estiver realmente concluido.
+
 
 [COMO USAR FERRAMENTAS]
 Emita UM JSON estrito em uma nova linha com o formato:

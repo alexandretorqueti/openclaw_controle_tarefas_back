@@ -193,7 +193,7 @@ class ContractVerificationService {
             contractFulfilled: false,
             executionNotes: 'Sem evidencia de inspecao.',
             feedbackToAgent:
-              '[VALIDACAO] Voce gerou saida final, mas ainda nao ha evidencia de inspecao/analise. Leia arquivos ou execute comandos de inspecao reais antes de concluir.'
+              '[VALIDAÇÃO DE ANÁLISE FALHOU] Você gerou um relatório final, mas os logs mostram que você NÃO INSPECIONOU nenhum arquivo do projeto. Não alucine o relatório. AÇÃO OBRIGATÓRIA: Use as ferramentas "exec" (com ls, grep) ou "read" para investigar os arquivos reais do projeto antes de reescrever o relatório e concluir.'
           };
         }
 
@@ -228,7 +228,7 @@ class ContractVerificationService {
             contractFulfilled: false,
             executionNotes: 'Nenhuma alteracao real detectada.',
             feedbackToAgent:
-              '[VALIDACAO] Relatorio e .done nao substituem implementacao. Nenhum arquivo real do projeto foi modificado ainda. Se voce alterou usando exec/sed, confirme que a alteracao foi feita no arquivo correto. Volte, localize os arquivos corretos e faca a alteracao necessaria antes de concluir.'
+              '[FALHA DE VALIDAÇÃO CRÍTICA] Você tentou finalizar a tarefa, mas NENHUM arquivo do código-fonte foi modificado no disco. A sua última tentativa de alteração falhou ou foi ignorada pelo sistema. PARE de tentar concluir. PASSO A PASSO OBRIGATÓRIO AGORA: 1. Use a ferramenta "read" para ler o arquivo que você precisa alterar. 2. Use a ferramenta "edit" (ou "write") para injetar o código correto. 3. SÓ crie o .done depois de ter uma confirmação de sucesso na edição.'
           };
         }
 
@@ -239,8 +239,7 @@ class ContractVerificationService {
               contractFulfilled: false,
               executionNotes: 'Pre-analise exige alteracao no frontend, mas nenhuma foi detectada.',
               feedbackToAgent:
-                `[VALIDACAO] A pre-analise desta tarefa exige alteracao REAL no frontend. Voce ainda nao modificou arquivos em ${project?.frontendPath || fullFrontendPath}. Revise o frontend, altere os formularios/telas necessarios, atualize o relatorio e recrie o .done.`
-            };
+              `[FALHA DE ARQUITETURA] A análise exige alteração REAL no Frontend, mas você só alterou arquivos de outras pastas. Você ainda não tocou em: ${project?.frontendPath || fullFrontendPath}. PROIBIDO concluir a tarefa agora. Vá até essa pasta, faça as alterações necessárias nas telas/componentes, e recrie o .done.`            };
           }
 
           if (layer === 'backend' && fullBackendPath && modifiedInBackend.length === 0) {
@@ -248,7 +247,7 @@ class ContractVerificationService {
               contractFulfilled: false,
               executionNotes: 'Pre-analise exige alteracao no backend, mas nenhuma foi detectada.',
               feedbackToAgent:
-                `[VALIDACAO] A pre-analise desta tarefa exige alteracao REAL no backend. Voce ainda nao modificou arquivos em ${project?.backendPath || fullBackendPath}. Revise o backend, implemente a alteracao, atualize o relatorio e recrie o .done.`
+                `[FALHA DE ARQUITETURA] A análise exige alteração REAL no Backend, mas você só alterou arquivos de outras pastas. Você ainda não tocou em: ${project?.backendPath || fullBackendPath}. PROIBIDO concluir a tarefa agora. Vá até essa pasta, faça as implementações necessárias, e recrie o .done.`
             };
           }
         }
