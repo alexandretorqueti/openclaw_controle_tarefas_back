@@ -10,9 +10,13 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "prisma:seed": "node prisma/seed.js",
+    "test": "NODE_ENV=test jest",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:setup": "NODE_ENV=test node scripts/test-seed.js",
+    "test:clean": "rm -f prisma/test.db",
     "build": "tsc",
-    "test": "jest --setupFilesAfterEnv ./test/setup.js --testTimeout=10000",
-    "test:coverage": "jest --setupFilesAfterEnv ./test/setup.js --coverage"
+    "test:coverage": "jest --setupFilesAfterEnv ./test/setup.js --testTimeout=10000",
+    "test:coverage": "NODE_ENV=test jest --coverage"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
