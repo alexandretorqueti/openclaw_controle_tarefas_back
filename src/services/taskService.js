@@ -965,6 +965,11 @@ class TaskService {
         assignedToId: user.id,
         isCompleted: false,
         statusId: { in: statusIds },
+        // Filtrar apenas tarefas de projetos ativos
+        project: {
+          ativo: true,
+          status: true  // status também deve ser true (projeto ativo)
+        },
         // A tarefa tem que ser: Normal OU (Recursiva E já passou do horário previsto)
         OR: [
           { isRecurring: false },
@@ -980,6 +985,14 @@ class TaskService {
       },
       include: {
         priority: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            ativo: true,
+            status: true
+          }
+        },
         dependencies: { include: { task: true } },
         comments: {
           include: {

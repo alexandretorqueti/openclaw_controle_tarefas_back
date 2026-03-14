@@ -322,13 +322,18 @@ class UserController {
       throw error;
     }
 
-    // 2. Find the next task
+    // 2. Find the next task - apenas de projetos ativos
     const nextTask = await prisma.task.findFirst({
       where: {
         assignedToId: user.id,
         isCompleted: false,
         status: {
           visibleToAi: true
+        },
+        // Filtrar apenas tarefas de projetos ativos
+        project: {
+          ativo: true,
+          status: true  // status também deve ser true (projeto ativo)
         }
       },
       include: {
