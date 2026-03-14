@@ -1,53 +1,30 @@
 const TaskService = require('../src/services/taskService');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const { prisma, setupTestDatabase } = require('./setup');
 
 describe('TaskService - Reference Validation', () => {
-  let testProject;
-  let testStatus;
-  let testPriority;
-  let testUser1;
-  let testUser2;
-  let testTask;
+  let testData;
+  let taskService;
 
   beforeAll(async () => {
-    // Clean up and create test data
-    await prisma.$transaction([
-      prisma.taskHistory.deleteMany(),
-      prisma.attachment.deleteMany(),
-      prisma.comment.deleteMany(),
-      prisma.dependency.deleteMany(),
-      prisma.task.deleteMany(),
-      prisma.project.deleteMany(),
-      prisma.status.deleteMany(),
-      prisma.priority.deleteMany(),
-      prisma.user.deleteMany()
-    ]);
+    taskService = new TaskService();
+  });
 
-    // Create test users
-    testUser1 = await prisma.user.create({
-      data: {
-        name: 'Test User 1',
-        email: 'test1@example.com',
-        avatarUrl: 'https://i.pravatar.cc/150?img=1',
-        role: 'Admin'
-      }
-    });
+  beforeEach(async () => {
+    // Configurar banco em memória e criar dados de teste
+    testData = await setupTestDatabase();
+  });
 
-    testUser2 = await prisma.user.create({
-      data: {
-        name: 'Test User 2',
-        email: 'test2@example.com',
-        avatarUrl: 'https://i.pravatar.cc/150?img=2',
-        role: 'Editor'
-      }
-    });
-
-    // Create test status
-    testStatus = await prisma.status.create({
-      data: {
-        name: 'Test Status',
-        colorCode: '#FF0000',
+  // Helper para acessar dados de teste
+  const getTestData = () => {
+    const { testProject, users, statuses, priorities } = testData;
+    return {
+      testProject,
+      testUser1: users.testUser1,
+      testUser2: users.testUser2,
+      testStatus: statuses.pendingStatus,
+      testPriority: priorities.mediumPriority
+    };
+  };
         isFinalState: false,
         order: 1
       }

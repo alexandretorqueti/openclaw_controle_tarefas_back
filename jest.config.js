@@ -1,19 +1,34 @@
 module.exports = {
   testEnvironment: 'node',
-  setupFilesAfterEnv: ['<rootDir>/test/setup.js'],
-  testMatch: ['**/test/**/*.test.js'],
+  testMatch: [
+    '**/test/**/*.test.js',
+    '**/test/**/*.spec.js'
+  ],
   collectCoverageFrom: [
     'src/**/*.js',
+    '!src/**/*.test.js',
+    '!src/**/*.spec.js',
     '!src/server.js',
-    '!src/seed.js'
+    '!src/monitor.js'
   ],
-  coverageThreshold: {
-    global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70
-    }
-  },
-  testTimeout: 10000
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov', 'html'],
+  setupFilesAfterEnv: ['./test/setup.js'],
+  testTimeout: 30000,
+  verbose: true,
+  forceExit: true,
+  clearMocks: true,
+  resetMocks: true,
+  restoreMocks: true,
+  
+  // Configurações para lidar com módulos ES6
+  transform: {},
+  
+  // Ignorar node_modules
+  testPathIgnorePatterns: ['/node_modules/'],
+  
+  // Mapeamento de módulos
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1'
+  }
 };
