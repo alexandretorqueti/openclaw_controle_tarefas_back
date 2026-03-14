@@ -232,3 +232,17 @@ model TaskExecutionLog {
   @@index([userId])
   @@map("task_execution_logs")
 }
+
+model AgentAvatar {
+  id        String   @id @default(cuid())
+  agentId   String   @unique
+  filename  String
+  mimeType  String
+  path      String   // Caminho relativo no sistema de arquivos
+  size      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("agent_avatars")
+  @@index([agentId])
+}

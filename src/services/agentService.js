@@ -176,9 +176,26 @@ exports.setAgentIdentity = async (agentId, identity) => {
       identityArgs.push('--emoji', identity.emoji);
     }
     if (identity.avatar !== undefined) {
-      identityArgs.push('--avatar', identity.avatar);
+      // Se avatar for string vazia ou null, não enviar (OpenClaw valida)
+      if (identity.avatar && identity.avatar.trim() !== '') {
+        identityArgs.push('--avatar', identity.avatar);
+      }
+      // Se for string vazia, não adiciona --avatar (mantém como está)
     }
-    await exports.execOpenClawCommand('agents', identityArgs);
+    
+    try {
+      await exports.execOpenClawCommand('agents', identityArgs);
+    } catch (error) {
+      // Se falhar por validação de avatar, tentar sem avatar
+      if (error.message.includes('identity.avatar must stay within')) {
+        console.warn(`⚠️ Avatar validation failed for agent ${agentId}, removing avatar from update`);
+        // Remover --avatar dos args e tentar novamente
+        const filteredArgs = identityArgs.filter(arg => arg !== '--avatar' && !(identity.avatar && arg === identity.avatar));
+        await exports.execOpenClawCommand('agents', filteredArgs);
+      } else {
+        throw error;
+      }
+    }
 
     // Atualiza modelo via config (agents.list[<index>].model)
     if (identity.model !== undefined) {

@@ -79,4 +79,8 @@ router.get('/:id/files/:filename', agentController.readAgentFile);
  */
 router.put('/:id/files/:filename', agentController.writeAgentFile);
 
+// Avatar removido de agentRoutes - agora em avatarRoutes.js
+
+// Avatar endpoints moved to avatarRoutes.js
+
 module.exports = router;

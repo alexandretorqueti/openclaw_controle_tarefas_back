@@ -10,6 +10,7 @@ const UserResolver = require('../utils/userResolver');
 class CommentController {
   // Create a new comment
   createComment = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    console.log('[DEBUG Backend createComment] Body completo:', req.body);
     try {
       // Use req.body directly
       const body = req.body || {};
@@ -47,6 +48,9 @@ class CommentController {
       }
       
       // Prepare data for validation
+      console.log('[DEBUG Backend] Body completo:', JSON.stringify(body));
+      console.log('[DEBUG Backend] taskId:', body.taskId, 'task_id:', body.task_id);
+      const taskId = body.taskId || body.task_id;
       const dataForValidation = {
         content: body.content,
         taskId: body.taskId,

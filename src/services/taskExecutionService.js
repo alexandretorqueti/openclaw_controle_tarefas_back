@@ -98,9 +98,9 @@ class TaskExecutionService {
     
     // Engine rules serão adicionadas APENAS para o desenvolvedor depois
     const engineRules = PromptFactory.buildEngineRulesPrompt(files);
-    const developerPrompt = `Agente Jarbas. TAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
+    const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
     
-    await fs.writeFile(files.promptFile, promptContent);
+    await fs.writeFile(files.promptFile, architectPrompt);
     await fs.writeFile(files.relatorioFile, '');
     await fs.writeFile(files.terminalLogFile, '');
 
