@@ -11,6 +11,8 @@ class TaskAnalysisService {
     const prompt = promptFactory.buildTaskAnalysisPrompt(task, project);
 
     // Chama a IA local
+    const modelo = project.modelo || 'llama3.1:latest';
+    llmService.model = modelo; // Atualiza o modelo do serviço antes de chamar a análise
     let analysis = await llmService.analyze(prompt);
     log(`🔍 Análise da IA para a tarefa "${task.title}": ${analysis}`);
     // Fallback caso a IA falhe

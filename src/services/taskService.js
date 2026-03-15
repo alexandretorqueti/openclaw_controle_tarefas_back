@@ -25,6 +25,8 @@ class TaskService {
 
   // Função principal de commit
   async checkAndCommit(projectPath, taskId, taskTitle) {
+    return false;
+
     try {
       // Verificar se path existe e tem .git
       if (!fs.existsSync(projectPath) || !fs.existsSync(path.join(projectPath, '.git'))) {

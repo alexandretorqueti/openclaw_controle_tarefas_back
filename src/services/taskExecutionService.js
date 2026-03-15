@@ -539,6 +539,7 @@ class TaskExecutionService {
    * Passo 4: Finaliza o log no banco e consolida o resultado.
    */
   static async stepTeardown(ctx) {
+    console.log(`🔧 [DEBUG] stepTeardown chamado para tarefa ${ctx.task?.id}`);
     const { executionLog, files, task, architectPlan } = ctx;
     let { contractResult } = ctx; // Mudar para let para permitir reatribuição
     
@@ -566,12 +567,17 @@ class TaskExecutionService {
       // 1. Prompt do arquiteto (arquitetosPromptContent)
       // O prompt do arquiteto é gerado dinamicamente, não salvo em arquivo
       // Vamos usar o arquivo prompt-${taskId}.txt como referência
-      if (files && files.promptFile && await fileExists(files.promptFile)) {
-        try {
-          const promptContent = await fs.readFile(files.promptFile, 'utf8');
-          updateData.arquitetosPromptContent = promptContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler prompt file: ${error.message}`);
+      if (files && files.promptFile) {
+        const exists = await fileExists(files.promptFile);
+        console.log(`📁 [DEBUG] promptFile ${files.promptFile} existe? ${exists}`);
+        if (exists) {
+          try {
+            const promptContent = await fs.readFile(files.promptFile, 'utf8');
+            updateData.arquitetosPromptContent = promptContent;
+            console.log(`📄 [DEBUG] promptFile lido: ${promptContent.length} caracteres`);
+          } catch (error) {
+            console.error(`❌ Erro ao ler prompt file: ${error.message}`);
+          }
         }
       }
       
@@ -625,7 +631,10 @@ class TaskExecutionService {
           where: { id: task.id },
           data: updateData
         });
-        console.log(`✅ Conteúdos dos arquivos salvos para tarefa ${task.id}: ${Object.keys(updateData).join(', ')}`);
+        console.log(`✅ [DEBUG] Conteúdos dos arquivos salvos para tarefa ${task.id}: ${Object.keys(updateData).join(', ')}`);
+        console.log(`✅ [DEBUG] Tamanhos: ${Object.entries(updateData).map(([k, v]) => `${k}:${v?.length || 0} chars`).join(', ')}`);
+      } else if (task && task.id) {
+        console.log(`⚠️ [DEBUG] Nenhum conteúdo para salvar para tarefa ${task.id}`);
       }
       
     } catch (error) {
