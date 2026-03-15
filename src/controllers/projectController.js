@@ -10,6 +10,10 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
+    // DEBUG: Log para verificar campos recebidos
+    console.log('🔍 CREATE /api/projects - Campos recebidos:', JSON.stringify(body, null, 2));
+    console.log('🔍 CREATE /api/projects - programadorContratado recebido:', body.programadorContratado);
+    
     // Determine createdById: prefer authenticated user, otherwise use provided ID
     let createdById = body.createdById;
     
@@ -89,6 +93,10 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
       throw error;
     }
 
+    // DEBUG: Log para verificar campos retornados
+    console.log('🔍 GET /api/projects/:id - Campos retornados:', Object.keys(project));
+    console.log('🔍 GET /api/projects/:id - programadorContratado retornado:', project.programadorContratado);
+
     res.json({
       project,
       correlationId: req.correlationId
@@ -101,6 +109,10 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
     const { id } = req.params;
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
+    
+    // DEBUG: Log para verificar campos recebidos
+    console.log('🔍 UPDATE /api/projects/:id - Campos recebidos:', JSON.stringify(body, null, 2));
+    console.log('🔍 UPDATE /api/projects/:id - programadorContratado recebido:', body.programadorContratado);
     
     const validation = validateProjectUpdate(body);
     
