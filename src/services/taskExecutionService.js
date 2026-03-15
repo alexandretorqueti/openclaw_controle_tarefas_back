@@ -67,7 +67,7 @@ class TaskExecutionService {
     const { TASKS_DIR } = config;
 
     const project = task.projectId ? await prisma.project.findUnique({ where: { id: task.projectId } }) : null;
-    const analysisPlan = await TaskAnalysisService.analyzeTaskScope(task, project);
+    const analysisPlan = await TaskAnalysisService.analyzeTaskScope(task, project, path.join(TASKS_DIR, `terminal-pre-analise-${taskId}.log`));
     
     // Prepara os caminhos dos arquivos
     const taskId = task.id;
@@ -583,16 +583,21 @@ class TaskExecutionService {
       
       // 2. Análise do arquiteto (arquitetosAnalysisContent)
       // Pode vir do arquivo plano-arquiteto-${taskId}.txt ou da variável architectPlan
+      console.log(`📝 [DEBUG] Verificando análise do arquiteto: arquivo=${files?.architectPlanFile}, existe=${files?.architectPlanFile ? await fileExists(files.architectPlanFile).catch(() => false) : false}, architectPlan=${architectPlan?.length || 0} chars`);
       if (files && files.architectPlanFile && await fileExists(files.architectPlanFile)) {
         try {
           const analysisContent = await fs.readFile(files.architectPlanFile, 'utf8');
           updateData.arquitetosAnalysisContent = analysisContent;
+          console.log(`📄 [DEBUG] Análise lida do arquivo: ${analysisContent.length} caracteres`);
         } catch (error) {
           console.error(`❌ Erro ao ler arquivo de análise do arquiteto: ${error.message}`);
         }
       } else if (architectPlan && architectPlan.trim().length > 0) {
         // Usar a variável architectPlan do contexto se o arquivo não existir
         updateData.arquitetosAnalysisContent = architectPlan;
+        console.log(`📄 [DEBUG] Análise lida do contexto: ${architectPlan.length} caracteres`);
+      } else {
+        console.log(`⚠️ [DEBUG] Nenhuma análise do arquiteto encontrada`);
       }
       
       // 3. Terminal do arquiteto (arquitetosTerminalContent)

@@ -87,7 +87,7 @@ class ContractVerificationService {
         initialSnapshot = null // <-- Recebe o snapshot injetado pelo orquestrador
       } = options;
 
-      const resolvedAnalysisPlan = analysisPlan || TaskAnalysisService.analyzeTaskScope(task, project);
+      const resolvedAnalysisPlan = analysisPlan || TaskAnalysisService.analyzeTaskScope(task, project, files);
 
       // === A NOVA FONTE DA VERDADE (FILE SYSTEM) ===
       let realModifiedFiles = [];

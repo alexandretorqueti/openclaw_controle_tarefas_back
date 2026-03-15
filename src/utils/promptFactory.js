@@ -4,7 +4,7 @@ class PromptFactory {
   /**
    * Gera o prompt para a análise inicial de escopo da tarefa.
    */
-  static buildTaskAnalysisPrompt(task, project) {
+  static buildTaskAnalysisPrompt(task, project, preAnalysisFile = null) {
     return `
       Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
       
@@ -24,7 +24,7 @@ class PromptFactory {
       4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
       5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
       6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
-
+      7. Escreva no arquivo ${preAnalysisFile} o motivo que você classificou a tarefa daquela forma.
       Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
       {
         "taskType": "development" | "analysis" | "automation",
