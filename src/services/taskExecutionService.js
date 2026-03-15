@@ -67,10 +67,11 @@ class TaskExecutionService {
     const { TASKS_DIR } = config;
 
     const project = task.projectId ? await prisma.project.findUnique({ where: { id: task.projectId } }) : null;
+    const taskId = task.id;
     const analysisPlan = await TaskAnalysisService.analyzeTaskScope(task, project, path.join(TASKS_DIR, `terminal-pre-analise-${taskId}.log`));
     
     // Prepara os caminhos dos arquivos
-    const taskId = task.id;
+   
     const files = {
       promptFile: path.join(TASKS_DIR, `prompt-${taskId}.txt`),
       relatorioFile: path.join(TASKS_DIR, `relatorio-${taskId}.txt`),

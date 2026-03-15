@@ -6,13 +6,13 @@ const { extractJsonObjects } = require('../utils/jsonUtils'); // Usando seu util
 class LlmService {
   constructor(model = 'phi4:latest', endpoint = 'http://localhost:11434/api/generate') {
     this.endpoint = endpoint; // Ajuste para o seu provedor
-    this.model = model; 
+    this.model = model;
   }
-
+  // Retiro o 'ollama/' do model
   async analyze(prompt) {
     try {
       const response = await axios.post(this.endpoint, {
-        model: this.model,
+        model: this.model.replace(/^ollama\//, ''),
         prompt: prompt,
         stream: false,
         format: "json"
