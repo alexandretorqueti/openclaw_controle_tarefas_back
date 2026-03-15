@@ -392,7 +392,7 @@ class TaskExecutionService {
     // Se chegou aqui, precisa do desenvolvedor
     await log(`🔄 [Desenvolvedor] Iniciando loop de execução...`);
 
-    while (!contractResult.contractFulfilled && turnos < 10 && turnosSemProgresso < 3) {
+    while (!contractResult.contractFulfilled && turnos < 15) {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
@@ -460,17 +460,22 @@ class TaskExecutionService {
           actualDonePath = rogueDoneFile; // Anota o nome real para poder apagar depois
       }
 
-      if (res.toolFeedback) {
-          // 1. Prioridade Máxima: A IA usou uma ferramenta. Devolver o resultado dela!
+      if (doneExists && contractResult.feedbackToAgent) {
+          // 1. NOVA PRIORIDADE MÁXIMA: Ele tentou encerrar, mas fez besteira!
+          await fs.unlink(actualDonePath).catch(()=>{}); 
+          
+          // Se a IA usou uma ferramenta para criar o .done, juntamos o sucesso da ferramenta com a bronca!
+          currentInput = res.toolFeedback 
+            ? `${res.toolFeedback}\n\n[SISTEMA - ATENÇÃO CRÍTICA]\n${contractResult.feedbackToAgent}`
+            : contractResult.feedbackToAgent;
+            
+          await fs.writeFile(files.promptFile, currentInput);
+          await log(`📝 [Desenvolvedor] Feedback de validação ENVIADO IMEDIATAMENTE: ${contractResult.feedbackToAgent.substring(0, 100)}...`);
+          
+      } else if (res.toolFeedback) {
+          // 2. Usou ferramenta normalmente e não tentou encerrar. Segue o jogo!
           currentInput = res.toolFeedback;
           await log(`🛠️ [Desenvolvedor] Retornando resultado da ferramenta (${currentInput.length} chars)`);
-          
-      } else if (doneExists && contractResult.feedbackToAgent) {
-          // 2. A IA tentou finalizar (.done criado), mas fez besteira.
-          await fs.unlink(actualDonePath).catch(()=>{}); // <-- CRÍTICO: Apaga o arquivo com o nome inventado!
-          currentInput = contractResult.feedbackToAgent;
-          await fs.writeFile(files.promptFile, currentInput);
-          await log(`📝 [Desenvolvedor] Feedback de validação: ${currentInput.substring(0, 100)}...`);
           
       } else {
           // 3. ANÁLISE CASO A CASO (A IA não usou ferramenta e não criou .done)
