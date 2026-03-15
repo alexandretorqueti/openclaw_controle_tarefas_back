@@ -58,6 +58,7 @@ model Project {
   repositoryUrl    String?
   pastaBase        String?
   agent            String?
+  programadorContratado String?
   frontendBuildCmd String?
   backendBuildCmd  String?
   modeloAuxiliar   String?
