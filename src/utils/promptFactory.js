@@ -4,67 +4,67 @@ class PromptFactory {
   /**
    * Gera o prompt para a análise inicial de escopo da tarefa.
    */
-/**
-     * Gera o prompt para a análise inicial de escopo da tarefa.
-     */
-   static buildTaskAnalysisPrompt(task, project) {
-      return `
-         Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
-         
-         PROJETO:
-         - Base: ${project?.pastaBase}
-         - Frontend Path: ${project?.frontendPath || 'N/A'}
-         - Backend Path: ${project?.backendPath || 'N/A'}
-
-         TAREFA:
-         - Título: ${task.title}
-         - Descrição: ${task.description}
-
-         REGRAS:
-         1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
-         2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
-         3. Se pede apenas para explicar/documentar/analisar sem mudar arquivos, é 'analysis'.
-         4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
-         5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
-         6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
-
-         Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
-         {
-            "taskType": "development" | "analysis" | "automation",
-            "requiresReport": true | false,
-            "expectedLayers": ["frontend"],
-            "requiredModifiedLayers": ["frontend"],
-            "mandatoryChecks": ["Verificar se os componentes foram criados", "Garantir a fidelidade do layout"],
-            "risks": ["Risco de quebrar layouts existentes"]
-         }
-      `.trim();
-   }
-
-  static buildArchitectPrompt(task, project, fileList, planFilePath) {
-    const truncatedFiles = fileList.slice(0, 500).join('\n');
-
+  static buildTaskAnalysisPrompt(task, project) {
     return `
-      Você é o Arquiteto de Software Planejador.
-      Seu ÚNICO OBJETIVO é criar um documento de texto contendo o plano de ação e encerrar o seu turno. Você passará o bastão para o Desenvolvedor.
+      Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
       
       PROJETO:
-      Frontend: ${project.pastaBase}${project?.frontendPath || 'N/A'}
-      Backend: ${project.pastaBase}${project?.backendPath || 'N/A'}
+      - Base: ${project?.pastaBase}
+      - Frontend Path: ${project?.frontendPath || 'N/A'}
+      - Backend Path: ${project?.backendPath || 'N/A'}
+
+      TAREFA:
+      - Título: ${task.title}
+      - Descrição: ${task.description}
+
+      REGRAS:
+      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
+      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
+      3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
+      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
+      5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
+      6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
+
+      Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
+      {
+        "taskType": "development" | "analysis" | "automation",
+        "requiresReport": true | false,
+        "expectedLayers": ["frontend"],
+        "requiredModifiedLayers": [],
+        "mandatoryChecks": ["Verificar configurações", "Gerar relatório de descoberta"],
+        "risks": ["Risco de não encontrar o arquivo de configuração"]
+      }
+    `.trim();
+  }
+
+  static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '') {
+        const path = require('path');
+        const truncatedFiles = fileList.slice(0, 500).join('\n');
+        
+        const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
+        const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
+
+        return `
+      Você é o Arquiteto de Software Planejador.
+      Seu ÚNICO OBJETIVO é criar um documento de texto contendo o plano de ação e encerrar o seu turno. Você passará o bastão para o Desenvolvedor.
+  
+      PROJETO:
+      Frontend: ${frontDir}
+      Backend: ${backDir}
 
       ESTRUTURA DE ARQUIVOS (Resumo):
       ${truncatedFiles}
 
       TAREFA A SER ANALISADA:
       Título: ${task?.title}
-      Descrição: ${task?.description}
+      Descrição: ${task?.description}${commentsSection}
 
       SEU FLUXO DE TRABALHO OBRIGATÓRIO (Siga na ordem):
       1. Apenas analise a tarefa e decida quais arquivos o desenvolvedor precisará criar ou alterar.
       2. Formule um passo a passo técnico (ex: "1. Vá no arquivo X e adicione Y").
       3. Use a sua ferramenta de escrita (write, bash ou exec) para salvar todo esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
-      4. Não faça nenhuma alteração no código dos projetos, nem crie o arquivo .done, você é o analista e vai passar o bastão para o desenvolvedor. Seu trabalho é apenas planejar e documentar o plano de ação.
+      4. PROIBIDO criar qualquer outro arquivo além do especificado no passo 3. NÃO crie arquivos de status, de conclusão ou marcadores soltos. Seu trabalho é estritamente de planejamento.
       5. Assim que a ferramenta confirmar que o arquivo foi salvo com sucesso, PARE. Não tente editar os arquivos do projeto. Apenas responda com a frase: "Plano salvo. Passando o bastão para o Desenvolvedor."
-
       Inicie agora seguindo o fluxo acima.
     `.trim();
   }

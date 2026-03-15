@@ -17,11 +17,39 @@ class ContractVerificationService {
    * @param {Object} options - Opcoes de verificacao
    * @returns {Promise<Object>}
    */
-  static async verifyContract(doneFile, relatorioFile, terminalLogFile, options = {}) {
+ static async verifyContract(doneFile, relatorioFile, terminalLogFile, options = {}) {
     try {
-      const doneExists = await fs.access(doneFile).then(() => true).catch(() => false);
-      const relatorioExists = await fs.access(relatorioFile).then(() => true).catch(() => false);
+      let doneExists = await fs.access(doneFile).then(() => true).catch(() => false);
+      let actualDonePath = doneFile; // Guarda o caminho real caso a IA tenha inventado um nome
 
+      // [SISTEMA DE TOLERÂNCIA] Se não achou o arquivo exato, procura QUALQUER .done
+      if (!doneExists) {
+        const findDynamicDone = async (dir) => {
+            if (!dir) return null;
+            try {
+                const files = await fs.readdir(dir);
+                const found = files.find(f => f.endsWith('.done'));
+                return found ? path.join(dir, found) : null;
+            } catch (e) { return null; }
+        };
+
+        // Procura na pasta de tarefas pendentes e na raiz do projeto
+        const tasksDirDone = await findDynamicDone(path.dirname(doneFile));
+        const projectDirDone = await findDynamicDone(options.project?.pastaBase);
+
+        const rogueDoneFile = tasksDirDone || projectDirDone;
+        
+        if (rogueDoneFile) {
+            doneExists = true;
+            actualDonePath = rogueDoneFile;
+            console.log(`\n🕵️ [SISTEMA] Arquivo .done com nome customizado detectado e aceito: ${path.basename(rogueDoneFile)}\n`);
+        }
+      }
+
+      const relatorioExists = await fs.access(relatorioFile).then(() => true).catch(() => false);
+      if (options.files) {
+          options.files.doneFile = actualDonePath;
+      }
       let executionNotes = '';
       let relatorioValido = false;
 
@@ -326,7 +354,8 @@ class ContractVerificationService {
         executionNotes: e.message
       };
     }
-  }
+ 
+ }
 }
 
 module.exports = ContractVerificationService;

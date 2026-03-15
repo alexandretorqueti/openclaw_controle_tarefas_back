@@ -38,53 +38,27 @@ class TaskFileService {
       // Listar todos os arquivos no diretorio de origem
       const allFiles = await fs.readdir(sourceDir);
       
-      // Filtrar arquivos que pertencem a esta tarefa (começam com prefixos relacionados ao taskId)
-      // e excluir monitor-state.json
-      const taskFiles = allFiles.filter(file => {
-        // Incluir arquivos com o taskId no nome
-        if (file.includes(taskId)) {
-          return true;
-        }
-        // Incluir arquivos com prefixos conhecidos que usam taskId
-        if (file.startsWith(`prompt-${taskId}`) ||
-            file.startsWith(`relatorio-${taskId}`) ||
-            file.startsWith(`terminal-${taskId}`) ||
-            file.startsWith(`done-${taskId}`) ||
-            file.startsWith(`plano-arquiteto-${taskId}`) ||
-            file.startsWith(`relatorio-arquiteto-${taskId}`) ||
-            file.includes(`-${taskId}.`)) {
-          return true;
-        }
-        return false;
-      }).filter(file => file !== 'monitor-state.json'); // Excluir monitor-state.json
+      // Move todos os arquivos (exceto monitor-state.json)
+      const taskFiles = allFiles.filter(file => file !== 'monitor-state.json');
 
       console.log(`DEBUG: Movendo ${taskFiles.length} arquivos para ${destinationDir}:`, taskFiles);
       
       for (const file of taskFiles) {
         const src = path.join(sourceDir, file);
         const dest = path.join(destinationDir, file);
-        if (await fileExists(src)) {
-          await safeMoveFile(src, dest);
-          console.log(`DEBUG: Movido ${file} para ${destinationDir}`);
+        // Verifica se é arquivo (não diretório) e existe
+        try {
+          const stat = await fs.stat(src);
+          if (stat.isFile()) {
+            await safeMoveFile(src, dest);
+            console.log(`DEBUG: Movido ${file} para ${destinationDir}`);
+          }
+        } catch (e) {
+          // Arquivo não existe mais, ignora
         }
       }
     } catch (error) {
       console.error(`Erro ao mover arquivos da tarefa ${taskId}:`, error);
-      // Fallback para o comportamento original
-      const files = [
-        `prompt-${taskId}.txt`,
-        `relatorio-${taskId}.txt`,
-        `terminal-${taskId}.log`,
-        `done-${taskId}.done`
-      ];
-      
-      for (const file of files) {
-        const src = path.join(sourceDir, file);
-        const dest = path.join(destinationDir, file);
-        if (await fileExists(src)) {
-          await safeMoveFile(src, dest);
-        }
-      }
     }
   }
 
@@ -180,8 +154,9 @@ Ferramentas disponiveis:
 - {"name": "edit", "arguments": {"file_path": "/caminho", "oldText": "exato_velho", "newText": "novo"}}
 
 QUANDO TERMINAR A TAREFA:
-1. Use "write" no arquivo: ${paths.relatorioFile}
-2. Use "exec" com 'touch ${paths.doneFile}'`;
+1. Use "write" no arquivo EXATO: ${paths.relatorioFile}
+2. Use "exec" com o comando EXATO: touch ${paths.doneFile}
+[ALERTA CRÍTICO]: É ESTRITAMENTE PROIBIDO inventar, alterar ou customizar os nomes dos arquivos acima. Se você criar algo como "done-finalizado.done", o sistema NÃO vai reconhecer e você falhará a tarefa. Copie e cole os caminhos exatos informados.`;
 
     return `${personaPrompt}
 OBJETIVO: ${task.title}

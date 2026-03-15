@@ -111,8 +111,13 @@ model Task {
   statusId        String
   priorityId      String
   createdById     String
-  assignedToId    String
-  attachments     Attachment[]
+  assignedToId          String
+  arquitetosPromptContent String?
+  arquitetosAnalysisContent String?
+  arquitetosTerminalContent String?
+  programadorTerminalContent String?
+  programadorReportContent String?
+  attachments             Attachment[]
   comments        Comment[]
   dependencies    Dependency[]       @relation("TaskDependencies")
   dependents      Dependency[]       @relation("TaskDependents")

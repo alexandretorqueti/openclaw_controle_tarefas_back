@@ -107,7 +107,7 @@ class TaskExecutionService {
     const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
     const executionLog = await TaskExecutionService.createExecutionLog(task, userId, task.agent);
 
-    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: architectPrompt, developerPrompt };
+    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: architectPrompt, developerPrompt, commentsSection };
   }
 
   /**
@@ -121,8 +121,7 @@ class TaskExecutionService {
 
     const { task, project, files, initialSnapshot, config } = ctx;
     const fileList = Array.from(initialSnapshot.keys());
-    
-    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile);
+    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '');
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
 
     // Roda o Arquiteto com timeout de 10 minutos (600000ms)
@@ -438,8 +437,27 @@ class TaskExecutionService {
         break; // Passou no contrato e no QA
       }
 
-      // Trata feedback do turno
-      const doneExists = await fs.access(files.doneFile).then(() => true).catch(() => false);
+// Trata feedback do turno
+      let doneExists = false;
+      let actualDonePath = files.doneFile;
+
+      // Função para rastrear qualquer arquivo .done na pasta
+      const findDynamicDone = async (dir) => {
+          if (!dir) return null;
+          try {
+              const dirFiles = await fs.readdir(dir);
+              const found = dirFiles.find(f => f.endsWith('.done'));
+              return found ? path.join(dir, found) : null;
+          } catch(e) { return null; }
+      };
+
+      // Procura tanto na pasta de tarefas quanto na raiz do projeto
+      const rogueDoneFile = (await findDynamicDone(config.TASKS_DIR)) || (await findDynamicDone(project?.pastaBase));
+
+      if (rogueDoneFile) {
+          doneExists = true;
+          actualDonePath = rogueDoneFile; // Anota o nome real para poder apagar depois
+      }
 
       if (res.toolFeedback) {
           // 1. Prioridade Máxima: A IA usou uma ferramenta. Devolver o resultado dela!
@@ -448,28 +466,51 @@ class TaskExecutionService {
           
       } else if (doneExists && contractResult.feedbackToAgent) {
           // 2. A IA tentou finalizar (.done criado), mas fez besteira.
-          await fs.unlink(files.doneFile).catch(()=>{});
+          await fs.unlink(actualDonePath).catch(()=>{}); // <-- CRÍTICO: Apaga o arquivo com o nome inventado!
           currentInput = contractResult.feedbackToAgent;
           await fs.writeFile(files.promptFile, currentInput);
           await log(`📝 [Desenvolvedor] Feedback de validação: ${currentInput.substring(0, 100)}...`);
           
       } else {
-          // 3. A IA não usou ferramenta explícita e não finalizou.
-          // Vamos ver se ela escreveu no relatório sorrateiramente.
-          let fileContent = null;
+          // 3. ANÁLISE CASO A CASO (A IA não usou ferramenta e não criou .done)
+          const raw = res.rawOutput || '';
+          let truncatedInfo = null;
+          
+          // Trazemos o seu detector de anomalias para inspecionar a string
           try {
-              if (await fileExists(files.relatorioFile)) {
-                  fileContent = await fs.readFile(files.relatorioFile, 'utf8');
-              }
-          } catch (error) {}
+              const ToolCallService = require('./toolCallService');
+              truncatedInfo = ToolCallService.detectTruncatedToolCall(raw);
+          } catch (e) { /* Proteção contra erro de importação dinâmica */ }
 
-          if (fileContent && fileContent.trim().length > 0 && !(res.rawOutput || '').includes(fileContent)) {
-              currentInput = `[SISTEMA] Conteúdo atual do relatório detectado:\n${fileContent.substring(0, 500)}...\n\nContinue a execução usando as ferramentas JSON.`;
+          if (truncatedInfo && truncatedInfo.detected) {
+              // CASO 3A: JSON quebrado ou payload truncado
+              let reasonMsg = "O JSON está inválido ou mal formatado.";
+              
+              if (truncatedInfo.reason === 'string_json_nao_foi_fechada' || truncatedInfo.reason === 'objeto_json_incompleto') {
+                  reasonMsg = "O bloco JSON foi cortado no meio (limite de caracteres) ou faltam aspas/chaves finais.";
+              } else if (truncatedInfo.reason.includes('grande_demais') || truncatedInfo.reason.includes('truncado')) {
+                  reasonMsg = "Você enviou um payload muito grande e ele foi cortado pelo limite do terminal. Pare de usar 'write' para arquivos inteiros e use 'edit' focado no trecho exato.";
+              }
+              
+              currentInput = `[ERRO DE SINTAXE DE FERRAMENTA] Você tentou chamar a ferramenta '${truncatedInfo.likelyTool}', mas falhou. Motivo: ${reasonMsg}\nPor favor, corrija e envie APENAS o JSON válido.`;
+              
+          } else if (/(concluíd[oa]|pronto|finalizad[oa]|terminei|aqui está|resolvido|feito)/i.test(raw) || raw.trim().length < 150) {
+              // CASO 3B: A IA está conversando como se tivesse terminado, mas não gerou o .done.
+              // Jogamos na cara dela a pendência exata do contrato!
+              const contractFeedback = contractResult.feedbackToAgent || "Use a ferramenta 'exec' com 'touch .done' para finalizar.";
+              
+              currentInput = `[SISTEMA] Você respondeu com texto conversacional em vez de usar uma ferramenta.\n` +
+                             `Se você acha que já terminou a implementação, o sistema detectou as seguintes pendências para esta tarefa:\n\n` +
+                             `${contractFeedback}\n\n` +
+                             `Por favor, execute a ação pendente acima utilizando o formato JSON.`;
           } else {
-              // AQUI MATAMOS O BUG DO PROMPT REPETIDO!
-              currentInput = "[SISTEMA] ATENÇÃO: Você respondeu apenas com texto ou seu JSON de ferramenta estava inválido/incompleto. O sistema OBRIGA que você utilize um bloco JSON válido chamando uma ferramenta (exec, read, write, edit) para progredir na tarefa. Se você já terminou todas as alterações reais, use o 'exec' para criar o arquivo .done.";
+              // CASO 3C: IA está apenas pensando alto ou narrando o plano sem agir
+              currentInput = `[SISTEMA] Você está apenas narrando ou planejando em texto puro. Você deve AGIR.\n` +
+                             `Para interagir com o sistema, é OBRIGATÓRIO emitir um bloco JSON válido contendo uma das ferramentas (read, write, edit, exec).\n` +
+                             `Se precisar alterar código longo, prefira a ferramenta 'edit' em pedaços menores.`;
           }
-          await log(`⚠️ [Desenvolvedor] IA inativa ou JSON quebrado. Enviando nudge corretivo.`);
+          
+          await log(`⚠️ [Desenvolvedor] Feedback corretivo enviado (Caso a Caso).`);
       }
       
       const prog = EvidenceService.computeTurnProgress(res.toolResult || {}, contractResult, project?.pastaBase || TASKS_DIR);
@@ -498,7 +539,7 @@ class TaskExecutionService {
    * Passo 4: Finaliza o log no banco e consolida o resultado.
    */
   static async stepTeardown(ctx) {
-    const { executionLog } = ctx;
+    const { executionLog, files, task, architectPlan } = ctx;
     let { contractResult } = ctx; // Mudar para let para permitir reatribuição
     
     // Validação de segurança
@@ -514,6 +555,82 @@ class TaskExecutionService {
 
     if (executionLog) {
       await TaskExecutionService.finishExecutionLog(executionLog.id, finalResult);
+    }
+
+    // ==========================================
+    // SALVAR CONTEÚDOS DOS ARQUIVOS GERADOS NO BANCO DE DADOS
+    // ==========================================
+    try {
+      const updateData = {};
+      
+      // 1. Prompt do arquiteto (arquitetosPromptContent)
+      // O prompt do arquiteto é gerado dinamicamente, não salvo em arquivo
+      // Vamos usar o arquivo prompt-${taskId}.txt como referência
+      if (files && files.promptFile && await fileExists(files.promptFile)) {
+        try {
+          const promptContent = await fs.readFile(files.promptFile, 'utf8');
+          updateData.arquitetosPromptContent = promptContent;
+        } catch (error) {
+          console.error(`❌ Erro ao ler prompt file: ${error.message}`);
+        }
+      }
+      
+      // 2. Análise do arquiteto (arquitetosAnalysisContent)
+      // Pode vir do arquivo plano-arquiteto-${taskId}.txt ou da variável architectPlan
+      if (files && files.architectPlanFile && await fileExists(files.architectPlanFile)) {
+        try {
+          const analysisContent = await fs.readFile(files.architectPlanFile, 'utf8');
+          updateData.arquitetosAnalysisContent = analysisContent;
+        } catch (error) {
+          console.error(`❌ Erro ao ler arquivo de análise do arquiteto: ${error.message}`);
+        }
+      } else if (architectPlan && architectPlan.trim().length > 0) {
+        // Usar a variável architectPlan do contexto se o arquivo não existir
+        updateData.arquitetosAnalysisContent = architectPlan;
+      }
+      
+      // 3. Terminal do arquiteto (arquitetosTerminalContent)
+      if (files && files.architectLogFile && await fileExists(files.architectLogFile)) {
+        try {
+          const terminalContent = await fs.readFile(files.architectLogFile, 'utf8');
+          updateData.arquitetosTerminalContent = terminalContent;
+        } catch (error) {
+          console.error(`❌ Erro ao ler terminal do arquiteto: ${error.message}`);
+        }
+      }
+      
+      // 4. Terminal do programador (programadorTerminalContent)
+      if (files && files.terminalLogFile && await fileExists(files.terminalLogFile)) {
+        try {
+          const terminalContent = await fs.readFile(files.terminalLogFile, 'utf8');
+          updateData.programadorTerminalContent = terminalContent;
+        } catch (error) {
+          console.error(`❌ Erro ao ler terminal do programador: ${error.message}`);
+        }
+      }
+      
+      // 5. Relatório do programador (programadorReportContent)
+      if (files && files.relatorioFile && await fileExists(files.relatorioFile)) {
+        try {
+          const reportContent = await fs.readFile(files.relatorioFile, 'utf8');
+          updateData.programadorReportContent = reportContent;
+        } catch (error) {
+          console.error(`❌ Erro ao ler relatório do programador: ${error.message}`);
+        }
+      }
+      
+      // Atualizar a tarefa no banco de dados se houver dados para salvar
+      if (Object.keys(updateData).length > 0 && task && task.id) {
+        await prisma.task.update({
+          where: { id: task.id },
+          data: updateData
+        });
+        console.log(`✅ Conteúdos dos arquivos salvos para tarefa ${task.id}: ${Object.keys(updateData).join(', ')}`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ Erro ao salvar conteúdos dos arquivos: ${error.message}`);
+      // Não falhar a execução por causa deste erro
     }
 
     return { ...ctx, finalResult };

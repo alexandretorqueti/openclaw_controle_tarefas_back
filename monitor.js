@@ -248,7 +248,12 @@ async function main() {
 
 // Exporta para testes
 if (require.main === module) {
-  main().catch(console.error);
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
 }
 
 module.exports = { main };

@@ -98,6 +98,10 @@ exports._fetchAgentsDirectly = async () => {
         finalEmoji = ''; // Limpar emoji pois é uma imagem
       }
       
+      // Bindings: tenta pegar do campo bindings ou calcula baseado em regras
+      const bindingsCount = agent.bindings ? Array.isArray(agent.bindings) ? agent.bindings.length : 0 : 0;
+      const bindingsList = agent.bindings && Array.isArray(agent.bindings) ? agent.bindings : [];
+      
       return {
         id: agent.id || '',
         name: cleanString(agent.name || agent.identityName || ''),
@@ -107,7 +111,8 @@ exports._fetchAgentsDirectly = async () => {
           avatar: finalAvatar,
           model: cleanString(agent.model || '') // Movendo model para dentro de identity
         },
-        bindings: agent.bindings || [],
+        bindings: bindingsCount,  // Número total de bindings
+        bindingsList: bindingsList,  // Lista de bindings ativos
         workspace: agent.workspace || '',
         createdAt: agent.createdAt || new Date().toISOString(),
         updatedAt: agent.updatedAt || new Date().toISOString()
