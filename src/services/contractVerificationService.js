@@ -65,7 +65,7 @@ class ContractVerificationService {
 
         const tasksDirRelatorio = await findDynamicRelatorio(path.dirname(relatorioFile));
         const projectDirRelatorio = await findDynamicRelatorio(options.project?.pastaBase);
-
+        
         const rogueRelatorioFile = tasksDirRelatorio || projectDirRelatorio;
         
         if (rogueRelatorioFile) {

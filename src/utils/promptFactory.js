@@ -59,6 +59,11 @@ class PromptFactory {
       Título: ${task?.title}
       Descrição: ${task?.description}${commentsSection}
 
+      REGRAS CRÍTICAS DE ENTREGA:
+      1. Você NÃO PODE simplesmente dizer "Eu criei o plano" ou "O plano está salvo". 
+      2. Você é OBRIGADO a usar a ferramenta 'write' para criar fisicamente o arquivo TXT contendo o seu plano detalhado.
+      3. Se você não puder usar a ferramenta 'write', você DEVE imprimir o plano técnico COMPLETO aqui no terminal (arquitetura, passos, arquivos afetados), para que o sistema possa copiá-lo. Não resuma!
+
       SEU FLUXO DE TRABALHO OBRIGATÓRIO (Siga na ordem):
       1. Apenas analise a tarefa e decida quais arquivos o desenvolvedor precisará criar ou alterar.
       2. Formule um passo a passo técnico (ex: "1. Vá no arquivo X e adicione Y").
@@ -96,9 +101,23 @@ class PromptFactory {
 1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
 2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
 3. SÓ FINALIZE criando o arquivo .done QUANDO TUDO ESTIVER CONCLUÍDO.
-QUANDO TERMINAR:
-1. Escreva em: ${files.relatorioFile}
-2. Use: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}`;
+
+[REGRAS CRÍTICAS PARA A FERRAMENTA 'EDIT']
+1. O campo 'old_text' (ou equivalente) DEVE ser uma cópia EXATA, byte por byte, do arquivo original. Isso inclui todos os espaços em branco, tabs e quebras de linha.
+2. NUNCA tente adivinhar a formatação. Sempre use a ferramenta 'read' ou 'exec' (com 'cat') no arquivo ANTES de usar 'edit', e copie o trecho original diretamente do retorno da leitura.
+3. Se o 'edit' continuar falhando por causa de espaços, desista do 'edit' e use a ferramenta 'write' para reescrever o arquivo inteiro com a sua modificação.
+
+QUANDO TERMINAR A TAREFA, SIGA ESTES 2 PASSOS EXATOS:
+
+PASSO 1: DOCUMENTAÇÃO
+Use a ferramenta "write" para gerar o seu relatório de conclusão.
+- Argumento 'file': ${files.relatorioFile}
+- Argumento 'content': Escreva um resumo técnico das alterações feitas, arquivos modificados e decisões tomadas. (Garanta que o texto esteja em uma única string JSON válida, usando \n para quebras de linha).
+
+PASSO 2: ENCERRAMENTO
+Use a ferramenta "exec" com o comando touch para avisar o sistema que você finalizou.
+- Exemplo exato: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}
+`.trim();
   }
 
   static buildArchitectAnalysisPrompt(architectResponse, task, project) {

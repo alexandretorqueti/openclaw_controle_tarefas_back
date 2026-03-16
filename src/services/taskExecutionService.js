@@ -13,11 +13,12 @@ const ContractVerificationService = require('./contractVerificationService');
 const EvidenceService = require('./evidenceService');
 const TaskAnalysisService = require('./taskAnalysisService');
 const PromptFactory = require('../utils/promptFactory');
-
+const SmartFileFinder = require('../utils/smartFileFinder'); 
 // Utilitários
 const { fileExists } = require('../utils/fileUtils');
-const { runPipeline } = require('../utils/pipelineUtils'); // <-- Nosso novo motor
+const { runPipeline } = require('../utils/pipelineUtils'); 
 const { log } = require('../../aux/logger');
+const { arch } = require('os');
 
 const prisma = new PrismaClient();
 
@@ -102,7 +103,6 @@ class TaskExecutionService {
     const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
     
     await fs.writeFile(files.promptFile, architectPrompt);
-    await fs.writeFile(files.relatorioFile, '');
     await fs.writeFile(files.terminalLogFile, '');
 
     const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
@@ -124,43 +124,44 @@ class TaskExecutionService {
     const fileList = Array.from(initialSnapshot.keys());
     const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '');
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
-
+    
+    // Gera um ID único e descartável para o Arquiteto não lembrar do passado
+    const architectSessionId = `${task.id}-arquiteto-${Date.now()}`;
     // Roda o Arquiteto com timeout de 10 minutos (600000ms)
-    const architectResult = await OpenClawService.execute(
-      `${task.id}-architect`, 
-      architectInput, 
-      project.agent || 'analista-pleno',            
-      null,                   
-      config.TASKS_DIR, 
-      files.architectLogFile, 
-      project?.pastaBase, 
-      600000                  
+    /*
+    const architectResult = await OpenClawService.executeWithFallback(
+      architectSessionId, // <--- A VACINA DA AMNÉSIA ESTÁ AQUI
+      architectInput,
+      project?.agent || task.agent || 'main',
+      task.agent || 'main',
+      null,
+      config.TASKS_DIR,
+      files.terminalArchitectFile,
+      project?.pastaBase,
+      config.TASK_TIMEOUT_MS
     );
-
+    */
     // Remove .done se o arquiteto criou indevidamente
     await fs.unlink(files.doneFile).catch(() => {});
     
     let architectPlan = "";
     let architectAnalysis = null;
     
-    // Primeiro tenta ler do arquivo de plano do arquiteto, depois do rawOutput
-    try {
-      if (await fileExists(files.architectPlanFile)) {
-        architectPlan = await fs.readFile(files.architectPlanFile, 'utf8');
-        await log(`📝 [Arquiteto] Plano lido do arquivo (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
-      } else if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
-        architectPlan = architectResult.rawOutput;
-        await log(`📝 [Arquiteto] Resposta recebida (${architectPlan.length} caracteres): ${architectPlan.substring(0, 200)}...`);
-      }
-    } catch (error) {
-      await log(`⚠️ [Arquiteto] Erro ao ler arquivo de plano: ${error.message}`);
-      if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 0) {
-        architectPlan = architectResult.rawOutput;
-        await log(`📝 [Arquiteto] Usando rawOutput como fallback (${architectPlan.length} chars)`);
-      }
+    // === A NOVA INTELIGÊNCIA DE BUSCA ENTRA AQUI ===
+    const planSearch = await SmartFileFinder.findRealArchitectPlan(files.architectPlanFile, config.TASKS_DIR, 5);
+    const architectResult = { rawOutput: planSearch.content };
+    if (planSearch.content) {
+      architectPlan = planSearch.content;
+      await log(`📝 [Arquiteto] Plano recuperado com sucesso (${architectPlan.length} caracteres).`);
+    } else if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 50) {
+      // Fallback: Se não salvou em arquivo nenhum, tenta catar direto do que ele cuspiu no terminal
+      architectPlan = architectResult.rawOutput;
+      await log(`📝 [Arquiteto] Arquivo não encontrado. Usando rawOutput do terminal como fallback (${architectPlan.length} chars)`);
+      // Força a gravação no arquivo correto
+      await fs.writeFile(files.architectPlanFile, architectPlan).catch(()=>{});
     }
-    
-    // Verificar se temos um plano do arquiteto
+
+    // Verificar se temos um plano do arquiteto... (O código continua normal daqui pra baixo)
     if (architectPlan && architectPlan.trim().length > 0) {
       // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
       // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
@@ -212,14 +213,6 @@ class TaskExecutionService {
         await log(`⚠️ [Arquiteto] Análise falhou ou resposta incompreensível.`);
       } else {
         await log(`ℹ️ [Arquiteto] Análise não identificou execução nem plano claro.`);
-      }
-      
-      // Opcional: Salvar plano em arquivo para referência (mas não dependemos mais dele)
-      try {
-        await fs.writeFile(files.architectPlanFile, architectPlan);
-        await log(`💾 [Arquiteto] Plano salvo em arquivo para referência: ${files.architectPlanFile}`);
-      } catch (error) {
-        await log(`⚠️ [Arquiteto] Não foi possível salvar plano em arquivo: ${error.message}`);
       }
     } else {
       architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
@@ -361,10 +354,13 @@ class TaskExecutionService {
   /**
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
    */
+/**
+   * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor) - STATLESS (Protocolo Amnésia)
+   */
   static async stepDeveloperLoop(ctx) {
     let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectAnalysis, architectPlan } = ctx;
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
-    
+
     const evidence = EvidenceService.createEmptyEvidence();
     
     // 1. VERIFICAR SE O ARQUITETO JÁ FEZ A TAREFA
@@ -372,32 +368,64 @@ class TaskExecutionService {
     
     if (architectVerification) {
       if (architectVerification.success) {
-        // Arquiteto concluiu com sucesso
         return { 
           ...ctx, 
           contractResult: architectVerification.contractResult,
           finalResult: architectVerification.finalResult
         };
       } else if (architectVerification.needsDeveloper) {
-        // Arquiteto falhou em algum aspecto - desenvolvedor precisa intervir
         currentInput = architectVerification.message;
         await fs.writeFile(files.promptFile, currentInput);
         await log(`🔄 [Desenvolvedor] Necessita intervenção: ${architectVerification.message.substring(0, 100)}...`);
       }
+    } else {
+      currentInput = `${currentInput || ''}\n\n === PLANO DO ARQUITETO ===\n ${architectPlan}\n\n`;
     }
+
+    // ==============================================================
+    // PREPARAÇÃO DO PROTOCOLO AMNÉSIA (STATELESS)
+    // ==============================================================
+    // O basePrompt é a bíblia da tarefa. Nunca muda.
+    const basePrompt = currentInput; 
+    
+    // O lastFeedback guarda o que aconteceu no turno imediatamente anterior
+    let lastFeedback = null; 
+    
     let contractResult = { contractFulfilled: false };
     let turnos = 0; 
     let turnosSemProgresso = 0;
 
-    // Se chegou aqui, precisa do desenvolvedor
-    await log(`🔄 [Desenvolvedor] Iniciando loop de execução...`);
+    const backupAgent = task.fallbackAgent || project?.fallbackAgent || 'main';
+
+    await log(`🔄 [Desenvolvedor] Iniciando loop de execução (Modo Stateless)...`);
 
     while (!contractResult.contractFulfilled && turnos < 15) {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
-      const res = await OpenClawService.execute(
-        task.id, currentInput, task.agent || 'main', null, TASKS_DIR, files.terminalLogFile, project?.pastaBase, TASK_TIMEOUT_MS
+      // 1. GERAÇÃO DE SESSÃO ÚNICA (Destrói o histórico corrompido)
+      const turnSessionId = `${task.id}-turno-${turnos}`;
+
+      // 2. MONTAGEM DO DOSSIÊ DO TURNO
+      let promptDesteTurno = basePrompt;
+      if (lastFeedback) {
+          promptDesteTurno += `\n\n=== RESULTADO DA SUA ÚLTIMA AÇÃO ===\n${lastFeedback}\n\nContinue a tarefa com base neste feedback. Você DEVE usar uma ferramenta JSON para prosseguir.`;
+      }
+
+      // Salva o prompt do turno no disco para você poder auditar o que foi enviado
+      await fs.writeFile(files.promptFile, promptDesteTurno).catch(()=>{});
+
+      // 3. CHAMA O OPENCLAW
+      const res = await OpenClawService.executeWithFallback(
+        turnSessionId, 
+        promptDesteTurno, 
+        task.agent || project?.agent || 'main', 
+        backupAgent,                            
+        null, 
+        TASKS_DIR, 
+        files.terminalLogFile, 
+        project?.pastaBase, 
+        TASK_TIMEOUT_MS
       );
       
       EvidenceService.applyExecutionEvidence(
@@ -410,7 +438,7 @@ class TaskExecutionService {
       });
       
       if (contractResult.contractFulfilled) {
-        // Build Validation embutida no loop para o agente poder consertar se quebrar
+        // Build Validation
         let qa = { passed: true };
         if (project) {
           const BUILD_TIMEOUT = 60000;
@@ -430,7 +458,7 @@ class TaskExecutionService {
 
         if (!qa.passed) {
           await fs.unlink(files.doneFile).catch(()=>{});
-          currentInput = `Build falhou: ${qa.message}. Corrija o erro no código e finalize novamente com .done.`;
+          lastFeedback = `Build falhou: ${qa.message}. Corrija o erro no código e finalize novamente com .done.`;
           await log(`❌ QA Reprovado. Retornando erro para o agente: ${qa.message}`);
           contractResult.contractFulfilled = false;
           continue;
@@ -438,11 +466,10 @@ class TaskExecutionService {
         break; // Passou no contrato e no QA
       }
 
-// Trata feedback do turno
+      // 4. ANÁLISE E FEEDBACK DO TURNO ATUAL
       let doneExists = false;
       let actualDonePath = files.doneFile;
 
-      // Função para rastrear qualquer arquivo .done na pasta
       const findDynamicDone = async (dir) => {
           if (!dir) return null;
           try {
@@ -452,71 +479,53 @@ class TaskExecutionService {
           } catch(e) { return null; }
       };
 
-      // Procura tanto na pasta de tarefas quanto na raiz do projeto
       const rogueDoneFile = (await findDynamicDone(config.TASKS_DIR)) || (await findDynamicDone(project?.pastaBase));
 
       if (rogueDoneFile) {
           doneExists = true;
-          actualDonePath = rogueDoneFile; // Anota o nome real para poder apagar depois
+          actualDonePath = rogueDoneFile; 
       }
 
+      // Define qual será a mensagem entregue no PRÓXIMO turno (lastFeedback)
       if (doneExists && contractResult.feedbackToAgent) {
-          // 1. NOVA PRIORIDADE MÁXIMA: Ele tentou encerrar, mas fez besteira!
           await fs.unlink(actualDonePath).catch(()=>{}); 
           
-          // Se a IA usou uma ferramenta para criar o .done, juntamos o sucesso da ferramenta com a bronca!
-          currentInput = res.toolFeedback 
+          lastFeedback = res.toolFeedback 
             ? `${res.toolFeedback}\n\n[SISTEMA - ATENÇÃO CRÍTICA]\n${contractResult.feedbackToAgent}`
             : contractResult.feedbackToAgent;
             
-          await fs.writeFile(files.promptFile, currentInput);
-          await log(`📝 [Desenvolvedor] Feedback de validação ENVIADO IMEDIATAMENTE: ${contractResult.feedbackToAgent.substring(0, 100)}...`);
+          await log(`📝 [Desenvolvedor] Feedback de validação AGENDADO para o próximo turno.`);
           
       } else if (res.toolFeedback) {
-          // 2. Usou ferramenta normalmente e não tentou encerrar. Segue o jogo!
-          currentInput = res.toolFeedback;
-          await log(`🛠️ [Desenvolvedor] Retornando resultado da ferramenta (${currentInput.length} chars)`);
+          lastFeedback = res.toolFeedback;
+          await log(`🛠️ [Desenvolvedor] Resultado da ferramenta AGENDADO para o próximo turno (${lastFeedback.length} chars)`);
           
       } else {
-          // 3. ANÁLISE CASO A CASO (A IA não usou ferramenta e não criou .done)
           const raw = res.rawOutput || '';
           let truncatedInfo = null;
           
-          // Trazemos o seu detector de anomalias para inspecionar a string
           try {
               const ToolCallService = require('./toolCallService');
               truncatedInfo = ToolCallService.detectTruncatedToolCall(raw);
-          } catch (e) { /* Proteção contra erro de importação dinâmica */ }
+          } catch (e) { }
 
           if (truncatedInfo && truncatedInfo.detected) {
-              // CASO 3A: JSON quebrado ou payload truncado
               let reasonMsg = "O JSON está inválido ou mal formatado.";
-              
               if (truncatedInfo.reason === 'string_json_nao_foi_fechada' || truncatedInfo.reason === 'objeto_json_incompleto') {
                   reasonMsg = "O bloco JSON foi cortado no meio (limite de caracteres) ou faltam aspas/chaves finais.";
               } else if (truncatedInfo.reason.includes('grande_demais') || truncatedInfo.reason.includes('truncado')) {
                   reasonMsg = "Você enviou um payload muito grande e ele foi cortado pelo limite do terminal. Pare de usar 'write' para arquivos inteiros e use 'edit' focado no trecho exato.";
               }
-              
-              currentInput = `[ERRO DE SINTAXE DE FERRAMENTA] Você tentou chamar a ferramenta '${truncatedInfo.likelyTool}', mas falhou. Motivo: ${reasonMsg}\nPor favor, corrija e envie APENAS o JSON válido.`;
+              lastFeedback = `[ERRO DE SINTAXE DE FERRAMENTA] Você tentou chamar a ferramenta '${truncatedInfo.likelyTool}', mas falhou. Motivo: ${reasonMsg}\nPor favor, corrija e envie APENAS o JSON válido.`;
               
           } else if (/(concluíd[oa]|pronto|finalizad[oa]|terminei|aqui está|resolvido|feito)/i.test(raw) || raw.trim().length < 150) {
-              // CASO 3B: A IA está conversando como se tivesse terminado, mas não gerou o .done.
-              // Jogamos na cara dela a pendência exata do contrato!
               const contractFeedback = contractResult.feedbackToAgent || "Use a ferramenta 'exec' com 'touch .done' para finalizar.";
-              
-              currentInput = `[SISTEMA] Você respondeu com texto conversacional em vez de usar uma ferramenta.\n` +
-                             `Se você acha que já terminou a implementação, o sistema detectou as seguintes pendências para esta tarefa:\n\n` +
-                             `${contractFeedback}\n\n` +
-                             `Por favor, execute a ação pendente acima utilizando o formato JSON.`;
+              lastFeedback = `[SISTEMA] Você respondeu com texto conversacional em vez de usar uma ferramenta.\nSe você acha que já terminou a implementação, o sistema detectou as seguintes pendências para esta tarefa:\n\n${contractFeedback}\n\nPor favor, execute a ação pendente acima utilizando o formato JSON.`;
           } else {
-              // CASO 3C: IA está apenas pensando alto ou narrando o plano sem agir
-              currentInput = `[SISTEMA] Você está apenas narrando ou planejando em texto puro. Você deve AGIR.\n` +
-                             `Para interagir com o sistema, é OBRIGATÓRIO emitir um bloco JSON válido contendo uma das ferramentas (read, write, edit, exec).\n` +
-                             `Se precisar alterar código longo, prefira a ferramenta 'edit' em pedaços menores.`;
+              lastFeedback = `[SISTEMA] Você está apenas narrando ou planejando em texto puro. Você deve AGIR.\nPara interagir com o sistema, é OBRIGATÓRIO emitir um bloco JSON válido contendo uma das ferramentas.\nSe precisar alterar código longo, prefira a ferramenta 'edit' em pedaços menores.`;
           }
           
-          await log(`⚠️ [Desenvolvedor] Feedback corretivo enviado (Caso a Caso).`);
+          await log(`⚠️ [Desenvolvedor] Feedback corretivo AGENDADO.`);
       }
       
       const prog = EvidenceService.computeTurnProgress(res.toolResult || {}, contractResult, project?.pastaBase || TASKS_DIR);
@@ -528,13 +537,8 @@ class TaskExecutionService {
       }
     }
 
-    // Garantir que contractResult está definido
     if (!contractResult || contractResult.contractFulfilled === undefined) {
-      contractResult = { 
-        contractFulfilled: false, 
-        executionNotes: 'Loop finalizado sem verificação de contrato' 
-      };
-      await log(`⚠️ [Desenvolvedor] contractResult indefinido, definindo como falha`);
+      contractResult = { contractFulfilled: false, executionNotes: 'Loop finalizado sem verificação de contrato' };
     }
     
     await log(`📊 [Desenvolvedor] Loop finalizado. contractResult: ${JSON.stringify(contractResult)}`);

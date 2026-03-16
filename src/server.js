@@ -176,6 +176,7 @@ app.use('/api/models', require('./routes/modelRoutes'));
 app.use('/api/task-executions', require('./routes/taskExecutionRoutes'));
 app.use('/api/agents', agentRoutes);
 app.use('/api', require('./routes/avatarRoutes'));
+app.use('/api/stages', require('./routes/stageRoutes'));
 
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
