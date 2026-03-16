@@ -164,6 +164,7 @@ app.get("/logs", (req, res) => {
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/dependencies', require('./routes/dependencyRoutes'));
 app.use('/api/statuses', statusRoutes);
 app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);

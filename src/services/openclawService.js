@@ -455,7 +455,7 @@ class OpenClawService {
         );
         
         // Analisar resultado para determinar sucesso
-        const success = this.analyzeExecutionResult(result, agent);
+        const success = result.success && !result.errorMessage && !result.exitCode;
         
         if (success) {
           await log(`✅ [OpenClaw] Execução do agente ${agent} bem-sucedida na tentativa ${attempt}`);
@@ -504,41 +504,6 @@ class OpenClawService {
     };
   }
   
-  /**
-   * Analisa o resultado da execução para determinar sucesso
-   */
-  static analyzeExecutionResult(result, agent) {
-    if (!result.success) return false;
-    
-    const output = result.rawOutput || '';
-    
-    // Verificar padrões de sucesso
-    const successPatterns = [
-      /concluído|concluida|finalizado|sucesso|success|done|pronto|✅/i,
-      /arquivo.*\.done.*criado/i,
-      /relatório.*finalizado/i,
-      /tarefa.*executada/i
-    ];
-    
-    // Verificar padrões de falha
-    const failurePatterns = [
-      /erro|error|falha|failed|❌|🚫/i,
-      /timeout|timed out/i,
-      /não.*encontrado|not found/i,
-      /permissão.*negada|permission denied/i
-    ];
-    
-    const hasSuccess = successPatterns.some(pattern => pattern.test(output));
-    const hasFailure = failurePatterns.some(pattern => pattern.test(output));
-    
-    // Para agentes analíticos, sucesso pode ser apenas análise concluída
-    if (agent.includes('analista')) {
-      return hasSuccess || (!hasFailure && output.length > 100);
-    }
-    
-    // Para agentes de programação, precisa de evidência mais forte
-    return hasSuccess && !hasFailure;
-  }
   
   /**
    * Executa uma chamada ao agente, mas se ele falhar ou travar, 
