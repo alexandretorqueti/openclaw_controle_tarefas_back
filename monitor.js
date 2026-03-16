@@ -32,10 +32,11 @@ async function main() {
   // Variavel de escopo global para as funcoes auxiliares acessarem
   let MY_USER_ID = null;
 
-  /**
-   * Verifica timeout de tarefas ativas e executa acao de recuperacao
+/**
+   * Verifica timeout de tarefas ativas e executa acao de recuperacao (Kill + Move)
+   * @param {number} pid - PID do processo associado ao lock
    */
-  async function handleTaskTimeoutCheck() {
+  async function handleTaskTimeoutCheck(pid) {
     const activeTasks = await stateService.getActiveTasks();
     const taskIds = Object.keys(activeTasks);
     
@@ -45,19 +46,29 @@ async function main() {
     const taskId = taskIds[0];
     const task = activeTasks[taskId];
     const elapsed = now - task.startTime;
+    
+    const GRACE_PERIOD_MS = 60000; // 1 minuto de carência após o timeout
 
     await log(`⏱️ Tarefa ${taskId} em execucao por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
 
-    // Logica do ceifador (self-healing) - REVISADA
-    // NÃO mata processos automaticamente, apenas limpa estado
-    if (elapsed > TASK_TIMEOUT_MS + 30000) {
-      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu timeout (${segundosToMinutos_Segundos(elapsed / 1000)}).`);
-      await log(`🔓 Limpando lock e estado. Processo NÃO será morto automaticamente.`);
+    // REQUISITO 1 & 3: Só mata se passar de 1 minuto depois do timeout
+    if (elapsed > TASK_TIMEOUT_MS + GRACE_PERIOD_MS) {
+      await log(`💀 CEIFADOR: Tarefa ${taskId} excedeu o limite crítico (Timeout + 1m).`);
+      await log(`⚰️ Encerrando processo ${pid}, desbloqueando sistema e movendo arquivos para ERROR.`);
+
+      [cite_start]// Mata o processo e remove o arquivo de lock [cite: 4953, 4958]
+      await lockService.killAndRelease(pid);
       
-      // Apenas limpa lock e estado, NÃO mata processo
-      await lockService.forceReleaseLock();
+      [cite_start]// Move arquivos para a pasta de erro [cite: 5698]
+      await TaskFileService.moveTaskFiles(taskId, TASKS_DIR, ERROR_DIR);
+      
+      [cite_start]// Limpa o estado interno [cite: 5687]
       await stateService.cleanupTask(taskId);
-      await log(`🧹 Estado limpo. Próximo ciclo assumirá a fila.`);
+      
+      await log(`🧹 Sistema recuperado. O próximo ciclo poderá assumir a fila.`);
+    } 
+    else if (elapsed > TASK_TIMEOUT_MS) {
+      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu o tempo limite original. Aguardando carência de 1 minuto antes de intervir.`);
     }
   }
 
@@ -136,13 +147,17 @@ async function main() {
    * Funcao principal de execucao
    */
   async function run() {
-    // 1. Controle de Concorrencia (Lock)
-    const lockCheck = await lockService.checkLock();
-    await log(`🔍 Lock check: locked=${lockCheck.locked}, pid=${lockCheck.pid}, alive=${lockCheck.alive}, corrupted=${lockCheck.corrupted}`);
+    // 1. Controle de Concorrencia (Passando o threshold para o Requisito 2)
+    const lockCheck = await lockService.checkLock(TASK_TIMEOUT_MS);
     
     if (lockCheck.locked) {
-      await log(`🔒 Lock ativo detectado. PID ${lockCheck.pid} está vivo.`);
-      await handleTaskTimeoutCheck();
+      if (lockCheck.ageRecent) {
+        await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
+        return;
+      }
+      
+      await log(`🔒 Lock antigo/ativo detectado. PID ${lockCheck.pid} está sendo verificado.`);
+      await handleTaskTimeoutCheck(lockCheck.pid);
       await log(`⏳ Outra instancia ja esta rodando com PID ${lockCheck.pid}. Omitindo execucao.`);
       return;
     }

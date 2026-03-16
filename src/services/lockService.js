@@ -70,31 +70,40 @@ class LockService {
     }
   }
 
-  /**
+/**
    * Verifica se ha um lock ativo
-   * @returns {Promise<{locked: boolean, pid: number|null}>}
+   * @param {number} timeoutThresholdMs - Tempo em ms para considerar o lock como "recente"
+   * @returns {Promise<Object>}
    */
-  async checkLock() {
+  async checkLock(timeoutThresholdMs = 0) {
     if (!await fileExists(this.lockFilePath)) {
-      console.log(`🔍 LockService: Arquivo ${this.lockFilePath} não existe`);
       return { locked: false, pid: null };
     }
-
     try {
-      const pidRaw = await fs.readFile(this.lockFilePath, 'utf8');
-      console.log(`🔍 LockService: Conteúdo do lock: "${pidRaw}"`);
-      const pid = parseInt(String(pidRaw).trim(), 10);
+      const stat = await fs.stat(this.lockFilePath);
+      const mtime = stat.mtimeMs;
+      const age = Date.now() - mtime;
 
+      const pidRaw = await fs.readFile(this.lockFilePath, 'utf8');
+      const pid = parseInt(String(pidRaw).trim(), 10);
+      
       if (Number.isNaN(pid)) {
-        console.log(`⚠️ LockService: PID inválido no lock: "${pidRaw}"`);
         return { locked: false, pid: null, corrupted: true };
       }
 
-      console.log(`🔍 LockService: Verificando processo PID ${pid}`);
+      // REQUISITO 2: Se o lock existe e ainda não passou do tempo, nem olha o processo.
+      if (timeoutThresholdMs > 0 && age < timeoutThresholdMs) {
+        return { 
+          locked: true, 
+          pid, 
+          alive: true, 
+          ageRecent: true, 
+          mtime 
+        };
+      }
+
       const alive = await this.isProcessAlive(pid);
-      console.log(`🔍 LockService: Processo PID ${pid} está vivo? ${alive}`);
-      
-      return { locked: alive, pid, alive };
+      return { locked: alive, pid, alive, mtime };
     } catch (error) {
       console.error(`❌ LockService: Erro ao verificar lock: ${error.message}`);
       return { locked: false, pid: null, error: error.message };

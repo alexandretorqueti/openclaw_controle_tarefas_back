@@ -231,6 +231,15 @@ class TaskService {
       where.assignedToId = filters.assignedToId;
     }
 
+    // Filtro para parentTaskId (subtarefas)
+    if (filters.parentTaskId !== undefined) {
+      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+        where.parentTaskId = null;
+      } else {
+        where.parentTaskId = filters.parentTaskId;
+      }
+    }
+
     // Default to excluding completed tasks unless explicitly requested
     console.log('DEBUG getAllTasks filters:', filters);
     console.log('DEBUG getAllTasks filters.isCompleted:', filters.isCompleted);
