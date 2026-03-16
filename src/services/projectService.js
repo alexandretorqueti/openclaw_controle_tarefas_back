@@ -21,6 +21,8 @@ class ProjectService {
         pastaBase: data.pastaBase || null,
         agent: data.agent || null,
         programadorContratado: data.programadorContratado || null,
+        programadorFront: data.programadorFront || null,
+        programadorBack: data.programadorBack || null,
         modeloAuxiliar: data.modeloAuxiliar || null,
         frontendBuildCmd: data.frontendBuildCmd || null,
         backendBuildCmd: data.backendBuildCmd || null
@@ -177,6 +179,8 @@ class ProjectService {
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
     if (data.agent !== undefined) updateData.agent = data.agent || null;
     if (data.programadorContratado !== undefined) updateData.programadorContratado = data.programadorContratado || null;
+    if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
+    if (data.programadorBack !== undefined) updateData.programadorBack = data.programadorBack || null;
     if (data.modeloAuxiliar !== undefined) updateData.modeloAuxiliar = data.modeloAuxiliar || null;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;

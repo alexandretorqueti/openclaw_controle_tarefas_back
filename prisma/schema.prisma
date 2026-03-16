@@ -58,7 +58,8 @@ model Project {
   repositoryUrl    String?
   pastaBase        String?
   agent            String?
-  programadorContratado String?
+  programadorFront    String?
+  programadorBack     String?
   frontendBuildCmd String?
   backendBuildCmd  String?
   modeloAuxiliar   String?
@@ -106,6 +107,9 @@ model Task {
   lastExecutedAt  DateTime?
   nextExecutionAt DateTime?
   agent           String?
+  domain          String?
+  isDecomposed    Boolean            @default(false)
+  isAtomic        Boolean            @default(false)
   projectId       String
   parentTaskId    String?
   statusId        String
