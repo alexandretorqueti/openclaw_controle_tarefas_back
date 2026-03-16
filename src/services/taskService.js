@@ -241,14 +241,12 @@ class TaskService {
     }
 
     // Default to excluding completed tasks unless explicitly requested
-    console.log('DEBUG getAllTasks filters:', filters);
-    console.log('DEBUG getAllTasks filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getAllTasks filters keys:', Object.keys(filters));
-    console.log('DEBUG getAllTasks filters type of isCompleted:', typeof filters.isCompleted);
     if (filters.isCompleted !== undefined) {
-      where.isCompleted = filters.isCompleted === 'true';
+      where.isCompleted = filters.isCompleted === true; // Espera booleano true/false
+    } else {
+      where.isCompleted = false; // Valor padrão: não trazer tarefas completas
     }
-    console.log('DEBUG getAllTasks where:', JSON.stringify(where));
+    console.log('DEBUG getAllTasks final where:', JSON.stringify(where));
 
     if (filters.search) {
       where.OR = [
@@ -714,15 +712,32 @@ class TaskService {
       where.statusId = filters.statusId;
     }
 
-    // Default to excluding completed tasks unless explicitly requested
-    console.log('DEBUG getTasksByProject filters:', filters);
-    console.log('DEBUG getTasksByProject filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getTasksByProject filters keys:', Object.keys(filters));
-    console.log('DEBUG getTasksByProject filters type of isCompleted:', typeof filters.isCompleted);
-    if (filters.isCompleted !== undefined) {
-      where.isCompleted = filters.isCompleted === 'true';
+    // Filtro para parentTaskId (subtarefas)
+    if (filters.parentTaskId !== undefined) {
+      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+        where.parentTaskId = null;
+      } else {
+        where.parentTaskId = filters.parentTaskId;
+      }
+    } else {
+      where.parentTaskId = null;
     }
-    console.log('DEBUG getTasksByProject where:', JSON.stringify(where));
+
+    // Ajuste para isCompleted: Por padrão, não trazer tarefas completas, a menos que isCompleted seja explicitamente 'true'
+    if (filters.isCompleted !== undefined) {
+      where.isCompleted = filters.isCompleted === true; // Espera booleano true/false
+    } else {
+      where.isCompleted = false; // Valor padrão: não trazer tarefas completas
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } }
+      ];
+    }
+
+    console.log('DEBUG getTasksByProject final where:', JSON.stringify(where));
 
     return await prisma.task.findMany({
       where,
