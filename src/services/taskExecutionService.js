@@ -128,7 +128,7 @@ class TaskExecutionService {
     // Gera um ID único e descartável para o Arquiteto não lembrar do passado
     const architectSessionId = `${task.id}-arquiteto-${Date.now()}`;
     // Roda o Arquiteto com timeout de 10 minutos (600000ms)
-    /*
+    
     const architectResult = await OpenClawService.executeWithFallback(
       architectSessionId, // <--- A VACINA DA AMNÉSIA ESTÁ AQUI
       architectInput,
@@ -140,7 +140,7 @@ class TaskExecutionService {
       project?.pastaBase,
       config.TASK_TIMEOUT_MS
     );
-    */
+    
     // Remove .done se o arquiteto criou indevidamente
     await fs.unlink(files.doneFile).catch(() => {});
     
@@ -149,7 +149,7 @@ class TaskExecutionService {
     
     // === A NOVA INTELIGÊNCIA DE BUSCA ENTRA AQUI ===
     const planSearch = await SmartFileFinder.findRealArchitectPlan(files.architectPlanFile, config.TASKS_DIR, 5);
-    const architectResult = { rawOutput: planSearch.content };
+    
     if (planSearch.content) {
       architectPlan = planSearch.content;
       await log(`📝 [Arquiteto] Plano recuperado com sucesso (${architectPlan.length} caracteres).`);
