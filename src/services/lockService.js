@@ -16,9 +16,55 @@ class LockService {
    */
   async isProcessAlive(pid) {
     try {
-      if (!pid) return false;
-      process.kill(pid, 0);
-      return true;
+      if (!pid || pid <= 0) return false;
+      
+      // Método 1: Teste básico com signal 0
+      try {
+        process.kill(pid, 0);
+      } catch (err) {
+        return false; // Processo não existe ou sem permissão
+      }
+      
+      // Método 2: Verificação via ps para mais confiança
+      // Apenas em sistemas Unix/Linux
+      if (process.platform !== 'win32') {
+        const { execSync } = require('child_process');
+        try {
+          // Verifica se processo existe (qualquer processo)
+          // Usando 'ps -p PID' que retorna 0 se processo existe
+          const cmd = `ps -p ${pid} > /dev/null 2>&1; echo $?`;
+          const exitCode = execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+          
+          // Se exit code não é 0, processo não existe
+          if (exitCode !== '0') {
+            return false;
+          }
+          
+          // Processo existe, agora verifica se é Node (opcional)
+          try {
+            const cmd2 = `ps -p ${pid} -o command=`;
+            const command = execSync(cmd2, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }).trim();
+            
+            // Verifica se é processo Node (monitor.js ou similar)
+            // Mas mesmo se não for Node, processo EXISTE, então retorna true
+            // Apenas log para debug
+            if (!command.includes('node') && !command.includes('monitor')) {
+              console.log(`⚠️ Processo ${pid} existe mas não parece ser Node: ${command.substring(0, 50)}...`);
+            }
+            
+            return true; // Processo existe, independente de ser Node ou não
+          } catch (error) {
+            // Se falhar ao pegar command, ainda assim processo existe
+            return true;
+          }
+        } catch (error) {
+          // Se ps falhar completamente, confia no método 1
+          console.log(`⚠️ ps falhou para PID ${pid}: ${error.message}`);
+          return true;
+        }
+      }
+      
+      return true; // Windows ou ps falhou, confia no método 1
     } catch (error) {
       return false;
     }
@@ -30,20 +76,27 @@ class LockService {
    */
   async checkLock() {
     if (!await fileExists(this.lockFilePath)) {
+      console.log(`🔍 LockService: Arquivo ${this.lockFilePath} não existe`);
       return { locked: false, pid: null };
     }
 
     try {
       const pidRaw = await fs.readFile(this.lockFilePath, 'utf8');
+      console.log(`🔍 LockService: Conteúdo do lock: "${pidRaw}"`);
       const pid = parseInt(String(pidRaw).trim(), 10);
 
       if (Number.isNaN(pid)) {
+        console.log(`⚠️ LockService: PID inválido no lock: "${pidRaw}"`);
         return { locked: false, pid: null, corrupted: true };
       }
 
+      console.log(`🔍 LockService: Verificando processo PID ${pid}`);
       const alive = await this.isProcessAlive(pid);
+      console.log(`🔍 LockService: Processo PID ${pid} está vivo? ${alive}`);
+      
       return { locked: alive, pid, alive };
     } catch (error) {
+      console.error(`❌ LockService: Erro ao verificar lock: ${error.message}`);
       return { locked: false, pid: null, error: error.message };
     }
   }
@@ -92,16 +145,33 @@ class LockService {
 
   /**
    * Tenta matar um processo e liberar o lock
+   * ⚠️ PERIGOSO: Pode matar processos válidos
    * @param {number} pid - PID do processo
    * @returns {Promise<boolean>}
    */
   async killAndRelease(pid) {
+    console.warn('⚠️ AVISO: killAndRelease chamado. Isso pode matar processos válidos!');
+    
     try {
       if (pid) {
-        process.kill(pid, 'SIGKILL');
+        // Primeiro tenta SIGTERM (graceful shutdown)
+        try {
+          process.kill(pid, 'SIGTERM');
+          // Aguarda 2 segundos para graceful shutdown
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+          // Processo já morreu ou não existe
+        }
+        
+        // Verifica se processo ainda está vivo
+        const stillAlive = await this.isProcessAlive(pid);
+        if (stillAlive) {
+          console.warn(`⚠️ Processo ${pid} ainda vivo após SIGTERM. Forçando com SIGKILL.`);
+          process.kill(pid, 'SIGKILL');
+        }
       }
     } catch (error) {
-      // Processo ja morto
+      // Processo já morto ou sem permissão
     }
 
     return await this.forceReleaseLock();

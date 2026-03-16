@@ -48,17 +48,16 @@ async function main() {
 
     await log(`⏱️ Tarefa ${taskId} em execucao por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
 
-    // Logica do ceifador (self-healing)
+    // Logica do ceifador (self-healing) - REVISADA
+    // NÃO mata processos automaticamente, apenas limpa estado
     if (elapsed > TASK_TIMEOUT_MS + 30000) {
-      await log(`🧟 ZUMBIFICADO: A instancia anterior travou completamente. Forcando limpeza de emergencia!`);
+      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu timeout (${segundosToMinutos_Segundos(elapsed / 1000)}).`);
+      await log(`🔓 Limpando lock e estado. Processo NÃO será morto automaticamente.`);
       
-      const lockCheck = await lockService.checkLock();
-      if (lockCheck.pid) {
-        await lockService.killAndRelease(lockCheck.pid);
-      }
-      
+      // Apenas limpa lock e estado, NÃO mata processo
+      await lockService.forceReleaseLock();
       await stateService.cleanupTask(taskId);
-      await log(`🧹 Cadeado quebrado a forca. O proximo ciclo do Cron assumira a fila.`);
+      await log(`🧹 Estado limpo. Próximo ciclo assumirá a fila.`);
     }
   }
 
@@ -139,8 +138,10 @@ async function main() {
   async function run() {
     // 1. Controle de Concorrencia (Lock)
     const lockCheck = await lockService.checkLock();
+    await log(`🔍 Lock check: locked=${lockCheck.locked}, pid=${lockCheck.pid}, alive=${lockCheck.alive}, corrupted=${lockCheck.corrupted}`);
     
     if (lockCheck.locked) {
+      await log(`🔒 Lock ativo detectado. PID ${lockCheck.pid} está vivo.`);
       await handleTaskTimeoutCheck();
       await log(`⏳ Outra instancia ja esta rodando com PID ${lockCheck.pid}. Omitindo execucao.`);
       return;

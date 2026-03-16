@@ -136,7 +136,7 @@ class TaskExecutionService {
       task.agent || 'main',
       null,
       config.TASKS_DIR,
-      files.terminalArchitectFile,
+      files.architectLogFile,
       project?.pastaBase,
       config.TASK_TIMEOUT_MS
     );
