@@ -574,87 +574,43 @@ class TaskExecutionService {
     try {
       const updateData = {};
       
-      // 1. Prompt do arquiteto (arquitetosPromptContent)
-      // O prompt do arquiteto é gerado dinamicamente, não salvo em arquivo
-      // Vamos usar o arquivo prompt-${taskId}.txt como referência
-      if (files && files.promptFile) {
-        const exists = await fileExists(files.promptFile);
-        console.log(`📁 [DEBUG] promptFile ${files.promptFile} existe? ${exists}`);
-        if (exists) {
-          try {
-            const promptContent = await fs.readFile(files.promptFile, 'utf8');
-            updateData.arquitetosPromptContent = promptContent;
-            console.log(`📄 [DEBUG] promptFile lido: ${promptContent.length} caracteres`);
-          } catch (error) {
-            console.error(`❌ Erro ao ler prompt file: ${error.message}`);
+      // Helper para ler arquivos com segurança
+      const readFileSafe = async (filePath) => {
+        try {
+          if (filePath && await fileExists(filePath)) {
+            const content = await fs.readFile(filePath, 'utf8');
+            await log(`📄 [Teardown] LIDO: ${path.basename(filePath)} (${content.length} chars)`);
+            return content;
           }
-        }
-      }
-      
-      // 2. Análise do arquiteto (arquitetosAnalysisContent)
-      // Pode vir do arquivo plano-arquiteto-${taskId}.txt ou da variável architectPlan
-      console.log(`📝 [DEBUG] Verificando análise do arquiteto: arquivo=${files?.architectPlanFile}, existe=${files?.architectPlanFile ? await fileExists(files.architectPlanFile).catch(() => false) : false}, architectPlan=${architectPlan?.length || 0} chars`);
-      if (files && files.architectPlanFile && await fileExists(files.architectPlanFile)) {
-        try {
-          const analysisContent = await fs.readFile(files.architectPlanFile, 'utf8');
-          updateData.arquitetosAnalysisContent = analysisContent;
-          console.log(`📄 [DEBUG] Análise lida do arquivo: ${analysisContent.length} caracteres`);
         } catch (error) {
-          console.error(`❌ Erro ao ler arquivo de análise do arquiteto: ${error.message}`);
+          await log(`❌ [Teardown] ERRO ao ler ${path.basename(filePath)}: ${error.message}`);
         }
-      } else if (architectPlan && architectPlan.trim().length > 0) {
-        // Usar a variável architectPlan do contexto se o arquivo não existir
-        updateData.arquitetosAnalysisContent = architectPlan;
-        console.log(`📄 [DEBUG] Análise lida do contexto: ${architectPlan.length} caracteres`);
-      } else {
-        console.log(`⚠️ [DEBUG] Nenhuma análise do arquiteto encontrada`);
-      }
+        return null;
+      };
       
-      // 3. Terminal do arquiteto (arquitetosTerminalContent)
-      if (files && files.architectLogFile && await fileExists(files.architectLogFile)) {
-        try {
-          const terminalContent = await fs.readFile(files.architectLogFile, 'utf8');
-          updateData.arquitetosTerminalContent = terminalContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler terminal do arquiteto: ${error.message}`);
-        }
-      }
+      updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      updateData.arquitetosAnalysisContent = await readFileSafe(files?.architectPlanFile) || architectPlan || null;
+      updateData.arquitetosTerminalContent = await readFileSafe(files?.architectLogFile);
+      updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
+      updateData.programadorReportContent = await readFileSafe(files?.relatorioFile);
       
-      // 4. Terminal do programador (programadorTerminalContent)
-      if (files && files.terminalLogFile && await fileExists(files.terminalLogFile)) {
-        try {
-          const terminalContent = await fs.readFile(files.terminalLogFile, 'utf8');
-          updateData.programadorTerminalContent = terminalContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler terminal do programador: ${error.message}`);
-        }
-      }
+      // Filtrar chaves nulas antes de atualizar
+      const finalUpdateData = Object.fromEntries(Object.entries(updateData).filter(([_, v]) => v !== null));
       
-      // 5. Relatório do programador (programadorReportContent)
-      if (files && files.relatorioFile && await fileExists(files.relatorioFile)) {
-        try {
-          const reportContent = await fs.readFile(files.relatorioFile, 'utf8');
-          updateData.programadorReportContent = reportContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler relatório do programador: ${error.message}`);
-        }
-      }
-      
-      // Atualizar a tarefa no banco de dados se houver dados para salvar
-      if (Object.keys(updateData).length > 0 && task && task.id) {
+      if (Object.keys(finalUpdateData).length > 0 && task && task.id) {
+        await log(`💾 [Teardown] ATUALIZANDO tarefa ${task.id} com ${Object.keys(finalUpdateData).length} campos de log...`);
         await prisma.task.update({
           where: { id: task.id },
-          data: updateData
+          data: finalUpdateData
         });
-        console.log(`✅ [DEBUG] Conteúdos dos arquivos salvos para tarefa ${task.id}: ${Object.keys(updateData).join(', ')}`);
-        console.log(`✅ [DEBUG] Tamanhos: ${Object.entries(updateData).map(([k, v]) => `${k}:${v?.length || 0} chars`).join(', ')}`);
+        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso no banco de dados.`);
       } else if (task && task.id) {
-        console.log(`⚠️ [DEBUG] Nenhum conteúdo para salvar para tarefa ${task.id}`);
+        await log(`⚠️ [Teardown] Nenhum conteúdo de arquivo encontrado para salvar na tarefa ${task.id}`);
       }
       
     } catch (error) {
-      console.error(`❌ Erro ao salvar conteúdos dos arquivos: ${error.message}`);
-      // Não falhar a execução por causa deste erro
+      await log(`💥 [FATAL Teardown] Erro CRÍTICO ao salvar conteúdos no banco: ${error.message}\n${error.stack}`);
+      // Não falhar a execução inteira, mas logar o erro de forma grave
     }
 
     return { ...ctx, finalResult };

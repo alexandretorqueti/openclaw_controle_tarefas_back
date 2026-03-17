@@ -346,8 +346,12 @@ class OpenClawService {
         cwd: spawnCwd, 
         env, 
         shell: false, 
-        stdio: ['ignore', 'pipe', 'pipe']  // stdin ignorado, stdout/stderr capturados
+        detached: true, // <-- MUDANÇA CRÍTICA
+        stdio: ['ignore', 'pipe', 'pipe']
       });
+
+      // Libera o processo pai imediatamente
+      child.unref();
 
       let stdout = ''; 
       let stderr = ''; 
