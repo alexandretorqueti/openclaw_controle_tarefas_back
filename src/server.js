@@ -19,7 +19,7 @@ const { extractUser } = require('./middlewares/authMiddleware');
 const cronScheduler = require('./cronScheduler');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4001;
 
 // Middleware
 const corsOptions = {

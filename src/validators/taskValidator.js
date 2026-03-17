@@ -105,7 +105,8 @@ const taskFiltersSchema = z.object({
   isCompleted: z.enum(['true', 'false']).optional(),
   search: z.string().optional(),
   sortBy: z.enum(['deadline', 'position', 'title', 'createdAt']).optional().default('deadline'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('asc')
+  sortOrder: z.enum(['asc', 'desc']).optional().default('asc'),
+  parentTaskId: z.string().optional()
 });
 
 const validateTask = (data) => {

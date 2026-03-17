@@ -2,6 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { getAbsoluteAvatarUrl } = require('../utils/avatarUrl');
+const taskService = require('../services/taskService');
 
 class UserController {
   // Get all users
@@ -322,43 +323,14 @@ class UserController {
       throw error;
     }
 
-    // 2. Find the next task - apenas de projetos ativos
-    const nextTask = await prisma.task.findFirst({
-      where: {
-        assignedToId: user.id,
-        isCompleted: false,
-        status: {
-          visibleToAi: true
-        },
-        // Filtrar apenas tarefas de projetos ativos
-        project: {
-          ativo: true,
-          status: true  // status também deve ser true (projeto ativo)
-        }
-      },
-      include: {
-        status: true,
-        priority: true,
-        project: true
-      },
-      orderBy: [
-        {
-          priority: {
-            weight: 'desc'
-          }
-        },
-        {
-          createdAt: 'asc'
-        }
-      ]
-    });
+    // Usamos o taskService, método getNextTaskForUser
+    const nextTask = await taskService.getNextTaskForUser(nickname);
 
     if (!nextTask) {
-      return res.json({
-        success: true,
-        message: 'No pending tasks found for this user with AI-enabled status.',
+      res.json({
+        success: false,
         task: null,
-        correlationId: req.correlationId
+        correlationId: 0
       });
     }
 

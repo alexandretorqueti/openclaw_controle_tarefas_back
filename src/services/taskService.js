@@ -233,7 +233,7 @@ class TaskService {
 
     // Filtro para parentTaskId (subtarefas)
     if (filters.parentTaskId !== undefined) {
-      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+      if (filters.parentTaskId === null || filters.parentTaskId === '' || filters.parentTaskId === 'null') {
         where.parentTaskId = null;
       } else {
         where.parentTaskId = filters.parentTaskId;
@@ -714,7 +714,7 @@ class TaskService {
 
     // Filtro para parentTaskId (subtarefas)
     if (filters.parentTaskId !== undefined) {
-      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+      if (filters.parentTaskId === null || filters.parentTaskId === '' || filters.parentTaskId === 'null') {
         where.parentTaskId = null;
       } else {
         where.parentTaskId = filters.parentTaskId;
@@ -971,7 +971,7 @@ class TaskService {
     return date;
   }
 
-  // === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
+// === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
   async getNextTaskForUser(nickname) {
     const now = new Date();
 
@@ -994,14 +994,14 @@ class TaskService {
         // Filtrar apenas tarefas de projetos ativos
         project: {
           ativo: true,
-          status: true  // status também deve ser true (projeto ativo)
+          status: true
         },
         // A tarefa tem que ser: Normal OU (Recursiva E já passou do horário previsto)
         OR: [
           { isRecurring: false },
           { 
             isRecurring: true, 
-            nextExecutionAt: { lte: now } // Traz só o que venceu ou é null (primeira vez)
+            nextExecutionAt: { lte: now }
           },
           {
              isRecurring: true,
@@ -1017,33 +1017,44 @@ class TaskService {
             id: true,
             name: true,
             ativo: true,
-            status: true
+            status: true,
+            // === NOVOS CAMPOS PARA O MONITOR ORQUESTRAR ===
+            modeloAuxiliar: true,
+            programadorBack: true,
+            programadorFront: true,
+            projectType: true,
+            agent: true
           }
         },
-        dependencies: { include: { task: true } },
-        comments: {
+        dependents: {
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                nickname: true
+            task: {
+              include: {
+                priority: true,
+                status: true
               }
             }
-          },
-          orderBy: {
-            createdAt: 'asc'
           }
         }
       }
     });
 
-    const playableTasks = tasks.filter(t => t.dependencies.every(dep => dep.task.isCompleted));
-    console.log(`
-      
-      DEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}
-      Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${playableTasks.length}
-      `);
+    // Filtra tarefas onde TODAS as dependências (bloqueadores) já estão em um status que seja 'estado final';
+    let playableTasks = [];
+    try {
+      playableTasks = tasks.filter(
+        t => t.dependents.every(
+          dep => 
+            dep.task && dep.task.status && dep.task.status.isFinalState
+        )
+      );
+    } catch (error) {
+      return null;
+    }
+    
+    console.log(`\nDEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}`);
+    console.log(`Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${tasks.length}\n`);
+    
     if (playableTasks.length === 0) return null;
 
     playableTasks.sort((a, b) => {
@@ -1055,29 +1066,22 @@ class TaskService {
       if (a.isRecurring && b.isRecurring) {
         const dateA = a.nextExecutionAt || a.createdAt;
         const dateB = b.nextExecutionAt || b.createdAt;
-        console.log(`
-          DEBUG: Comparando recursivas ${a.title} (next: ${dateA.toISOString()}) e ${b.title} (next: ${dateB.toISOString()})
-          `);
+        console.log(`DEBUG: Comparando recursivas ${a.title} (next: ${dateA.toISOString()}) e ${b.title} (next: ${dateB.toISOString()})`);
         return dateA.getTime() - dateB.getTime();
       }
 
       // Se nenhuma é recursiva, vai por peso e depois criação
       if (a.priority.weight !== b.priority.weight) {
-        console.log(`
-          DEBUG: Comparando prioridades ${a.priority.name} (peso: ${a.priority.weight}) e ${b.priority.name} (peso: ${b.priority.weight})
-          `);
+        console.log(`DEBUG: Comparando prioridades ${a.priority.name} (peso: ${a.priority.weight}) e ${b.priority.name} (peso: ${b.priority.weight})`);
         return b.priority.weight - a.priority.weight;
       }
 
-      console.log(`
-        DEBUG: Comparando por deadline ${a.title} (deadline: ${a.deadline.toISOString()}) e ${b.title} (deadline: ${b.deadline.toISOString()})
-        `);
+      console.log(`DEBUG: Comparando por deadline ${a.title} (deadline: ${a.deadline.toISOString()}) e ${b.title} (deadline: ${b.deadline.toISOString()})`);
       return (a.deadline || a.createdAt).getTime() - (b.deadline || b.createdAt).getTime();
     });
    
-    console.log(`
-      DEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}
-      `);
+    console.log(`\nDEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}\n`);
+    
     return playableTasks[0];
   }
 

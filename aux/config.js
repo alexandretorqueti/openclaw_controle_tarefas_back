@@ -10,7 +10,7 @@ const TASKS_DIR = process.env.PENDING_TASKS_DIR || path.join(OPENCLAW_DIR, 'pend
 const PROCESSED_DIR = path.join(TASKS_DIR, 'processed');
 const ERROR_DIR = path.join(TASKS_DIR, 'error');
 
-const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT}`;
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
 const MY_USER_NICKNAME = process.env.MY_USER_NICKNAME || 'jarbas';

@@ -173,6 +173,95 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
     `.trim();
     return prompt;
   }
+
+  /**
+   * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
+   */
+  static buildDecompositionPrompt(task) {
+    return `
+      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo e dividi-la em micro-tarefas sequenciais e atômicas.
+      É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
+
+      Objetivo da Tarefa Mãe: ${task?.title}
+      Descrição: ${task?.description}
+
+      Responda APENAS com um array JSON válido neste formato exato (sem markdown em volta, apenas o array). Não adicione nenhum texto antes ou depois do array:
+      [
+        {
+          "title": "[BACKEND] Criar tabela de X",
+          "description": "Passo a passo exato do que o estagiário deve fazer no arquivo Y...",
+          "domain": "BACKEND"
+        },
+        {
+          "title": "[FRONTEND] Criar componente de X",
+          "description": "Passo a passo exato do que o estagiário deve fazer no componente Z...",
+          "domain": "FRONTEND"
+        }
+      ]
+    `.trim();
+  }
+
+  /**
+   * Constrói prompt para validação de atomicidade
+   * @param {Object} task - Tarefa
+   * @param {Object} project - Projeto
+   * @returns {string} Prompt formatado
+   */
+  static buildValidationPrompt(task, project) {
+    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
+
+ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
+
+Uma tarefa é considerada ATÔMICA quando:
+1. Tem objetivo claro e específico
+2. Possui instruções passo a passo executáveis
+3. Tem entrada e saída bem definidas
+4. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
+5. Tem escopo limitado (pode ser concluída em poucas horas)
+6. Tem critérios de aceitação claros
+7. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
+
+Uma tarefa NÃO é ATÔMICA quando:
+1. Não tem objetivo claro e específico
+2. Não possui instruções passo a passo executáveis
+3. Não tem entrada e saída bem definidas
+4. Não pode ser realizada por um programador pleno, pode ser apenas um plano
+5. Tem escopo muito amplo (não pode ser concluida em poucas horas)
+6. Não tem critérios de aceitação claros
+
+
+INFORMAÇÕES DA TAREFA:
+- Título: ${task.title}
+- Descrição: ${task.description}
+- Projeto: ${project.name}
+- Domínio: ${task.domain || 'Não especificado'}
+
+INFORMAÇÕES ADICIONAIS:
+- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
+- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
+
+ANÁLISE REQUERIDA:
+1. Esta tarefa está pronta para um estagiário executar?
+2. A tarefa tem arquivo e instrução clara?
+3. O escopo é limitado e bem definido?
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+Retorne APENAS um objeto JSON válido com a seguinte estrutura:
+{
+  "isAtomic": boolean,
+  "reason": "string (explicação detalhada)",
+  "confidence": number (0.0 a 1.0),
+  "suggestions": ["sugestão 1", "sugestão 2"]
+}
+
+EXEMPLOS:
+- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
+- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
+
+RESPOSTA (APENAS JSON):`;
+  }
+
+
 }
 
 module.exports = PromptFactory;

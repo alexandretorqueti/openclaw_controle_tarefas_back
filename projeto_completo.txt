@@ -39,6 +39,144 @@ const axios = require('axios');
 const path = require('path');
 axios.defaults.timeout = 180000; // 3 minutos
 
+// Novos imports para roteamento inteligente
+const prisma = require('./src/services/prismaService');
+const validationService = require('./src/services/validationService');
+const decompositionService = require('./src/services/decompositionService');
+const commentService = require('./src/services/commentService');
+
+/**
+ * Busca a próxima tarefa elegível para processamento
+ * @returns {Promise<Object|null>} Tarefa ou null se não houver
+ */
+/**
+ * Busca a próxima tarefa elegível para processamento via API
+ * @param {string} nickname - Nickname do usuário (ex: 'alexandre')
+ * @returns {Promise<Object|null>} Tarefa ou null se não houver
+ */
+async function getNextEligibleTask(nickname) {
+  // Importando a configuração localmente caso não esteja no topo do arquivo
+  const { API_URL } = require('./aux/config'); 
+
+  try {
+    
+    const response = await axios.get(`${API_URL}/api/users/nickname/${nickname}/next-task`);
+
+    // Se a API retornar uma tarefa válida, nós a devolvemos
+    if (response.data && response.data?.task.id) {
+      return response.data.task;
+    }
+
+    return null;
+  } catch (error) {
+    // Se a API retornar 404 (Not Found) ou 204 (No Content), significa que a fila está vazia.
+    // Isso é um comportamento esperado, então não precisamos logar como um erro crítico.
+    if (error.response && (error.response.status === 404 || error.response.status === 204)) {
+      return null;
+    }
+
+    await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Chama o analista (via OpenClaw) para decompor uma tarefa complexa em micro-tarefas
+ * @param {Object} task - Tarefa mãe a ser decomposta
+ * @returns {Promise<Object>} Resultado da decomposição
+ */
+async function callAnalyst(task) {
+  const OpenClawService = require('./src/services/openclawService');
+  const PromptFactory = require('./src/utils/promptFactory'); // <-- Importando sua Factory
+  const path = require('path');
+  const fs = require('fs').promises;
+  const { TASKS_DIR, TASK_TIMEOUT_MS } = require('./aux/config');
+
+  try {
+    await log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
+
+    const architectSessionId = `architect-${task.id}-${Date.now()}`;
+    const architectLogFile = path.join(TASKS_DIR, `architect-${task.id}.log`);
+
+    const primaryAgent = task.project?.agent ||  task.project?.programadorBack || 'main';
+    const fallbackAgent = task.project?.programadorFront || 'main';
+
+    // Usando o seu PromptFactory de forma limpa
+    const architectInput = PromptFactory.buildDecompositionPrompt(task);
+
+    const architectResult = await OpenClawService.executeWithFallback(
+      architectSessionId,
+      architectInput,
+      primaryAgent,
+      fallbackAgent,
+      task.project?.modeloAuxiliar || null,
+      TASKS_DIR,
+      architectLogFile,
+      task.project?.pastaBase,
+      TASK_TIMEOUT_MS
+    );
+
+    if (!architectResult.success) {
+      throw new Error(`Falha na execução do OpenClaw: ${architectResult.errorMessage}`);
+    }
+
+    // Extrai o JSON do rawOutput
+    let subtasksPlan = [];
+    try {
+      const jsonMatch = architectResult.rawOutput.match(/\[[\s\S]*?\]/);
+      if (!jsonMatch) throw new Error("Nenhum array JSON encontrado na saída do agente.");
+      
+      
+      subtasksPlan = JSON.parse(architectResult.rawOutput);
+    } catch (parseError) {
+      throw new Error(`O Arquiteto não retornou um formato JSON válido. Erro: ${parseError.message}`);
+    }
+
+    if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
+      throw new Error("O Arquiteto retornou um array vazio de tarefas.");
+    }
+
+    const mappedSubtasks = subtasksPlan.map(st => ({
+      title: st.title,
+      description: st.description,
+      domain: st.domain, 
+      projectId: task.projectId,
+      statusId: task.statusId,
+      priorityId: task.priorityId,
+      userId: task.assignedToId
+    }));
+    
+    const decompositionResult = await decompositionService.decompose(task.id, mappedSubtasks);
+    
+    await addComment(task.id, `🔍 **Análise Concluída pelo Arquiteto**\nA funcionalidade foi dividida em ${mappedSubtasks.length} micro-tarefas sequenciais.`);
+    await log(`✅ Tarefa ${task.id} decomposta pelo OpenClaw em ${mappedSubtasks.length} subtarefas.`);
+    
+    return { success: true, subtasksCreated: mappedSubtasks.length };
+    
+  } catch (error) {
+    await log(`💥 Erro ao chamar Arquiteto para tarefa ${task.id}: ${error.message}`);
+    await addComment(task.id, `❌ **Erro na Análise**\nFalha ao decompor tarefa: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Adiciona um comentário a uma tarefa
+ * @param {string} taskId - ID da tarefa
+ * @param {string} content - Conteúdo do comentário
+ */
+async function addComment(taskId, content) {
+  try {
+    await commentService.addComment({
+      taskId,
+      userId: 'system',
+      content
+    });
+  } catch (error) {
+    await log(`⚠️ Erro ao adicionar comentário: ${error.message}`);
+  }
+}
+
 async function main() {
   // Configuracoes
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
@@ -65,10 +203,11 @@ async function main() {
   // Variavel de escopo global para as funcoes auxiliares acessarem
   let MY_USER_ID = null;
 
-  /**
-   * Verifica timeout de tarefas ativas e executa acao de recuperacao
+/**
+   * Verifica timeout de tarefas ativas e executa acao de recuperacao (Kill + Move)
+   * @param {number} pid - PID do processo associado ao lock
    */
-  async function handleTaskTimeoutCheck() {
+  async function handleTaskTimeoutCheck(pid) {
     const activeTasks = await stateService.getActiveTasks();
     const taskIds = Object.keys(activeTasks);
     
@@ -78,19 +217,29 @@ async function main() {
     const taskId = taskIds[0];
     const task = activeTasks[taskId];
     const elapsed = now - task.startTime;
+    
+    const GRACE_PERIOD_MS = 60000; // 1 minuto de carência após o timeout
 
     await log(`⏱️ Tarefa ${taskId} em execucao por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
 
-    // Logica do ceifador (self-healing) - REVISADA
-    // NÃO mata processos automaticamente, apenas limpa estado
-    if (elapsed > TASK_TIMEOUT_MS + 30000) {
-      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu timeout (${segundosToMinutos_Segundos(elapsed / 1000)}).`);
-      await log(`🔓 Limpando lock e estado. Processo NÃO será morto automaticamente.`);
+    // REQUISITO 1 & 3: Só mata se passar de 1 minuto depois do timeout
+    if (elapsed > TASK_TIMEOUT_MS + GRACE_PERIOD_MS) {
+      await log(`💀 CEIFADOR: Tarefa ${taskId} excedeu o limite crítico (Timeout + 1m).`);
+      await log(`⚰️ Encerrando processo ${pid}, desbloqueando sistema e movendo arquivos para ERROR.`);
+
+      [cite_start]// Mata o processo e remove o arquivo de lock [cite: 4953, 4958]
+      await lockService.killAndRelease(pid);
       
-      // Apenas limpa lock e estado, NÃO mata processo
-      await lockService.forceReleaseLock();
+      [cite_start]// Move arquivos para a pasta de erro [cite: 5698]
+      await TaskFileService.moveTaskFiles(taskId, TASKS_DIR, ERROR_DIR);
+      
+      [cite_start]// Limpa o estado interno [cite: 5687]
       await stateService.cleanupTask(taskId);
-      await log(`🧹 Estado limpo. Próximo ciclo assumirá a fila.`);
+      
+      await log(`🧹 Sistema recuperado. O próximo ciclo poderá assumir a fila.`);
+    } 
+    else if (elapsed > TASK_TIMEOUT_MS) {
+      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu o tempo limite original. Aguardando carência de 1 minuto antes de intervir.`);
     }
   }
 
@@ -169,13 +318,17 @@ async function main() {
    * Funcao principal de execucao
    */
   async function run() {
-    // 1. Controle de Concorrencia (Lock)
-    const lockCheck = await lockService.checkLock();
-    await log(`🔍 Lock check: locked=${lockCheck.locked}, pid=${lockCheck.pid}, alive=${lockCheck.alive}, corrupted=${lockCheck.corrupted}`);
+    // 1. Controle de Concorrencia (Passando o threshold para o Requisito 2)
+    const lockCheck = await lockService.checkLock(TASK_TIMEOUT_MS);
     
     if (lockCheck.locked) {
-      await log(`🔒 Lock ativo detectado. PID ${lockCheck.pid} está vivo.`);
-      await handleTaskTimeoutCheck();
+      if (lockCheck.ageRecent) {
+        await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
+        return;
+      }
+      
+      await log(`🔒 Lock antigo/ativo detectado. PID ${lockCheck.pid} está sendo verificado.`);
+      await handleTaskTimeoutCheck(lockCheck.pid);
       await log(`⏳ Outra instancia ja esta rodando com PID ${lockCheck.pid}. Omitindo execucao.`);
       return;
     }
@@ -208,21 +361,20 @@ async function main() {
         await log(`⚠️ Falha ao buscar configuracoes de usuario: ${userError.message}`);
       }
 
-      // 2. Busca nova tarefa
-
-      const address = `${API_URL}/api/tasks/next/${MY_USER_NICKNAME}`;
-      const response = await axios.get(address);
+      // 2. Busca nova tarefa (REFATORADO - Query Prisma)
+      const task = await getNextEligibleTask(MY_USER_NICKNAME);
       
-      if (!response.data.success || !response.data.task) {
-        await log(`🔍 Nenhuma tarefa disponivel para ${MY_USER_NICKNAME}.`);
+      if (!task) {
+        await log(`🔍 Nenhuma tarefa disponível.`);
         return;
       }
 
-      const task = response.data.task;
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
       
+      // Registrar tarefa como ativa
       await stateService.registerActiveTask(task.id);
-      // Buscar ID do status "Em Andamento" - endpoint correto é /api/statuses (plural)
+      
+      // Buscar ID do status "Em Andamento"
       let STATUS_ID = null;
       try {
         const statusResponse = await axios.get(`${API_URL}/api/statuses`);
@@ -235,27 +387,94 @@ async function main() {
         STATUS_ID = null;
       }
       
-      // Atualiza status para "Em Andamento" se encontrou o ID
+      // Atualizar status para "Em Andamento" se encontrou o ID
       if (STATUS_ID) {
         await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS_ID });
       } else {
         await log(`⚠️ Não foi possível encontrar o status "${STATUS.IN_PROGRESS}" para atualizar a tarefa ${task.id}`);
       }
 
-      // 3. Executa a tarefa usando o servico
-      const config = {
-        TASKS_DIR,
-        TASK_TIMEOUT_MS,
-        MY_USER_ID
-      };
-
-      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
-
-      // 4. Processa resultado
-      if (executionResult.success) {
-        await handleTaskSuccess(task, executionResult);
-      } else {
-        await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execucao falhou'));
+      // 3. LÓGICA DE ROTEAMENTO (NOVO)
+      let routingResult = null;
+      
+      if (!task.domain) {
+        // CASO 1: Sem domínio → Analista
+        await log(`🔍 Tarefa sem domínio. Chamando Analista...`);
+        routingResult = await callAnalyst(task);
+        
+      } else if (!task.isAtomic) {
+        // CASO 2: Com domínio mas não atômica → Validador
+        await log(`⚖️ Tarefa não atômica. Validando...`);
+        
+        try {
+          // Validar com modelo auxiliar
+          const validation = await validationService.validateWithAuxModel(task, task.project);
+          
+          // Atualizar atomicidade no banco
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { isAtomic: validation.isAtomic }
+          });
+          
+          if (!validation.isAtomic) {
+            // Adicionar comentário de reprovação
+            await addComment(task.id, `❌ **Reprovado na Validação**\nRazão: ${validation.reason}`);
+            await log(`❌ Tarefa ${task.id} reprovada: ${validation.reason}`);
+            routingResult = { success: true, action: 'validated_rejected' };
+          } else {
+            await log(`✅ Tarefa ${task.id} validada como atômica. Prosseguindo para execução...`);
+            // Tarefa agora é atômica, cair no caso 3
+            task.isAtomic = true;
+          }
+        } catch (validationError) {
+          await log(`💥 Erro na validação: ${validationError.message}`);
+          routingResult = { success: false, error: validationError.message };
+        }
+      }
+      
+      // CASO 3: Tarefa atômica (ou foi validada como atômica) → Executar com Programador
+      if (task.domain && task.isAtomic && (!routingResult || routingResult.success)) {
+        await log(`🚀 Tarefa atômica. Executando...`);
+        
+        // Determinar agente baseado no domínio (CORREÇÃO: usar === em vez de =)
+        let agent;
+        if (task.domain === 'BACKEND') {
+          agent = task.project.programadorBack;
+        } else if (task.domain === 'FRONTEND') {
+          agent = task.project.programadorFront;
+        } else {
+          throw new Error(`Domínio inválido: ${task.domain}`);
+        }
+        
+        // Fallback se não houver programador configurado
+        if (!agent) {
+          agent = task.domain === 'BACKEND' ? 'default-backend-agent' : 'default-frontend-agent';
+          await log(`⚠️ Usando agente padrão para ${task.domain}: ${agent}`);
+        }
+        
+        await log(`👨‍💻 Executando tarefa ${task.id} com ${agent} (${task.domain})`);
+        
+        // Configuração para execução
+        const config = {
+          TASKS_DIR,
+          TASK_TIMEOUT_MS,
+          MY_USER_ID,
+          agent // Novo parâmetro passado para o serviço
+        };
+        
+        // Executar tarefa
+        const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
+        
+        // Processar resultado
+        if (executionResult.success) {
+          await handleTaskSuccess(task, executionResult);
+        } else {
+          await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
+        }
+      } else if (routingResult && !routingResult.success) {
+        // Tratar erro no roteamento
+        await log(`❌ Erro no roteamento: ${routingResult.error}`);
+        await handleTaskFailure(task, new Error(`Roteamento falhou: ${routingResult.error}`));
       }
 
     } catch (error) {
@@ -3745,6 +3964,370 @@ exports.writeAgentFile = async (agentId, filename, content) => {
   }
 };
 
+// --- ARQUIVO: ./src/services/validationService.js ---
+
+// ValidationService.js
+
+const LlmService = require('./llmService');
+
+/**
+ * Serviço de validação de atomicidade de tarefas
+ * Utiliza LLM (Ollama) para determinar se uma tarefa é atômica
+ */
+class ValidationService {
+  constructor() {
+    this.cache = new Map(); // Cache simples para validações
+    this.defaultModel = 'phi4:latest';
+    this.timeoutMs = 30000; // 30 segundos timeout
+    this.logger = this.createLogger();
+  }
+
+  /**
+   * Cria logger compatível (usa console se logger não estiver disponível)
+   */
+  createLogger() {
+    try {
+      const { Logger, LOG_LEVELS } = require('../utils/logger');
+      
+      // Como os métodos são estáticos, usamos a própria classe Logger, não uma instância
+      return {
+        logInfo: (message) => {
+          if (typeof Logger.logInfo === 'function') {
+            return Logger.logInfo({ message, level: LOG_LEVELS.INFO });
+          }
+          console.log(`[INFO] ${message}`);
+        },
+        logError: (message, error) => {
+          if (typeof Logger.createLog === 'function') {
+            return Logger.createLog({ 
+              message: `${message} ${error?.message || ''}`, 
+              level: LOG_LEVELS.ERROR,
+              stackTrace: error?.stack 
+            });
+          }
+          console.error(`[ERROR] ${message}`, error);
+        },
+        logWarning: (message) => {
+          if (typeof Logger.logWarning === 'function') {
+            return Logger.logWarning({ message, level: LOG_LEVELS.WARN });
+          }
+          console.warn(`[WARN] ${message}`);
+        },
+        logDebug: (message) => {
+          console.debug(`[DEBUG] ${message}`);
+        }
+      };
+    } catch (error) {
+      // Fallback para console
+      return {
+        logInfo: (message) => console.log(`[INFO] ${message}`),
+        logError: (message, error) => console.error(`[ERROR] ${message}`, error),
+        logWarning: (message) => console.warn(`[WARN] ${message}`),
+        logDebug: (message) => console.debug(`[DEBUG] ${message}`)
+      };
+    }
+  }
+
+  /**
+   * Valida se uma tarefa é atômica usando modelo auxiliar
+   * @param {Object} task - Objeto da tarefa
+   * @param {Object} project - Objeto do projeto
+   * @returns {Promise<Object>} Resultado da validação {isAtomic, reason, confidence}
+   */
+  async validateWithAuxModel(task, project) {
+    try {
+      // Validações iniciais
+      if (!task || !project) {
+        throw new Error('task e project são obrigatórios');
+      }
+
+      if (!task.title || !task.description) {
+        return {
+          isAtomic: false,
+          reason: 'Tarefa sem título ou descrição suficiente',
+          confidence: 0,
+          error: 'Dados insuficientes'
+        };
+      }
+
+      // Verificar cache (opcional)
+      const cacheKey = `${task.id}_${project.id}`;
+      const cached = this.cache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < 3600000) { // 1 hora de cache
+        this.logger.logInfo(`Usando cache para validação da tarefa ${task.id}`);
+        return cached.result;
+      }
+
+      // Determinar modelo a ser usado
+      const model = project.modeloAuxiliar || this.defaultModel;
+      this.logger.logInfo(`Validando tarefa ${task.id} com modelo ${model}`);
+
+      // Criar instância do LlmService
+      let ollama;
+      try {
+        ollama = new LlmService(model);
+      } catch (error) {
+        this.logger.logWarning(`Erro ao criar LlmService com modelo ${model}:`, error);
+        return this.getFallbackValidation(task);
+      }
+
+      // Construir prompt otimizado
+      const prompt = this.buildValidationPrompt(task, project);
+      
+      // Executar análise com timeout
+      let llmResponse;
+      try {
+        llmResponse = await this.callWithTimeout(
+          () => ollama.analyze(prompt),
+          this.timeoutMs,
+          `Timeout na validação da tarefa ${task.id}`
+        );
+      } catch (error) {
+        this.logger.logError(`Erro na chamada LLM para tarefa ${task.id}:`, error);
+        return this.getFallbackValidation(task);
+      }
+
+      // Processar resposta do LLM
+      const validationResult = this.parseLlmResponse(llmResponse, task);
+      
+      // Adicionar ao cache
+      this.cache.set(cacheKey, {
+        result: validationResult,
+        timestamp: Date.now()
+      });
+
+      this.logger.logInfo(`Validação concluída para tarefa ${task.id}: isAtomic=${validationResult.isAtomic}`);
+      return validationResult;
+
+    } catch (error) {
+      this.logger.logError(`Erro na validação da tarefa ${task.id}:`, error);
+      return this.getFallbackValidation(task, error.message);
+    }
+  }
+
+  /**
+   * Constrói prompt para validação de atomicidade
+   * @param {Object} task - Tarefa
+   * @param {Object} project - Projeto
+   * @returns {string} Prompt formatado
+   */
+  buildValidationPrompt(task, project) {
+    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
+
+ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
+
+Uma tarefa é considerada ATÔMICA quando:
+1. Tem objetivo claro e específico
+2. Possui instruções passo a passo executáveis
+3. Tem entrada e saída bem definidas
+4. Pode ser realizada por um estagiário sem necessidade de decisões arquiteturais
+5. Tem escopo limitado (pode ser concluída em poucas horas)
+6. Não depende de outras tarefas não concluídas
+7. Tem critérios de aceitação claros
+
+INFORMAÇÕES DA TAREFA:
+- Título: ${task.title}
+- Descrição: ${task.description}
+- Projeto: ${project.name}
+- Domínio: ${task.domain || 'Não especificado'}
+
+INFORMAÇÕES ADICIONAIS:
+- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
+- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
+
+ANÁLISE REQUERIDA:
+1. Esta tarefa está pronta para um estagiário executar?
+2. A tarefa tem arquivo e instrução clara?
+3. O escopo é limitado e bem definido?
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+Retorne APENAS um objeto JSON válido com a seguinte estrutura:
+{
+  "isAtomic": boolean,
+  "reason": "string (explicação detalhada)",
+  "confidence": number (0.0 a 1.0),
+  "suggestions": ["sugestão 1", "sugestão 2"]
+}
+
+EXEMPLOS:
+- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
+- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
+
+RESPOSTA (APENAS JSON):`;
+  }
+
+  /**
+   * Processa a resposta do LLM
+   * @param {Object} llmResponse - Resposta do LLM (objeto JSON)
+   * @param {Object} task - Tarefa original
+   * @returns {Object} Resultado validado
+   */
+  parseLlmResponse(llmResponse, task) {
+    try {
+      // Se a resposta for null (erro no LlmService)
+      if (!llmResponse) {
+        throw new Error('Resposta do LLM é null');
+      }
+      
+      // Validar estrutura do resultado
+      if (typeof llmResponse.isAtomic !== 'boolean') {
+        throw new Error('Campo isAtomic não é booleano');
+      }
+      
+      if (!llmResponse.reason || typeof llmResponse.reason !== 'string') {
+        llmResponse.reason = 'Razão não fornecida pelo modelo';
+      }
+      
+      if (typeof llmResponse.confidence !== 'number' || llmResponse.confidence < 0 || llmResponse.confidence > 1) {
+        llmResponse.confidence = llmResponse.isAtomic ? 0.7 : 0.5;
+      }
+      
+      if (!Array.isArray(llmResponse.suggestions)) {
+        llmResponse.suggestions = [];
+      }
+      
+      return {
+        isAtomic: llmResponse.isAtomic,
+        reason: llmResponse.reason,
+        confidence: llmResponse.confidence,
+        suggestions: llmResponse.suggestions,
+        source: 'llm',
+        taskId: task.id,
+        timestamp: new Date().toISOString()
+      };
+      
+    } catch (error) {
+      this.logger.logError(`Erro ao processar resposta LLM: ${error.message}. Resposta: ${JSON.stringify(llmResponse)}`);
+      
+      // Fallback: análise heurística simples
+      return this.heuristicValidation(task);
+    }
+  }
+
+  /**
+   * Validação heurística de fallback
+   * @param {Object} task - Tarefa
+   * @returns {Object} Resultado heurístico
+   */
+  heuristicValidation(task) {
+    const title = task.title || '';
+    const description = task.description || '';
+    
+    // Heurísticas simples
+    const hasClearObjective = title.length > 5 && description.length > 20;
+    const hasSpecificInstructions = description.includes('criar') || 
+                                   description.includes('implementar') || 
+                                   description.includes('adicionar');
+    const isTooVague = title.includes('melhorar') || 
+                      title.includes('otimizar') || 
+                      title.includes('refatorar');
+    
+    const isAtomic = hasClearObjective && hasSpecificInstructions && !isTooVague;
+    
+    return {
+      isAtomic,
+      reason: isAtomic 
+        ? 'Tarefa parece ter objetivo específico baseado em heurística' 
+        : 'Tarefa muito vaga ou falta especificação detalhada',
+      confidence: 0.5,
+      suggestions: isAtomic ? [] : ['Adicionar instruções mais específicas', 'Definir critérios de aceitação'],
+      source: 'heuristic',
+      taskId: task.id,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Validação de fallback quando LLM falha
+   * @param {Object} task - Tarefa
+   * @param {string} error - Mensagem de erro
+   * @returns {Object} Resultado de fallback
+   */
+  getFallbackValidation(task, error = 'Serviço LLM indisponível') {
+    return {
+      isAtomic: false,
+      reason: `Não foi possível validar atomicidade: ${error}`,
+      confidence: 0,
+      suggestions: ['Verificar conexão com Ollama', 'Usar validação manual'],
+      source: 'fallback',
+      taskId: task.id,
+      timestamp: new Date().toISOString(),
+      error: error
+    };
+  }
+
+  /**
+   * Executa função com timeout
+   * @param {Function} fn - Função a executar
+   * @param {number} timeoutMs - Timeout em milissegundos
+   * @param {string} timeoutMessage - Mensagem de timeout
+   * @returns {Promise<any>} Resultado da função
+   */
+  async callWithTimeout(fn, timeoutMs, timeoutMessage) {
+    return Promise.race([
+      fn(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
+      )
+    ]);
+  }
+
+  /**
+   * Limpa o cache de validações
+   * @param {number} maxAgeMs - Idade máxima em milissegundos (opcional)
+   */
+  clearCache(maxAgeMs) {
+    if (maxAgeMs) {
+      const now = Date.now();
+      for (const [key, value] of this.cache.entries()) {
+        if (now - value.timestamp > maxAgeMs) {
+          this.cache.delete(key);
+        }
+      }
+      this.logger.logInfo(`Cache limpo: removidas entradas com mais de ${maxAgeMs}ms`);
+    } else {
+      this.cache.clear();
+      this.logger.logInfo('Cache limpo completamente');
+    }
+  }
+
+  /**
+   * Valida múltiplas tarefas em lote
+   * @param {Array} tasks - Array de tarefas
+   * @param {Object} project - Projeto
+   * @returns {Promise<Array>} Resultados das validações
+   */
+  async validateBatch(tasks, project) {
+    const results = [];
+    
+    for (const task of tasks) {
+      try {
+        const result = await this.validateWithAuxModel(task, project);
+        results.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          ...result
+        });
+      } catch (error) {
+        this.logger.logError(`Erro na validação em lote da tarefa ${task.id}:`, error);
+        results.push({
+          taskId: task.id,
+          taskTitle: task.title,
+          isAtomic: false,
+          reason: `Erro na validação: ${error.message}`,
+          confidence: 0,
+          source: 'error',
+          error: error.message
+        });
+      }
+    }
+    
+    return results;
+  }
+}
+
+module.exports = new ValidationService();
+
 // --- ARQUIVO: ./src/services/avatarService.js ---
 
 // src/services/avatarService.js
@@ -4826,87 +5409,43 @@ class TaskExecutionService {
     try {
       const updateData = {};
       
-      // 1. Prompt do arquiteto (arquitetosPromptContent)
-      // O prompt do arquiteto é gerado dinamicamente, não salvo em arquivo
-      // Vamos usar o arquivo prompt-${taskId}.txt como referência
-      if (files && files.promptFile) {
-        const exists = await fileExists(files.promptFile);
-        console.log(`📁 [DEBUG] promptFile ${files.promptFile} existe? ${exists}`);
-        if (exists) {
-          try {
-            const promptContent = await fs.readFile(files.promptFile, 'utf8');
-            updateData.arquitetosPromptContent = promptContent;
-            console.log(`📄 [DEBUG] promptFile lido: ${promptContent.length} caracteres`);
-          } catch (error) {
-            console.error(`❌ Erro ao ler prompt file: ${error.message}`);
+      // Helper para ler arquivos com segurança
+      const readFileSafe = async (filePath) => {
+        try {
+          if (filePath && await fileExists(filePath)) {
+            const content = await fs.readFile(filePath, 'utf8');
+            await log(`📄 [Teardown] LIDO: ${path.basename(filePath)} (${content.length} chars)`);
+            return content;
           }
-        }
-      }
-      
-      // 2. Análise do arquiteto (arquitetosAnalysisContent)
-      // Pode vir do arquivo plano-arquiteto-${taskId}.txt ou da variável architectPlan
-      console.log(`📝 [DEBUG] Verificando análise do arquiteto: arquivo=${files?.architectPlanFile}, existe=${files?.architectPlanFile ? await fileExists(files.architectPlanFile).catch(() => false) : false}, architectPlan=${architectPlan?.length || 0} chars`);
-      if (files && files.architectPlanFile && await fileExists(files.architectPlanFile)) {
-        try {
-          const analysisContent = await fs.readFile(files.architectPlanFile, 'utf8');
-          updateData.arquitetosAnalysisContent = analysisContent;
-          console.log(`📄 [DEBUG] Análise lida do arquivo: ${analysisContent.length} caracteres`);
         } catch (error) {
-          console.error(`❌ Erro ao ler arquivo de análise do arquiteto: ${error.message}`);
+          await log(`❌ [Teardown] ERRO ao ler ${path.basename(filePath)}: ${error.message}`);
         }
-      } else if (architectPlan && architectPlan.trim().length > 0) {
-        // Usar a variável architectPlan do contexto se o arquivo não existir
-        updateData.arquitetosAnalysisContent = architectPlan;
-        console.log(`📄 [DEBUG] Análise lida do contexto: ${architectPlan.length} caracteres`);
-      } else {
-        console.log(`⚠️ [DEBUG] Nenhuma análise do arquiteto encontrada`);
-      }
+        return null;
+      };
       
-      // 3. Terminal do arquiteto (arquitetosTerminalContent)
-      if (files && files.architectLogFile && await fileExists(files.architectLogFile)) {
-        try {
-          const terminalContent = await fs.readFile(files.architectLogFile, 'utf8');
-          updateData.arquitetosTerminalContent = terminalContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler terminal do arquiteto: ${error.message}`);
-        }
-      }
+      updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      updateData.arquitetosAnalysisContent = await readFileSafe(files?.architectPlanFile) || architectPlan || null;
+      updateData.arquitetosTerminalContent = await readFileSafe(files?.architectLogFile);
+      updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
+      updateData.programadorReportContent = await readFileSafe(files?.relatorioFile);
       
-      // 4. Terminal do programador (programadorTerminalContent)
-      if (files && files.terminalLogFile && await fileExists(files.terminalLogFile)) {
-        try {
-          const terminalContent = await fs.readFile(files.terminalLogFile, 'utf8');
-          updateData.programadorTerminalContent = terminalContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler terminal do programador: ${error.message}`);
-        }
-      }
+      // Filtrar chaves nulas antes de atualizar
+      const finalUpdateData = Object.fromEntries(Object.entries(updateData).filter(([_, v]) => v !== null));
       
-      // 5. Relatório do programador (programadorReportContent)
-      if (files && files.relatorioFile && await fileExists(files.relatorioFile)) {
-        try {
-          const reportContent = await fs.readFile(files.relatorioFile, 'utf8');
-          updateData.programadorReportContent = reportContent;
-        } catch (error) {
-          console.error(`❌ Erro ao ler relatório do programador: ${error.message}`);
-        }
-      }
-      
-      // Atualizar a tarefa no banco de dados se houver dados para salvar
-      if (Object.keys(updateData).length > 0 && task && task.id) {
+      if (Object.keys(finalUpdateData).length > 0 && task && task.id) {
+        await log(`💾 [Teardown] ATUALIZANDO tarefa ${task.id} com ${Object.keys(finalUpdateData).length} campos de log...`);
         await prisma.task.update({
           where: { id: task.id },
-          data: updateData
+          data: finalUpdateData
         });
-        console.log(`✅ [DEBUG] Conteúdos dos arquivos salvos para tarefa ${task.id}: ${Object.keys(updateData).join(', ')}`);
-        console.log(`✅ [DEBUG] Tamanhos: ${Object.entries(updateData).map(([k, v]) => `${k}:${v?.length || 0} chars`).join(', ')}`);
+        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso no banco de dados.`);
       } else if (task && task.id) {
-        console.log(`⚠️ [DEBUG] Nenhum conteúdo para salvar para tarefa ${task.id}`);
+        await log(`⚠️ [Teardown] Nenhum conteúdo de arquivo encontrado para salvar na tarefa ${task.id}`);
       }
       
     } catch (error) {
-      console.error(`❌ Erro ao salvar conteúdos dos arquivos: ${error.message}`);
-      // Não falhar a execução por causa deste erro
+      await log(`💥 [FATAL Teardown] Erro CRÍTICO ao salvar conteúdos no banco: ${error.message}\n${error.stack}`);
+      // Não falhar a execução inteira, mas logar o erro de forma grave
     }
 
     return { ...ctx, finalResult };
@@ -4949,6 +5488,243 @@ module.exports = TaskExecutionService;
 
 
 
+
+// --- ARQUIVO: ./src/services/decompositionService.js ---
+
+const prisma = require('./prismaService');
+const { Logger, LOG_LEVELS } = require('../utils/logger');
+const logger = Logger;
+/**
+ * Serviço de decomposição de tarefas
+ * Transforma um array de tarefas em tarefas encadeadas com dependências sequenciais
+ */
+class DecompositionService {
+  /**
+   * Decompõe uma tarefa pai em subtarefas sequenciais
+   * @param {string} parentTaskId - ID da tarefa pai
+   * @param {Array} subtasksArray - Array de objetos de subtarefas
+   * @returns {Promise<Object>} Resultado da decomposição
+   */
+  async decompose(parentTaskId, subtasksArray) {
+    try {
+      // Validações iniciais
+      if (!parentTaskId) {
+        throw new Error('parentTaskId é obrigatório');
+      }
+
+      if (!Array.isArray(subtasksArray) || subtasksArray.length === 0) {
+        throw new Error('subtasksArray deve ser um array não vazio');
+      }
+
+      logger.logInfo(`Iniciando decomposição da tarefa ${parentTaskId} com ${subtasksArray.length} subtarefas`);
+
+      // Verificar se a tarefa pai existe
+      const parentTask = await prisma.task.findUnique({
+        where: { id: parentTaskId },
+        select: { id: true, isDecomposed: true, projectId: true }
+      });
+
+      if (!parentTask) {
+        throw new Error(`Tarefa pai ${parentTaskId} não encontrada`);
+      }
+
+      if (parentTask.isDecomposed) {
+        throw new Error(`Tarefa ${parentTaskId} já está decomposta`);
+      }
+
+      // Validar cada subtarefa
+      for (let i = 0; i < subtasksArray.length; i++) {
+        const subtask = subtasksArray[i];
+        this.validateSubtask(subtask, i, parentTask.projectId);
+      }
+
+      // Executar decomposição em transação
+      const result = await prisma.$transaction(async (tx) => {
+        const createdSubtasks = [];
+        let previousTaskId = null;
+
+        for (let i = 0; i < subtasksArray.length; i++) {
+          const subtask = subtasksArray[i];
+          
+          // Criar subtarefa
+          const created = await tx.task.create({
+            data: {
+              title: subtask.title,
+              description: subtask.description || '',
+              domain: subtask.domain, // 'BACKEND' ou 'FRONTEND'
+              projectId: parentTask.projectId,
+              parentTaskId: parentTaskId,
+              statusId: subtask.statusId,
+              priorityId: subtask.priorityId,
+              createdById: subtask.userId,
+              assignedToId: subtask.userId,
+              deadline: subtask.deadline ? new Date(subtask.deadline) : new Date(),
+              position: i, // Posição na sequência
+              isAtomic: false, // Nasce falso para passar pelo Validador
+              isDecomposed: false,
+              isCompleted: false
+            }
+          });
+
+          createdSubtasks.push(created);
+
+          // Criar dependência sequencial (exceto para a primeira)
+          if (previousTaskId) {
+            await tx.dependency.create({
+              data: { 
+                taskId: previousTaskId, 
+                dependentTaskId: created.id,
+                type: 'SEQUENTIAL'
+              }
+            });
+          }
+
+          previousTaskId = created.id;
+        }
+
+        // Marcar a tarefa pai como decomposta
+        await tx.task.update({ 
+          where: { id: parentTaskId }, 
+          data: { 
+            isDecomposed: true,
+            isAtomic: false // Tarefa decomposta não é atômica
+          } 
+        });
+
+        return {
+          parentTaskId,
+          subtasksCreated: createdSubtasks.length,
+          subtasks: createdSubtasks,
+          dependenciesCreated: subtasksArray.length - 1
+        };
+      });
+
+      logger.logInfo(`Decomposição concluída: ${result.subtasksCreated} subtarefas criadas para tarefa ${parentTaskId}`);
+      return result;
+
+    } catch (error) {
+      logger.logError(`Erro na decomposição da tarefa ${parentTaskId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Valida uma subtarefa individual
+   * @param {Object} subtask - Objeto da subtarefa
+   * @param {number} index - Índice no array
+   * @param {string} projectId - ID do projeto
+   */
+  validateSubtask(subtask, index, projectId) {
+    if (!subtask.title || typeof subtask.title !== 'string') {
+      throw new Error(`Subtask[${index}]: título é obrigatório e deve ser uma string`);
+    }
+
+    if (!subtask.domain || !['BACKEND', 'FRONTEND'].includes(subtask.domain)) {
+      throw new Error(`Subtask[${index}]: domain deve ser 'BACKEND' ou 'FRONTEND'`);
+    }
+
+    if (!subtask.statusId || typeof subtask.statusId !== 'string') {
+      throw new Error(`Subtask[${index}]: statusId é obrigatório`);
+    }
+
+    if (!subtask.priorityId || typeof subtask.priorityId !== 'string') {
+      throw new Error(`Subtask[${index}]: priorityId é obrigatório`);
+    }
+
+    if (!subtask.userId || typeof subtask.userId !== 'string') {
+      throw new Error(`Subtask[${index}]: userId é obrigatório`);
+    }
+
+    // Se projectId for fornecido na subtask, deve corresponder ao projeto pai
+    if (subtask.projectId && subtask.projectId !== projectId) {
+      throw new Error(`Subtask[${index}]: projectId não corresponde ao projeto da tarefa pai`);
+    }
+  }
+
+  /**
+   * Verifica se uma tarefa pode ser decomposta
+   * @param {string} taskId - ID da tarefa
+   * @returns {Promise<Object>} Informações sobre a capacidade de decomposição
+   */
+  async canDecompose(taskId) {
+    try {
+      const task = await prisma.task.findUnique({
+        where: { id: taskId },
+        select: {
+          id: true,
+          isDecomposed: true,
+          isAtomic: true,
+          isCompleted: true,
+          projectId: true,
+          title: true
+        }
+      });
+
+      if (!task) {
+        return { canDecompose: false, reason: 'Tarefa não encontrada' };
+      }
+
+      if (task.isDecomposed) {
+        return { canDecompose: false, reason: 'Tarefa já decomposta' };
+      }
+
+      if (task.isAtomic) {
+        return { canDecompose: false, reason: 'Tarefa marcada como atômica' };
+      }
+
+      if (task.isCompleted) {
+        return { canDecompose: false, reason: 'Tarefa já concluída' };
+      }
+
+      return { 
+        canDecompose: true, 
+        task: {
+          id: task.id,
+          title: task.title,
+          projectId: task.projectId
+        }
+      };
+
+    } catch (error) {
+      logger.logError(`Erro ao verificar decomposição da tarefa ${taskId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Obtém as subtarefas de uma tarefa decomposta
+   * @param {string} parentTaskId - ID da tarefa pai
+   * @returns {Promise<Array>} Array de subtarefas
+   */
+  async getSubtasks(parentTaskId) {
+    try {
+      const subtasks = await prisma.task.findMany({
+        where: { 
+          parentTaskId: parentTaskId,
+          isCompleted: false
+        },
+        include: {
+          status: true,
+          priority: true,
+          dependencies: {
+            include: {
+              dependentTask: true
+            }
+          }
+        },
+        orderBy: { position: 'asc' }
+      });
+
+      return subtasks;
+
+    } catch (error) {
+      logger.logError(`Erro ao obter subtarefas da tarefa ${parentTaskId}:`, error);
+      throw error;
+    }
+  }
+}
+
+module.exports = new DecompositionService();
 
 // --- ARQUIVO: ./src/services/autoTaskService.js ---
 
@@ -5790,15 +6566,22 @@ class TaskService {
       where.assignedToId = filters.assignedToId;
     }
 
-    // Default to excluding completed tasks unless explicitly requested
-    console.log('DEBUG getAllTasks filters:', filters);
-    console.log('DEBUG getAllTasks filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getAllTasks filters keys:', Object.keys(filters));
-    console.log('DEBUG getAllTasks filters type of isCompleted:', typeof filters.isCompleted);
-    if (filters.isCompleted !== undefined) {
-      where.isCompleted = filters.isCompleted === 'true';
+    // Filtro para parentTaskId (subtarefas)
+    if (filters.parentTaskId !== undefined) {
+      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+        where.parentTaskId = null;
+      } else {
+        where.parentTaskId = filters.parentTaskId;
+      }
     }
-    console.log('DEBUG getAllTasks where:', JSON.stringify(where));
+
+    // Default to excluding completed tasks unless explicitly requested
+    if (filters.isCompleted !== undefined) {
+      where.isCompleted = filters.isCompleted === true; // Espera booleano true/false
+    } else {
+      where.isCompleted = false; // Valor padrão: não trazer tarefas completas
+    }
+    console.log('DEBUG getAllTasks final where:', JSON.stringify(where));
 
     if (filters.search) {
       where.OR = [
@@ -6264,15 +7047,32 @@ class TaskService {
       where.statusId = filters.statusId;
     }
 
-    // Default to excluding completed tasks unless explicitly requested
-    console.log('DEBUG getTasksByProject filters:', filters);
-    console.log('DEBUG getTasksByProject filters.isCompleted:', filters.isCompleted);
-    console.log('DEBUG getTasksByProject filters keys:', Object.keys(filters));
-    console.log('DEBUG getTasksByProject filters type of isCompleted:', typeof filters.isCompleted);
-    if (filters.isCompleted !== undefined) {
-      where.isCompleted = filters.isCompleted === 'true';
+    // Filtro para parentTaskId (subtarefas)
+    if (filters.parentTaskId !== undefined) {
+      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+        where.parentTaskId = null;
+      } else {
+        where.parentTaskId = filters.parentTaskId;
+      }
+    } else {
+      where.parentTaskId = null;
     }
-    console.log('DEBUG getTasksByProject where:', JSON.stringify(where));
+
+    // Ajuste para isCompleted: Por padrão, não trazer tarefas completas, a menos que isCompleted seja explicitamente 'true'
+    if (filters.isCompleted !== undefined) {
+      where.isCompleted = filters.isCompleted === true; // Espera booleano true/false
+    } else {
+      where.isCompleted = false; // Valor padrão: não trazer tarefas completas
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } }
+      ];
+    }
+
+    console.log('DEBUG getTasksByProject final where:', JSON.stringify(where));
 
     return await prisma.task.findMany({
       where,
@@ -6506,7 +7306,7 @@ class TaskService {
     return date;
   }
 
-  // === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
+// === NOVO MÉTODO: Obter a próxima tarefa para um usuário (usado pelo Jarbas) ===
   async getNextTaskForUser(nickname) {
     const now = new Date();
 
@@ -6529,14 +7329,14 @@ class TaskService {
         // Filtrar apenas tarefas de projetos ativos
         project: {
           ativo: true,
-          status: true  // status também deve ser true (projeto ativo)
+          status: true
         },
         // A tarefa tem que ser: Normal OU (Recursiva E já passou do horário previsto)
         OR: [
           { isRecurring: false },
           { 
             isRecurring: true, 
-            nextExecutionAt: { lte: now } // Traz só o que venceu ou é null (primeira vez)
+            nextExecutionAt: { lte: now }
           },
           {
              isRecurring: true,
@@ -6552,20 +7352,25 @@ class TaskService {
             id: true,
             name: true,
             ativo: true,
-            status: true
+            status: true,
+            // === NOVOS CAMPOS PARA O MONITOR ORQUESTRAR ===
+            modeloAuxiliar: true,
+            programadorBack: true,
+            programadorFront: true,
+            projectType: true,
+            agent: true
           }
         },
-        dependencies: { include: { task: true } },
-        comments: {
+        dependents: {
           include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                nickname: true
+            task: {
+              include: {
+                priority: true,
+                status: true
               }
             }
-          },
+        }
+        ,
           orderBy: {
             createdAt: 'asc'
           }
@@ -6573,12 +7378,12 @@ class TaskService {
       }
     });
 
-    const playableTasks = tasks.filter(t => t.dependencies.every(dep => dep.task.isCompleted));
-    console.log(`
-      
-      DEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}
-      Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${playableTasks.length}
-      `);
+    // Filtra tarefas onde TODAS as dependências (bloqueadores) já estão concluídas
+    const playableTasks = tasks.filter(t => t.dependents.every(dep => dep.task.isCompleted));
+    
+    console.log(`\nDEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}`);
+    console.log(`Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${tasks.length}\n`);
+    
     if (playableTasks.length === 0) return null;
 
     playableTasks.sort((a, b) => {
@@ -6590,29 +7395,22 @@ class TaskService {
       if (a.isRecurring && b.isRecurring) {
         const dateA = a.nextExecutionAt || a.createdAt;
         const dateB = b.nextExecutionAt || b.createdAt;
-        console.log(`
-          DEBUG: Comparando recursivas ${a.title} (next: ${dateA.toISOString()}) e ${b.title} (next: ${dateB.toISOString()})
-          `);
+        console.log(`DEBUG: Comparando recursivas ${a.title} (next: ${dateA.toISOString()}) e ${b.title} (next: ${dateB.toISOString()})`);
         return dateA.getTime() - dateB.getTime();
       }
 
       // Se nenhuma é recursiva, vai por peso e depois criação
       if (a.priority.weight !== b.priority.weight) {
-        console.log(`
-          DEBUG: Comparando prioridades ${a.priority.name} (peso: ${a.priority.weight}) e ${b.priority.name} (peso: ${b.priority.weight})
-          `);
+        console.log(`DEBUG: Comparando prioridades ${a.priority.name} (peso: ${a.priority.weight}) e ${b.priority.name} (peso: ${b.priority.weight})`);
         return b.priority.weight - a.priority.weight;
       }
 
-      console.log(`
-        DEBUG: Comparando por deadline ${a.title} (deadline: ${a.deadline.toISOString()}) e ${b.title} (deadline: ${b.deadline.toISOString()})
-        `);
+      console.log(`DEBUG: Comparando por deadline ${a.title} (deadline: ${a.deadline.toISOString()}) e ${b.title} (deadline: ${b.deadline.toISOString()})`);
       return (a.deadline || a.createdAt).getTime() - (b.deadline || b.createdAt).getTime();
     });
    
-    console.log(`
-      DEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}
-      `);
+    console.log(`\nDEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}\n`);
+    
     return playableTasks[0];
   }
 
@@ -6821,6 +7619,8 @@ class ProjectService {
         pastaBase: data.pastaBase || null,
         agent: data.agent || null,
         programadorContratado: data.programadorContratado || null,
+        programadorFront: data.programadorFront || null,
+        programadorBack: data.programadorBack || null,
         modeloAuxiliar: data.modeloAuxiliar || null,
         frontendBuildCmd: data.frontendBuildCmd || null,
         backendBuildCmd: data.backendBuildCmd || null
@@ -6977,6 +7777,8 @@ class ProjectService {
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
     if (data.agent !== undefined) updateData.agent = data.agent || null;
     if (data.programadorContratado !== undefined) updateData.programadorContratado = data.programadorContratado || null;
+    if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
+    if (data.programadorBack !== undefined) updateData.programadorBack = data.programadorBack || null;
     if (data.modeloAuxiliar !== undefined) updateData.modeloAuxiliar = data.modeloAuxiliar || null;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;
@@ -7518,31 +8320,40 @@ class LockService {
     }
   }
 
-  /**
+/**
    * Verifica se ha um lock ativo
-   * @returns {Promise<{locked: boolean, pid: number|null}>}
+   * @param {number} timeoutThresholdMs - Tempo em ms para considerar o lock como "recente"
+   * @returns {Promise<Object>}
    */
-  async checkLock() {
+  async checkLock(timeoutThresholdMs = 0) {
     if (!await fileExists(this.lockFilePath)) {
-      console.log(`🔍 LockService: Arquivo ${this.lockFilePath} não existe`);
       return { locked: false, pid: null };
     }
-
     try {
-      const pidRaw = await fs.readFile(this.lockFilePath, 'utf8');
-      console.log(`🔍 LockService: Conteúdo do lock: "${pidRaw}"`);
-      const pid = parseInt(String(pidRaw).trim(), 10);
+      const stat = await fs.stat(this.lockFilePath);
+      const mtime = stat.mtimeMs;
+      const age = Date.now() - mtime;
 
+      const pidRaw = await fs.readFile(this.lockFilePath, 'utf8');
+      const pid = parseInt(String(pidRaw).trim(), 10);
+      
       if (Number.isNaN(pid)) {
-        console.log(`⚠️ LockService: PID inválido no lock: "${pidRaw}"`);
         return { locked: false, pid: null, corrupted: true };
       }
 
-      console.log(`🔍 LockService: Verificando processo PID ${pid}`);
+      // REQUISITO 2: Se o lock existe e ainda não passou do tempo, nem olha o processo.
+      if (timeoutThresholdMs > 0 && age < timeoutThresholdMs) {
+        return { 
+          locked: true, 
+          pid, 
+          alive: true, 
+          ageRecent: true, 
+          mtime 
+        };
+      }
+
       const alive = await this.isProcessAlive(pid);
-      console.log(`🔍 LockService: Processo PID ${pid} está vivo? ${alive}`);
-      
-      return { locked: alive, pid, alive };
+      return { locked: alive, pid, alive, mtime };
     } catch (error) {
       console.error(`❌ LockService: Erro ao verificar lock: ${error.message}`);
       return { locked: false, pid: null, error: error.message };
@@ -7980,8 +8791,12 @@ class OpenClawService {
         cwd: spawnCwd, 
         env, 
         shell: false, 
-        stdio: ['ignore', 'pipe', 'pipe']  // stdin ignorado, stdout/stderr capturados
+        detached: true, // <-- MUDANÇA CRÍTICA
+        stdio: ['ignore', 'pipe', 'pipe']
       });
+
+      // Libera o processo pai imediatamente
+      child.unref();
 
       let stdout = ''; 
       let stderr = ''; 
@@ -8089,7 +8904,7 @@ class OpenClawService {
         );
         
         // Analisar resultado para determinar sucesso
-        const success = this.analyzeExecutionResult(result, agent);
+        const success = result.success && !result.errorMessage && !result.exitCode;
         
         if (success) {
           await log(`✅ [OpenClaw] Execução do agente ${agent} bem-sucedida na tentativa ${attempt}`);
@@ -8138,41 +8953,6 @@ class OpenClawService {
     };
   }
   
-  /**
-   * Analisa o resultado da execução para determinar sucesso
-   */
-  static analyzeExecutionResult(result, agent) {
-    if (!result.success) return false;
-    
-    const output = result.rawOutput || '';
-    
-    // Verificar padrões de sucesso
-    const successPatterns = [
-      /concluído|concluida|finalizado|sucesso|success|done|pronto|✅/i,
-      /arquivo.*\.done.*criado/i,
-      /relatório.*finalizado/i,
-      /tarefa.*executada/i
-    ];
-    
-    // Verificar padrões de falha
-    const failurePatterns = [
-      /erro|error|falha|failed|❌|🚫/i,
-      /timeout|timed out/i,
-      /não.*encontrado|not found/i,
-      /permissão.*negada|permission denied/i
-    ];
-    
-    const hasSuccess = successPatterns.some(pattern => pattern.test(output));
-    const hasFailure = failurePatterns.some(pattern => pattern.test(output));
-    
-    // Para agentes analíticos, sucesso pode ser apenas análise concluída
-    if (agent.includes('analista')) {
-      return hasSuccess || (!hasFailure && output.length > 100);
-    }
-    
-    // Para agentes de programação, precisa de evidência mais forte
-    return hasSuccess && !hasFailure;
-  }
   
   /**
    * Executa uma chamada ao agente, mas se ele falhar ou travar, 
@@ -9117,7 +9897,7 @@ const { extractUser } = require('./middlewares/authMiddleware');
 const cronScheduler = require('./cronScheduler');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4001;
 
 // Middleware
 const corsOptions = {
@@ -9262,6 +10042,7 @@ app.get("/logs", (req, res) => {
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
+app.use('/api/dependencies', require('./routes/dependencyRoutes'));
 app.use('/api/statuses', statusRoutes);
 app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);
@@ -9437,6 +10218,8 @@ const projectSchema = z.object({
   pastaBase: z.string().optional().nullable(),
   agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   programadorContratado: z.string().max(100, 'Programador contratado must be at most 100 characters').optional().nullable(),
+  programadorFront: z.string().max(100).optional().nullable(),
+  programadorBack: z.string().max(100).optional().nullable(),
   modeloAuxiliar: z.string().max(100).optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
@@ -9465,6 +10248,8 @@ const updateProjectSchema = z.object({
   pastaBase: z.string().optional().nullable(),
   agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   programadorContratado: z.string().max(100, 'Programador contratado must be at most 100 characters').optional().nullable(),
+  programadorFront: z.string().max(100).optional().nullable(),
+  programadorBack: z.string().max(100).optional().nullable(),
   modeloAuxiliar: z.string().max(100).optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
@@ -10017,6 +10802,25 @@ router.delete('/:id', taskHistoryController.deleteHistory);
 module.exports = router;
 
 
+// --- ARQUIVO: ./src/routes/dependencyRoutes.js ---
+
+// src/routes/dependencyRoutes.js
+
+const express = require('express');
+const router = express.Router();
+const dependencyController = require('../controllers/dependencyController');
+
+// Create a new dependency
+router.post('/', dependencyController.createDependency);
+
+// Delete a dependency
+router.delete('/:taskId/:dependentTaskId', dependencyController.deleteDependency);
+
+// Get dependencies for a task
+router.get('/task/:taskId', dependencyController.getTaskDependencies);
+
+module.exports = router;
+
 // --- ARQUIVO: ./src/routes/recurrenceRoutes.js ---
 
 const express = require('express');
@@ -10381,6 +11185,149 @@ class StageController {
 }
 
 module.exports = new StageController();
+
+// --- ARQUIVO: ./src/controllers/dependencyController.js ---
+
+// src/controllers/dependencyController.js
+
+const prisma = require('../services/prismaService');
+const ErrorMiddleware = require('../middlewares/errorMiddleware');
+
+class DependencyController {
+  // Create a new dependency
+  createDependency = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { taskId, dependentTaskId, type = 'BLOCKING' } = req.body;
+
+    // Validate required fields
+    if (!taskId || !dependentTaskId) {
+      const error = new Error('taskId and dependentTaskId are required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Check if tasks exist
+    const [task, dependentTask] = await Promise.all([
+      prisma.task.findUnique({ where: { id: taskId } }),
+      prisma.task.findUnique({ where: { id: dependentTaskId } })
+    ]);
+
+    if (!task) {
+      const error = new Error(`Task with ID ${taskId} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (!dependentTask) {
+      const error = new Error(`Dependent task with ID ${dependentTaskId} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+
+    // Check if dependency already exists
+    const existingDependency = await prisma.dependency.findFirst({
+      where: {
+        taskId,
+        dependentTaskId
+      }
+    });
+
+    if (existingDependency) {
+      const error = new Error('Dependency already exists');
+      error.statusCode = 409;
+      throw error;
+    }
+
+    // Check for circular dependencies
+    // Simple check: don't allow if dependentTask already depends on task
+    const circularCheck = await prisma.dependency.findFirst({
+      where: {
+        taskId: dependentTaskId,
+        dependentTaskId: taskId
+      }
+    });
+
+    if (circularCheck) {
+      const error = new Error('Circular dependency detected');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Create dependency
+    const dependency = await prisma.dependency.create({
+      data: {
+        taskId,
+        dependentTaskId,
+        type
+      },
+      include: {
+        task: true,
+        dependentTask: true
+      }
+    });
+
+    res.status(201).json({
+      status: 'success',
+      data: dependency
+    });
+  });
+
+  // Delete a dependency
+  deleteDependency = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { taskId, dependentTaskId } = req.params;
+
+    // Find and delete dependency
+    const dependency = await prisma.dependency.findFirst({
+      where: {
+        taskId,
+        dependentTaskId
+      }
+    });
+
+    if (!dependency) {
+      const error = new Error('Dependency not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    await prisma.dependency.delete({
+      where: {
+        id: dependency.id
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Dependency deleted successfully'
+    });
+  });
+
+  // Get dependencies for a task
+  getTaskDependencies = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { taskId } = req.params;
+
+    const dependencies = await prisma.dependency.findMany({
+      where: {
+        taskId
+      },
+      include: {
+        dependentTask: {
+          include: {
+            status: true,
+            priority: true,
+            assignedTo: true
+          }
+        }
+      }
+    });
+
+    res.status(200).json({
+      status: 'success',
+      data: dependencies
+    });
+  });
+}
+
+module.exports = new DependencyController();
 
 // --- ARQUIVO: ./src/controllers/recurrenceController.js ---
 
@@ -12998,43 +13945,14 @@ class UserController {
       throw error;
     }
 
-    // 2. Find the next task - apenas de projetos ativos
-    const nextTask = await prisma.task.findFirst({
-      where: {
-        assignedToId: user.id,
-        isCompleted: false,
-        status: {
-          visibleToAi: true
-        },
-        // Filtrar apenas tarefas de projetos ativos
-        project: {
-          ativo: true,
-          status: true  // status também deve ser true (projeto ativo)
-        }
-      },
-      include: {
-        status: true,
-        priority: true,
-        project: true
-      },
-      orderBy: [
-        {
-          priority: {
-            weight: 'desc'
-          }
-        },
-        {
-          createdAt: 'asc'
-        }
-      ]
-    });
+    // Usamos o taskService, método getNextTaskForUser
+    const nextTask = await taskService.getNextTaskForUser(nickname);
 
     if (!nextTask) {
-      return res.json({
-        success: true,
-        message: 'No pending tasks found for this user with AI-enabled status.',
+      res.json({
+        success: false,
         task: null,
-        correlationId: req.correlationId
+        correlationId: 0
       });
     }
 
@@ -13977,6 +14895,33 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
       - Plano detalhado NÃO é execução! Um plano com 100 passos ainda é apenas um plano.
     `.trim();
     return prompt;
+  }
+
+  /**
+   * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
+   */
+  static buildDecompositionPrompt(task) {
+    return `
+      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo e dividi-la em micro-tarefas sequenciais e atômicas.
+      É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
+
+      Objetivo da Tarefa Mãe: ${task?.title}
+      Descrição: ${task?.description}
+
+      Responda APENAS com um array JSON válido neste formato exato (sem markdown em volta, apenas o array). Não adicione nenhum texto antes ou depois do array:
+      [
+        {
+          "title": "[BACKEND] Criar tabela de X",
+          "description": "Passo a passo exato do que o estagiário deve fazer no arquivo Y...",
+          "domain": "BACKEND"
+        },
+        {
+          "title": "[FRONTEND] Criar componente de X",
+          "description": "Passo a passo exato do que o estagiário deve fazer no componente Z...",
+          "domain": "FRONTEND"
+        }
+      ]
+    `.trim();
   }
 }
 
@@ -16109,7 +17054,7 @@ const TASKS_DIR = process.env.PENDING_TASKS_DIR || path.join(OPENCLAW_DIR, 'pend
 const PROCESSED_DIR = path.join(TASKS_DIR, 'processed');
 const ERROR_DIR = path.join(TASKS_DIR, 'error');
 
-const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+const API_URL = process.env.API_URL || `http://127.0.0.1:${process.env.PORT}`;
 const STATE_FILE = path.join(TASKS_DIR, 'monitor-state.json');
 const LOG_FILE = path.join(OPENCLAW_DIR, 'jarbas-monitor.log');
 const MY_USER_NICKNAME = process.env.MY_USER_NICKNAME || 'jarbas';

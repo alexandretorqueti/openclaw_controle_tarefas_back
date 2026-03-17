@@ -6,6 +6,144 @@ const axios = require('axios');
 const path = require('path');
 axios.defaults.timeout = 180000; // 3 minutos
 
+// Novos imports para roteamento inteligente
+const prisma = require('./src/services/prismaService');
+const validationService = require('./src/services/validationService');
+const decompositionService = require('./src/services/decompositionService');
+const commentService = require('./src/services/commentService');
+
+/**
+ * Busca a próxima tarefa elegível para processamento
+ * @returns {Promise<Object|null>} Tarefa ou null se não houver
+ */
+/**
+ * Busca a próxima tarefa elegível para processamento via API
+ * @param {string} nickname - Nickname do usuário (ex: 'alexandre')
+ * @returns {Promise<Object|null>} Tarefa ou null se não houver
+ */
+async function getNextEligibleTask(nickname) {
+  // Importando a configuração localmente caso não esteja no topo do arquivo
+  const { API_URL } = require('./aux/config'); 
+
+  try {
+    
+    const response = await axios.get(`${API_URL}/api/users/nickname/${nickname}/next-task`);
+
+    // Se a API retornar uma tarefa válida, nós a devolvemos
+    if (response.data && response.data?.task.id) {
+      return response.data.task;
+    }
+
+    return null;
+  } catch (error) {
+    // Se a API retornar 404 (Not Found) ou 204 (No Content), significa que a fila está vazia.
+    // Isso é um comportamento esperado, então não precisamos logar como um erro crítico.
+    if (error.response && (error.response.status === 404 || error.response.status === 204)) {
+      return null;
+    }
+
+    await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Chama o analista (via OpenClaw) para decompor uma tarefa complexa em micro-tarefas
+ * @param {Object} task - Tarefa mãe a ser decomposta
+ * @returns {Promise<Object>} Resultado da decomposição
+ */
+async function callAnalyst(task) {
+  const OpenClawService = require('./src/services/openclawService');
+  const PromptFactory = require('./src/utils/promptFactory'); // <-- Importando sua Factory
+  const path = require('path');
+  const fs = require('fs').promises;
+  const { TASKS_DIR, TASK_TIMEOUT_MS } = require('./aux/config');
+
+  try {
+    await log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
+
+    const architectSessionId = `architect-${task.id}-${Date.now()}`;
+    const architectLogFile = path.join(TASKS_DIR, `architect-${task.id}.log`);
+
+    const primaryAgent = task.project?.agent ||  task.project?.programadorBack || 'main';
+    const fallbackAgent = task.project?.programadorFront || 'main';
+
+    // Usando o seu PromptFactory de forma limpa
+    const architectInput = PromptFactory.buildDecompositionPrompt(task);
+
+    const architectResult = await OpenClawService.executeWithFallback(
+      architectSessionId,
+      architectInput,
+      primaryAgent,
+      fallbackAgent,
+      task.project?.modeloAuxiliar || null,
+      TASKS_DIR,
+      architectLogFile,
+      task.project?.pastaBase,
+      TASK_TIMEOUT_MS
+    );
+
+    if (!architectResult.success) {
+      throw new Error(`Falha na execução do OpenClaw: ${architectResult.errorMessage}`);
+    }
+
+    // Extrai o JSON do rawOutput
+    let subtasksPlan = [];
+    try {
+      const jsonMatch = architectResult.rawOutput.match(/\[[\s\S]*?\]/);
+      if (!jsonMatch) throw new Error("Nenhum array JSON encontrado na saída do agente.");
+      
+      
+      subtasksPlan = JSON.parse(architectResult.rawOutput);
+    } catch (parseError) {
+      throw new Error(`O Arquiteto não retornou um formato JSON válido. Erro: ${parseError.message}`);
+    }
+
+    if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
+      throw new Error("O Arquiteto retornou um array vazio de tarefas.");
+    }
+
+    const mappedSubtasks = subtasksPlan.map(st => ({
+      title: st.title,
+      description: st.description,
+      domain: st.domain, 
+      projectId: task.projectId,
+      statusId: task.statusId,
+      priorityId: task.priorityId,
+      userId: task.assignedToId
+    }));
+    
+    const decompositionResult = await decompositionService.decompose(task.id, mappedSubtasks);
+    
+    await addComment(task.id, `🔍 **Análise Concluída pelo Arquiteto**\nA funcionalidade foi dividida em ${mappedSubtasks.length} micro-tarefas sequenciais.`);
+    await log(`✅ Tarefa ${task.id} decomposta pelo OpenClaw em ${mappedSubtasks.length} subtarefas.`);
+    
+    return { success: true, subtasksCreated: mappedSubtasks.length };
+    
+  } catch (error) {
+    await log(`💥 Erro ao chamar Arquiteto para tarefa ${task.id}: ${error.message}`);
+    await addComment(task.id, `❌ **Erro na Análise**\nFalha ao decompor tarefa: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Adiciona um comentário a uma tarefa
+ * @param {string} taskId - ID da tarefa
+ * @param {string} content - Conteúdo do comentário
+ */
+async function addComment(taskId, content) {
+  try {
+    await commentService.addComment({
+      taskId,
+      userId: 'system',
+      content
+    });
+  } catch (error) {
+    await log(`⚠️ Erro ao adicionar comentário: ${error.message}`);
+  }
+}
+
 async function main() {
   // Configuracoes
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
@@ -190,21 +328,20 @@ async function main() {
         await log(`⚠️ Falha ao buscar configuracoes de usuario: ${userError.message}`);
       }
 
-      // 2. Busca nova tarefa
-
-      const address = `${API_URL}/api/tasks/next/${MY_USER_NICKNAME}`;
-      const response = await axios.get(address);
+      // 2. Busca nova tarefa (REFATORADO - Query Prisma)
+      const task = await getNextEligibleTask(MY_USER_NICKNAME);
       
-      if (!response.data.success || !response.data.task) {
-        await log(`🔍 Nenhuma tarefa disponivel para ${MY_USER_NICKNAME}.`);
+      if (!task) {
+        await log(`🔍 Nenhuma tarefa disponível.`);
         return;
       }
 
-      const task = response.data.task;
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
       
+      // Registrar tarefa como ativa
       await stateService.registerActiveTask(task.id);
-      // Buscar ID do status "Em Andamento" - endpoint correto é /api/statuses (plural)
+      
+      // Buscar ID do status "Em Andamento"
       let STATUS_ID = null;
       try {
         const statusResponse = await axios.get(`${API_URL}/api/statuses`);
@@ -217,27 +354,92 @@ async function main() {
         STATUS_ID = null;
       }
       
-      // Atualiza status para "Em Andamento" se encontrou o ID
+      // Atualizar status para "Em Andamento" se encontrou o ID
       if (STATUS_ID) {
         await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS_ID });
       } else {
         await log(`⚠️ Não foi possível encontrar o status "${STATUS.IN_PROGRESS}" para atualizar a tarefa ${task.id}`);
       }
 
-      // 3. Executa a tarefa usando o servico
-      const config = {
-        TASKS_DIR,
-        TASK_TIMEOUT_MS,
-        MY_USER_ID
-      };
-
-      const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
-
-      // 4. Processa resultado
-      if (executionResult.success) {
-        await handleTaskSuccess(task, executionResult);
-      } else {
-        await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execucao falhou'));
+      // 3. LÓGICA DE ROTEAMENTO (NOVO)
+      let routingResult = null;
+      
+      if (!task.domain) {
+        // CASO 1: Sem domínio → Analista
+        await log(`🔍 Tarefa sem domínio. Chamando Analista...`);
+        routingResult = await callAnalyst(task);
+        
+      } else if (!task.isAtomic) {
+        // CASO 2: Com domínio mas não atômica → Validador
+        await log(`⚖️ Tarefa não atômica. Validando...`);
+        
+        try {
+          // Validar com modelo auxiliar
+          const validation = await validationService.validateWithAuxModel(task, task.project);
+          
+          // Atualizar atomicidade no banco
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { isAtomic: validation.isAtomic }
+          });
+          
+          if (!validation.isAtomic) {
+            // Manda pro Analista
+            routingResult = await callAnalyst(task);
+          } else {
+            await log(`✅ Tarefa ${task.id} validada como atômica. Prosseguindo para execução...`);
+            // Tarefa agora é atômica, cair no caso 3
+            task.isAtomic = true;
+          }
+        } catch (validationError) {
+          await log(`💥 Erro na validação: ${validationError.message}`);
+          routingResult = { success: false, error: validationError.message };
+        }
+      }
+      
+      // CASO 3: Tarefa atômica (ou foi validada como atômica) → Executar com Programador
+      if (task.domain && task.isAtomic && (!routingResult || routingResult.success)) {
+        await log(`🚀 Tarefa atômica. Executando...`);
+        
+        // Determinar agente baseado no domínio (CORREÇÃO: usar === em vez de =)
+        let agent;
+        if (task.domain === 'BACKEND') {
+          agent = task.project.programadorBack;
+        } else if (task.domain === 'FRONTEND') {
+          agent = task.project.programadorFront;
+        } else {
+          throw new Error(`Domínio inválido: ${task.domain}`);
+        }
+        
+        // Fallback se não houver programador configurado
+        if (!agent) {
+          agent = task.domain === 'BACKEND' ? 'default-backend-agent' : 'default-frontend-agent';
+          await log(`⚠️ Usando agente padrão para ${task.domain}: ${agent}`);
+        }
+        
+        await log(`👨‍💻 Executando tarefa ${task.id} com ${agent} (${task.domain})`);
+        
+        // Configuração para execução
+        const config = {
+          TASKS_DIR,
+          TASK_TIMEOUT_MS,
+          MY_USER_ID,
+          agent // Novo parâmetro passado para o serviço
+        };
+        
+        // Executar tarefa
+        const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
+        
+        // Processar resultado
+        if (executionResult.success) {
+          await handleTaskSuccess(task, executionResult);
+        } else {
+          await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
+        }
+      } else if (routingResult && !routingResult.success) {
+        // Tratar erro no roteamento
+        await log(`❌ Erro no roteamento: ${routingResult.error}`);
+        await handleTaskFailure(task, new Error(`Roteamento falhou: ${routingResult.error}`));
       }
 
     } catch (error) {

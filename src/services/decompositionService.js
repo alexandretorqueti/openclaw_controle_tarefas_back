@@ -1,6 +1,6 @@
 const prisma = require('./prismaService');
-const logger = require('../utils/logger');
-
+const { Logger, LOG_LEVELS } = require('../utils/logger');
+const logger = Logger;
 /**
  * Serviço de decomposição de tarefas
  * Transforma um array de tarefas em tarefas encadeadas com dependências sequenciais
@@ -23,7 +23,7 @@ class DecompositionService {
         throw new Error('subtasksArray deve ser um array não vazio');
       }
 
-      logger.info(`Iniciando decomposição da tarefa ${parentTaskId} com ${subtasksArray.length} subtarefas`);
+      logger.logInfo(`Iniciando decomposição da tarefa ${parentTaskId} com ${subtasksArray.length} subtarefas`);
 
       // Verificar se a tarefa pai existe
       const parentTask = await prisma.task.findUnique({
@@ -106,11 +106,11 @@ class DecompositionService {
         };
       });
 
-      logger.info(`Decomposição concluída: ${result.subtasksCreated} subtarefas criadas para tarefa ${parentTaskId}`);
+      logger.logInfo(`Decomposição concluída: ${result.subtasksCreated} subtarefas criadas para tarefa ${parentTaskId}`);
       return result;
 
     } catch (error) {
-      logger.error(`Erro na decomposição da tarefa ${parentTaskId}:`, error);
+      logger.logError(`Erro na decomposição da tarefa ${parentTaskId}:`, error);
       throw error;
     }
   }
@@ -193,7 +193,7 @@ class DecompositionService {
       };
 
     } catch (error) {
-      logger.error(`Erro ao verificar decomposição da tarefa ${taskId}:`, error);
+      logger.logError(`Erro ao verificar decomposição da tarefa ${taskId}:`, error);
       throw error;
     }
   }
@@ -225,7 +225,7 @@ class DecompositionService {
       return subtasks;
 
     } catch (error) {
-      logger.error(`Erro ao obter subtarefas da tarefa ${parentTaskId}:`, error);
+      logger.logError(`Erro ao obter subtarefas da tarefa ${parentTaskId}:`, error);
       throw error;
     }
   }
