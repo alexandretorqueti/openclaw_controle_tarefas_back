@@ -188,8 +188,8 @@ async function main() {
           {
             title: 'Configurar ambiente de desenvolvimento',
             description: 'Instalar dependências e configurar variáveis de ambiente',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
+            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
+            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
             project: { connect: { id: project.id } },
             createdBy: { connect: { id: alexandreUser.id } },
             assignedTo: { connect: { id: jarbasUser.id } },
@@ -198,8 +198,8 @@ async function main() {
           {
             title: 'Implementar autenticação de usuários',
             description: 'Criar sistema de login e controle de acesso',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
+            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
+            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
             project: { connect: { id: project.id } },
             createdBy: { connect: { id: alexandreUser.id } },
             assignedTo: { connect: { id: jarbasUser.id } },
@@ -208,8 +208,8 @@ async function main() {
           {
             title: 'Criar dashboard de monitoramento',
             description: 'Interface para visualizar progresso das tarefas',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
+            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
+            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
             project: { connect: { id: project.id } },
             createdBy: { connect: { id: alexandreUser.id } },
             assignedTo: { connect: { id: jarbasUser.id } },

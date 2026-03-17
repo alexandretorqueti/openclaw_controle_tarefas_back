@@ -320,28 +320,24 @@ class TaskExecutionService {
     let qa = { passed: true };
     if (project) {
       const BUILD_TIMEOUT = 60000;
+      // Corrigir PATH do Node.js: injetar o diretório do node atual (geralmente NVM) no início do PATH.
+      // Isso impede que o child_process use um node legado (ex: Node 12 em /usr/bin) sob ambiente de cron job.
+      const nodeBinDir = path.dirname(process.execPath);
+      const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
+
       if (project.backendBuildCmd && project.backendPath) {
         try {
           await log(`⏳ Testando build Backend...`);
-          execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+          execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
         } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
       }
       if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
         try {
           await log(`⏳ Testando build Frontend...`);
-          // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
           const frontendCwd = path.join(project.pastaBase, project.frontendPath);
           const buildCmd = project.frontendBuildCmd;
           
-          // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
-          const env = { ...process.env, NODE_OPTIONS: '' };
-          
-          // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
-          if (buildCmd === 'npm run build') {
-            execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-          } else {
-            execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-          }
+          execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
         } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
       }
     }
@@ -461,28 +457,22 @@ class TaskExecutionService {
         let qa = { passed: true };
         if (project) {
           const BUILD_TIMEOUT = 60000;
+          const nodeBinDir = path.dirname(process.execPath);
+          const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
+
           if (project.backendBuildCmd && project.backendPath) {
             try {
               await log(`⏳ Testando build Backend...`);
-              execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+              execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
             } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
           }
           if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
             try {
               await log(`⏳ Testando build Frontend...`);
-              // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
               const frontendCwd = path.join(project.pastaBase, project.frontendPath);
               const buildCmd = project.frontendBuildCmd;
               
-              // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
-              const env = { ...process.env, NODE_OPTIONS: '' };
-              
-              // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
-              if (buildCmd === 'npm run build') {
-                execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-              } else {
-                execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-              }
+              execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
             } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
           }
         }

@@ -134,7 +134,7 @@ async function callAnalyst(task) {
  */
 async function addComment(taskId, content) {
   try {
-    await commentService.addComment({
+    await commentService.createComment({
       taskId,
       userId: 'system',
       content

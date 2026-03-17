@@ -246,6 +246,7 @@ model TaskExecutionLog {
 model AgentAvatar {
   id        String   @id @default(cuid())
   agentId   String   @unique
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
   filename  String
   mimeType  String
   path      String   // Caminho relativo no sistema de arquivos
@@ -255,6 +256,19 @@ model AgentAvatar {
 
   @@map("agent_avatars")
   @@index([agentId])
+}
+
+model Agent {
+  id        String   @id @default(uuid())
+  name      String
+  role      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relações
+  avatar    AgentAvatar?
+
+  @@map("agents")
 }
 
 model Stage {
