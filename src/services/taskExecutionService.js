@@ -333,11 +333,14 @@ class TaskExecutionService {
           const frontendCwd = path.join(project.pastaBase, project.frontendPath);
           const buildCmd = project.frontendBuildCmd;
           
+          // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
+          const env = { ...process.env, NODE_OPTIONS: '' };
+          
           // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
           if (buildCmd === 'npm run build') {
-            execSync('npx vite build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true });
+            execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
           } else {
-            execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true });
+            execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
           }
         } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
       }
@@ -428,7 +431,7 @@ class TaskExecutionService {
       // Salva o prompt do turno no disco para você poder auditar o que foi enviado
       // ATENÇÃO: Aqui está o BUG! Estamos sobrescrevendo o prompt do arquiteto com o prompt do desenvolvedor
       // Vamos criar um arquivo separado para o prompt do desenvolvedor
-      const developerPromptFile = path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turn}.txt`);
+      const developerPromptFile = path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnos}.txt`);
       await fs.writeFile(developerPromptFile, promptDesteTurno).catch(()=>{});
 
       // 3. CHAMA O OPENCLAW
@@ -471,11 +474,14 @@ class TaskExecutionService {
               const frontendCwd = path.join(project.pastaBase, project.frontendPath);
               const buildCmd = project.frontendBuildCmd;
               
+              // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
+              const env = { ...process.env, NODE_OPTIONS: '' };
+              
               // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
               if (buildCmd === 'npm run build') {
-                execSync('npx vite build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true });
+                execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
               } else {
-                execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true });
+                execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
               }
             } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
           }
@@ -613,19 +619,20 @@ class TaskExecutionService {
         return null;
       };
       
-      updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      // SEMPRE usar o prompt original do arquiteto, não o arquivo que pode ter sido sobrescrito
+      const architectPromptFile = path.join(TASKS_DIR, `architect-prompt-${task.id}.txt`);
+      updateData.arquitetosPromptContent = await readFileSafe(architectPromptFile);
+      
+      // Se não encontrar o backup, tentar o arquivo original (mas avisar)
+      if (!updateData.arquitetosPromptContent) {
+        await log(`⚠️ [Teardown] Arquivo de prompt do arquiteto não encontrado: ${architectPromptFile}`);
+        updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      }
+      
       updateData.arquitetosAnalysisContent = await readFileSafe(files?.architectPlanFile) || architectPlan || null;
       updateData.arquitetosTerminalContent = await readFileSafe(files?.architectLogFile);
       updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
       updateData.programadorReportContent = await readFileSafe(files?.relatorioFile);
-      
-      // Garantir que o prompt do arquiteto não seja sobrescrito pelo prompt do desenvolvedor
-      // Buscar o prompt original do arquiteto se ele foi sobrescrito
-      if (!updateData.arquitetosPromptContent) {
-        // Tentar encontrar o prompt original do arquiteto
-        const architectPromptFile = path.join(TASKS_DIR, `architect-prompt-${task.id}.txt`);
-        updateData.arquitetosPromptContent = await readFileSafe(architectPromptFile);
-      }
       
       // Filtrar chaves nulas antes de atualizar
       const finalUpdateData = Object.fromEntries(Object.entries(updateData).filter(([_, v]) => v !== null));
