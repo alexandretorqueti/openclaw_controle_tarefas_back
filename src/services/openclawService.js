@@ -7,8 +7,8 @@ const ToolCallService = require('./toolCallService');
 const CommandExecutor = require('./commandExecutor');
 const { log } =  require('../../aux/logger');
 
-const OPENCLAW_NODE = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
-const OPENCLAW_MJS = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
+const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
+const OPENCLAW_MJS = process.env.OPENCLAW_MJS || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/mjs';
 
 /**
  * Serviço auxiliar para gerenciar configurações de agentes

@@ -16,8 +16,9 @@ exports.execOpenClawCommand = async (command, args = []) => {
     const shouldAddJson = !(command === 'config' && args[0] === 'set');
     const fullArgs = [command, ...args, ...(shouldAddJson ? ['--json'] : [])];
     console.log('Executando openclaw:', fullArgs.join(' '));
-    
-    const child = spawn('openclaw', fullArgs, {
+    const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
+    const OPENCLAW_PATH = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
+    const child = spawn(OPENCLAW_NODE, [OPENCLAW_PATH, ...fullArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: false
     });

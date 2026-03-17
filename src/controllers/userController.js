@@ -327,14 +327,14 @@ class UserController {
     const nextTask = await taskService.getNextTaskForUser(nickname);
 
     if (!nextTask) {
-      res.json({
+      return res.json({
         success: false,
         task: null,
-        correlationId: 0
+        correlationId: req.correlationId
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       task: nextTask,
       correlationId: req.correlationId

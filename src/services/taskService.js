@@ -365,6 +365,17 @@ class TaskService {
             }
           }
         },
+        dependents: {
+          include: {
+            task: {
+              select: {
+                id: true,
+                title: true,
+                status: true
+              }
+            }
+          }
+        },
         comments: {
           include: {
             user: {
