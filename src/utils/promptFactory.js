@@ -179,8 +179,13 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    */
   static buildDecompositionPrompt(task) {
     return `
-      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo e dividi-la em micro-tarefas sequenciais e atômicas.
-      É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
+      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo, analisa-la, procurar no projeto os arquivos relevantes, e dividi-la em micro-tarefas sequenciais e atômicas.
+      Antes de dividí-los, considere as seguintes regras:
+      * Se a tarefa for de desenvolvimento, não divida se não tiver olhado os arquivos e entendido o projeto. A sua função é entender.
+      * Se a tarefa for de desenvolvimento, considere que o projeto possui os arquivos de desenvolvimento.
+      * Se a tarefa for de desenvolvimento, faça a análise em cima dos arquivos existentes, nunca peça ao desenvolvedor para procurar para ver se existe tal arquivo. Você já deve dizer a ele a localização exata.
+      * Entenda a lógica da tarefa antes de dividí-la em micro-tarefas.
+      * Se a tarefa for de desenvolvimento, É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
 
       Objetivo da Tarefa Mãe: ${task?.title}
       Descrição: ${task?.description}

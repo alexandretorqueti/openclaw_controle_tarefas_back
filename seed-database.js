@@ -184,46 +184,6 @@ async function main() {
           throw new Error('Usuário jarbas não encontrado para atribuição de tarefas');
         }
         
-        const exampleTasks = [
-          {
-            title: 'Configurar ambiente de desenvolvimento',
-            description: 'Instalar dependências e configurar variáveis de ambiente',
-            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
-            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 dias
-          },
-          {
-            title: 'Implementar autenticação de usuários',
-            description: 'Criar sistema de login e controle de acesso',
-            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
-            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 dias
-          },
-          {
-            title: 'Criar dashboard de monitoramento',
-            description: 'Interface para visualizar progresso das tarefas',
-            priority: { connect: { id: mediumPriority ? mediumPriority.id : undefined } },
-            status: { connect: { id: pendingStatus ? pendingStatus.id : undefined } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // 10 dias
-          }
-        ];
-        
-        for (const taskData of exampleTasks) {
-          await prisma.task.create({
-            data: taskData
-          });
-          console.log(`✅ Tarefa criada: ${taskData.title}`);
-        }
-        
       } else {
         console.log(`⚠️ Projeto já existe: ${existingProject.name}`);
       }

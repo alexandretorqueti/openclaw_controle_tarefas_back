@@ -1184,7 +1184,8 @@ return {
 
     if (!finalStatus) throw new Error('Nenhum status final configurado no sistema.');
 
-    const [updatedTask, historyRecord] = await prisma.$transaction([
+    // Iniciar transação para atualizar a tarefa atual
+    const transaction = [
       prisma.task.update({
         where: { id: taskId },
         data: {
@@ -1204,28 +1205,120 @@ return {
           notes: executionNotes || 'Tarefa finalizada.'
         }
       })
-    ]);
+    ];
 
-          // Controle de versão automático após finalização
-      try {
-        const project = await prisma.project.findUnique({
-          where: { id: existingTask.projectId },
-          select: { frontendPath: true, backendPath: true }
+    // Variável para armazenar tarefa pai finalizada (se aplicável)
+    let parentTaskFinalized = null;
+    let parentHistoryRecord = null;
+
+    // ==========================================
+    // LÓGICA DE PROPAGAÇÃO PARA TAREFA PAI
+    // ==========================================
+    // Se esta tarefa tem um pai, verificar se todas as irmãs estão finalizadas
+    if (existingTask.parentTaskId) {
+      console.log(`🔍 Tarefa ${taskId} tem pai ${existingTask.parentTaskId}. Verificando irmãs...`);
+      
+      // Buscar todas as subtasks (irmãs) da tarefa pai
+      const allSubtasks = await prisma.task.findMany({
+        where: {
+          parentTaskId: existingTask.parentTaskId,
+          id: { not: taskId } // Excluir a tarefa atual que estamos finalizando
+        },
+        include: {
+          status: true
+        }
+      });
+
+      // Verificar se TODAS as subtasks estão no status final
+      const allSubtasksFinalized = allSubtasks.every(subtask => 
+        subtask.status && subtask.status.isFinalState
+      );
+
+      console.log(`📊 Status das irmãs: ${allSubtasks.length} irmãs encontradas, todas finalizadas? ${allSubtasksFinalized}`);
+
+      // Se todas as irmãs já estavam finalizadas E esta é a última sendo finalizada agora
+      // (ou se não há outras irmãs além desta)
+      if (allSubtasksFinalized || allSubtasks.length === 0) {
+        console.log(`✅ Todas as subtasks da tarefa pai ${existingTask.parentTaskId} estão finalizadas. Finalizando pai também...`);
+        
+        // Buscar a tarefa pai
+        const parentTask = await prisma.task.findUnique({
+          where: { id: existingTask.parentTaskId },
+          include: { status: true }
         });
-        if (project?.frontendPath) {
-          await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
-        }
-        if (project?.backendPath) {
-          await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
-        }
-      } catch (gitError) {
-        console.error('Git automation failed:', gitError.message);
-      }
 
-return {
+        if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
+          // Adicionar atualização da tarefa pai à transação
+          transaction.push(
+            prisma.task.update({
+              where: { id: existingTask.parentTaskId },
+              data: {
+                statusId: finalStatus.id,
+                isCompleted: false,
+                lastExecutedAt: new Date(),
+                nextExecutionAt: null
+              },
+              include: { project: true, status: true, priority: true }
+            })
+          );
+
+          // Adicionar histórico para a tarefa pai
+          transaction.push(
+            prisma.taskHistory.create({
+              data: {
+                taskId: existingTask.parentTaskId,
+                userId: actionUserId,
+                oldStatusId: parentTask.statusId,
+                newStatusId: finalStatus.id,
+                notes: `Tarefa pai finalizada automaticamente porque todas as subtasks foram concluídas.`
+              }
+            })
+          );
+
+          parentTaskFinalized = true;
+          console.log(`🎯 Tarefa pai ${existingTask.parentTaskId} será finalizada automaticamente.`);
+        } else {
+          console.log(`ℹ️ Tarefa pai ${existingTask.parentTaskId} já está finalizada ou não encontrada.`);
+        }
+      } else {
+        console.log(`⏳ Tarefa pai ${existingTask.parentTaskId} não será finalizada ainda: ${allSubtasks.length} irmãs pendentes.`);
+      }
+    }
+
+    // Executar todas as operações em uma única transação
+    const transactionResults = await prisma.$transaction(transaction);
+    
+    const updatedTask = transactionResults[0];
+    const historyRecord = transactionResults[1];
+    
+    // Se a tarefa pai foi finalizada, extrair seus dados dos resultados da transação
+    if (parentTaskFinalized) {
+      parentTaskFinalized = transactionResults[2]; // Tarefa pai atualizada
+      parentHistoryRecord = transactionResults[3]; // Histórico da tarefa pai
+    }
+
+    // Controle de versão automático após finalização
+    try {
+      const project = await prisma.project.findUnique({
+        where: { id: existingTask.projectId },
+        select: { frontendPath: true, backendPath: true }
+      });
+      if (project?.frontendPath) {
+        await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
+      }
+      if (project?.backendPath) {
+        await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
+      }
+    } catch (gitError) {
+      console.error('Git automation failed:', gitError.message);
+    }
+
+    return {
       task: updatedTask,
       status: finalStatus,
       history: historyRecord,
+      parentTaskFinalized: parentTaskFinalized,
+      parentHistory: parentHistoryRecord,
       isRecurringReset: false
     };
   }

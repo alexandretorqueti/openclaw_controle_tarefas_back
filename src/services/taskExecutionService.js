@@ -129,12 +129,17 @@ class TaskExecutionService {
     const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '');
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
     
-    // Gera um ID único e descartável para o Arquiteto não lembrar do passado
-    const architectSessionId = `${task.id}-arquiteto-${Date.now()}`;
-    // Roda o Arquiteto com timeout de 10 minutos (600000ms)
+    // Importar utilitário de sessões em cadeia
+    const SessionChainUtils = require('../utils/sessionChainUtils');
     
+    // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
+    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+    
+    await log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
+    
+    // Roda o Arquiteto com timeout de 10 minutos (600000ms)
     const architectResult = await OpenClawService.executeWithFallback(
-      architectSessionId, // <--- A VACINA DA AMNÉSIA ESTÁ AQUI
+      architectSessionId, // <--- SESSÃO UNIFICADA PARA CADEIAS DE DEPENDÊNCIAS
       architectInput,
       project?.agent || task.agent || 'main',
       task.agent || 'main',
@@ -415,8 +420,13 @@ class TaskExecutionService {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
-      // 1. GERAÇÃO DE SESSÃO ÚNICA (Destrói o histórico corrompido)
-      const turnSessionId = `${task.id}-turno-${turnos}`;
+      // Importar utilitário de sessões em cadeia (se ainda não importado)
+      const SessionChainUtils = require('../utils/sessionChainUtils');
+      
+      // 1. GERAÇÃO DE SESSÃO UNIFICADA (baseada na primeira tarefa da cadeia)
+      const turnSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'turno', turnos);
+      
+      await log(`🔗 Sessão do turno ${turnos}: ${turnSessionId} (baseada na cadeia de dependências)`);
 
       // 2. MONTAGEM DO DOSSIÊ DO TURNO
       let promptDesteTurno = basePrompt;

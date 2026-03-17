@@ -62,7 +62,13 @@ async function callAnalyst(task) {
   try {
     await log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
 
-    const architectSessionId = `architect-${task.id}-${Date.now()}`;
+    // Importar utilitário de sessões em cadeia
+    const SessionChainUtils = require('./src/utils/sessionChainUtils');
+    
+    // Usar sessão unificada baseada na cadeia de dependências
+    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+    
+    await log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
     const architectLogFile = path.join(TASKS_DIR, `architect-${task.id}.log`);
 
     const primaryAgent = task.project?.agent ||  task.project?.programadorBack || 'main';
