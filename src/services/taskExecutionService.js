@@ -581,8 +581,9 @@ class TaskExecutionService {
    */
   static async stepTeardown(ctx) {
     console.log(`🔧 [DEBUG] stepTeardown chamado para tarefa ${ctx.task?.id}`);
-    const { executionLog, files, task, architectPlan } = ctx;
+    const { executionLog, files, task, architectPlan, config } = ctx;
     let { contractResult } = ctx; // Mudar para let para permitir reatribuição
+    const { TASKS_DIR } = config || {};
     
     // Validação de segurança
     if (!contractResult) {

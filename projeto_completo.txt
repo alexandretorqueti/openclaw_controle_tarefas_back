@@ -417,10 +417,8 @@ async function main() {
           });
           
           if (!validation.isAtomic) {
-            // Adicionar comentário de reprovação
-            await addComment(task.id, `❌ **Reprovado na Validação**\nRazão: ${validation.reason}`);
-            await log(`❌ Tarefa ${task.id} reprovada: ${validation.reason}`);
-            routingResult = { success: true, action: 'validated_rejected' };
+            // Manda pro Analista
+            routingResult = await callAnalyst(task);
           } else {
             await log(`✅ Tarefa ${task.id} validada como atômica. Prosseguindo para execução...`);
             // Tarefa agora é atômica, cair no caso 3
@@ -3542,8 +3540,9 @@ exports.execOpenClawCommand = async (command, args = []) => {
     const shouldAddJson = !(command === 'config' && args[0] === 'set');
     const fullArgs = [command, ...args, ...(shouldAddJson ? ['--json'] : [])];
     console.log('Executando openclaw:', fullArgs.join(' '));
-    
-    const child = spawn('openclaw', fullArgs, {
+    const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
+    const OPENCLAW_PATH = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
+    const child = spawn(OPENCLAW_NODE, [OPENCLAW_PATH, ...fullArgs], {
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: false
     });
@@ -3969,7 +3968,7 @@ exports.writeAgentFile = async (agentId, filename, content) => {
 // ValidationService.js
 
 const LlmService = require('./llmService');
-
+const buildValidationPrompt = require('../utils/promptFactory').buildValidationPrompt;
 /**
  * Serviço de validação de atomicidade de tarefas
  * Utiliza LLM (Ollama) para determinar se uma tarefa é atômica
@@ -3978,7 +3977,7 @@ class ValidationService {
   constructor() {
     this.cache = new Map(); // Cache simples para validações
     this.defaultModel = 'phi4:latest';
-    this.timeoutMs = 30000; // 30 segundos timeout
+    this.timeoutMs = 5 * 60 * 1000; // 5 minutos
     this.logger = this.createLogger();
   }
 
@@ -4072,7 +4071,7 @@ class ValidationService {
       }
 
       // Construir prompt otimizado
-      const prompt = this.buildValidationPrompt(task, project);
+      const prompt = buildValidationPrompt(task, project);
       
       // Executar análise com timeout
       let llmResponse;
@@ -4104,57 +4103,7 @@ class ValidationService {
       return this.getFallbackValidation(task, error.message);
     }
   }
-
-  /**
-   * Constrói prompt para validação de atomicidade
-   * @param {Object} task - Tarefa
-   * @param {Object} project - Projeto
-   * @returns {string} Prompt formatado
-   */
-  buildValidationPrompt(task, project) {
-    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
-
-ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
-
-Uma tarefa é considerada ATÔMICA quando:
-1. Tem objetivo claro e específico
-2. Possui instruções passo a passo executáveis
-3. Tem entrada e saída bem definidas
-4. Pode ser realizada por um estagiário sem necessidade de decisões arquiteturais
-5. Tem escopo limitado (pode ser concluída em poucas horas)
-6. Não depende de outras tarefas não concluídas
-7. Tem critérios de aceitação claros
-
-INFORMAÇÕES DA TAREFA:
-- Título: ${task.title}
-- Descrição: ${task.description}
-- Projeto: ${project.name}
-- Domínio: ${task.domain || 'Não especificado'}
-
-INFORMAÇÕES ADICIONAIS:
-- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
-- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
-
-ANÁLISE REQUERIDA:
-1. Esta tarefa está pronta para um estagiário executar?
-2. A tarefa tem arquivo e instrução clara?
-3. O escopo é limitado e bem definido?
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-Retorne APENAS um objeto JSON válido com a seguinte estrutura:
-{
-  "isAtomic": boolean,
-  "reason": "string (explicação detalhada)",
-  "confidence": number (0.0 a 1.0),
-  "suggestions": ["sugestão 1", "sugestão 2"]
-}
-
-EXEMPLOS:
-- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
-- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
-
-RESPOSTA (APENAS JSON):`;
-  }
+ 
 
   /**
    * Processa a resposta do LLM
@@ -4168,7 +4117,10 @@ RESPOSTA (APENAS JSON):`;
       if (!llmResponse) {
         throw new Error('Resposta do LLM é null');
       }
-      
+      // Se llmResponse for string, tentar converter para JSON
+      if (typeof llmResponse === 'string') {
+        llmResponse = JSON.parse(llmResponse);
+      }
       // Validar estrutura do resultado
       if (typeof llmResponse.isAtomic !== 'boolean') {
         throw new Error('Campo isAtomic não é booleano');
@@ -4199,42 +4151,9 @@ RESPOSTA (APENAS JSON):`;
     } catch (error) {
       this.logger.logError(`Erro ao processar resposta LLM: ${error.message}. Resposta: ${JSON.stringify(llmResponse)}`);
       
-      // Fallback: análise heurística simples
-      return this.heuristicValidation(task);
+      // retorna Erro
+      throw new Error(`Erro ao processar resposta LLM: ${error.message}`);
     }
-  }
-
-  /**
-   * Validação heurística de fallback
-   * @param {Object} task - Tarefa
-   * @returns {Object} Resultado heurístico
-   */
-  heuristicValidation(task) {
-    const title = task.title || '';
-    const description = task.description || '';
-    
-    // Heurísticas simples
-    const hasClearObjective = title.length > 5 && description.length > 20;
-    const hasSpecificInstructions = description.includes('criar') || 
-                                   description.includes('implementar') || 
-                                   description.includes('adicionar');
-    const isTooVague = title.includes('melhorar') || 
-                      title.includes('otimizar') || 
-                      title.includes('refatorar');
-    
-    const isAtomic = hasClearObjective && hasSpecificInstructions && !isTooVague;
-    
-    return {
-      isAtomic,
-      reason: isAtomic 
-        ? 'Tarefa parece ter objetivo específico baseado em heurística' 
-        : 'Tarefa muito vaga ou falta especificação detalhada',
-      confidence: 0.5,
-      suggestions: isAtomic ? [] : ['Adicionar instruções mais específicas', 'Definir critérios de aceitação'],
-      source: 'heuristic',
-      taskId: task.id,
-      timestamp: new Date().toISOString()
-    };
   }
 
   /**
@@ -4933,6 +4852,10 @@ class TaskExecutionService {
 
     const architectPrompt = `ARQUITETO: Analise esta tarefa e crie um plano de ação.\n\nTAREFA: ${task.title}\nDESCRIÇÃO: ${task.description}\nBASE: ${dirBase}${commentsSection}`;
     
+    // Salvar também em um arquivo backup para garantir que não seja perdido
+    const architectPromptBackupFile = path.join(TASKS_DIR, `architect-prompt-${taskId}.txt`);
+    await fs.writeFile(architectPromptBackupFile, architectPrompt);
+    
     // Engine rules serão adicionadas APENAS para o desenvolvedor depois
     const engineRules = PromptFactory.buildEngineRulesPrompt(files);
     const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
@@ -5160,7 +5083,19 @@ class TaskExecutionService {
       if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
         try {
           await log(`⏳ Testando build Frontend...`);
-          execSync(project.frontendBuildCmd, { cwd: path.join(project.pastaBase, project.frontendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+          // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
+          const frontendCwd = path.join(project.pastaBase, project.frontendPath);
+          const buildCmd = project.frontendBuildCmd;
+          
+          // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
+          const env = { ...process.env, NODE_OPTIONS: '' };
+          
+          // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
+          if (buildCmd === 'npm run build') {
+            execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
+          } else {
+            execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
+          }
         } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
       }
     }
@@ -5248,7 +5183,10 @@ class TaskExecutionService {
       }
 
       // Salva o prompt do turno no disco para você poder auditar o que foi enviado
-      await fs.writeFile(files.promptFile, promptDesteTurno).catch(()=>{});
+      // ATENÇÃO: Aqui está o BUG! Estamos sobrescrevendo o prompt do arquiteto com o prompt do desenvolvedor
+      // Vamos criar um arquivo separado para o prompt do desenvolvedor
+      const developerPromptFile = path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnos}.txt`);
+      await fs.writeFile(developerPromptFile, promptDesteTurno).catch(()=>{});
 
       // 3. CHAMA O OPENCLAW
       const res = await OpenClawService.executeWithFallback(
@@ -5286,7 +5224,19 @@ class TaskExecutionService {
           if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
             try {
               await log(`⏳ Testando build Frontend...`);
-              execSync(project.frontendBuildCmd, { cwd: path.join(project.pastaBase, project.frontendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
+              // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
+              const frontendCwd = path.join(project.pastaBase, project.frontendPath);
+              const buildCmd = project.frontendBuildCmd;
+              
+              // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
+              const env = { ...process.env, NODE_OPTIONS: '' };
+              
+              // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
+              if (buildCmd === 'npm run build') {
+                execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
+              } else {
+                execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
+              }
             } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
           }
         }
@@ -5423,7 +5373,16 @@ class TaskExecutionService {
         return null;
       };
       
-      updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      // SEMPRE usar o prompt original do arquiteto, não o arquivo que pode ter sido sobrescrito
+      const architectPromptFile = path.join(TASKS_DIR, `architect-prompt-${task.id}.txt`);
+      updateData.arquitetosPromptContent = await readFileSafe(architectPromptFile);
+      
+      // Se não encontrar o backup, tentar o arquivo original (mas avisar)
+      if (!updateData.arquitetosPromptContent) {
+        await log(`⚠️ [Teardown] Arquivo de prompt do arquiteto não encontrado: ${architectPromptFile}`);
+        updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
+      }
+      
       updateData.arquitetosAnalysisContent = await readFileSafe(files?.architectPlanFile) || architectPlan || null;
       updateData.arquitetosTerminalContent = await readFileSafe(files?.architectLogFile);
       updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
@@ -6568,7 +6527,7 @@ class TaskService {
 
     // Filtro para parentTaskId (subtarefas)
     if (filters.parentTaskId !== undefined) {
-      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+      if (filters.parentTaskId === null || filters.parentTaskId === '' || filters.parentTaskId === 'null') {
         where.parentTaskId = null;
       } else {
         where.parentTaskId = filters.parentTaskId;
@@ -6692,6 +6651,17 @@ class TaskService {
         dependencies: {
           include: {
             dependentTask: {
+              select: {
+                id: true,
+                title: true,
+                status: true
+              }
+            }
+          }
+        },
+        dependents: {
+          include: {
+            task: {
               select: {
                 id: true,
                 title: true,
@@ -7049,7 +7019,7 @@ class TaskService {
 
     // Filtro para parentTaskId (subtarefas)
     if (filters.parentTaskId !== undefined) {
-      if (filters.parentTaskId === null || filters.parentTaskId === '') {
+      if (filters.parentTaskId === null || filters.parentTaskId === '' || filters.parentTaskId === 'null') {
         where.parentTaskId = null;
       } else {
         where.parentTaskId = filters.parentTaskId;
@@ -7369,17 +7339,23 @@ class TaskService {
                 status: true
               }
             }
-        }
-        ,
-          orderBy: {
-            createdAt: 'asc'
           }
         }
       }
     });
 
-    // Filtra tarefas onde TODAS as dependências (bloqueadores) já estão concluídas
-    const playableTasks = tasks.filter(t => t.dependents.every(dep => dep.task.isCompleted));
+    // Filtra tarefas onde TODAS as dependências (bloqueadores) já estão em um status que seja 'estado final';
+    let playableTasks = [];
+    try {
+      playableTasks = tasks.filter(
+        t => t.dependents.every(
+          dep => 
+            dep.task && dep.task.status && dep.task.status.isFinalState
+        )
+      );
+    } catch (error) {
+      return null;
+    }
     
     console.log(`\nDEBUG: Tarefas atribuídas a ${nickname} que passaram na dependência: ${playableTasks.map(t => t.title).join('; ')}`);
     console.log(`Quantidade total de tarefas atribuídas a ${nickname} (sem filtrar dependências): ${tasks.length}\n`);
@@ -8452,8 +8428,8 @@ const ToolCallService = require('./toolCallService');
 const CommandExecutor = require('./commandExecutor');
 const { log } =  require('../../aux/logger');
 
-const OPENCLAW_NODE = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
-const OPENCLAW_MJS = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
+const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
+const OPENCLAW_MJS = process.env.OPENCLAW_MJS || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/mjs';
 
 /**
  * Serviço auxiliar para gerenciar configurações de agentes
@@ -10377,7 +10353,8 @@ const taskFiltersSchema = z.object({
   isCompleted: z.enum(['true', 'false']).optional(),
   search: z.string().optional(),
   sortBy: z.enum(['deadline', 'position', 'title', 'createdAt']).optional().default('deadline'),
-  sortOrder: z.enum(['asc', 'desc']).optional().default('asc')
+  sortOrder: z.enum(['asc', 'desc']).optional().default('asc'),
+  parentTaskId: z.string().optional()
 });
 
 const validateTask = (data) => {
@@ -13625,6 +13602,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { getAbsoluteAvatarUrl } = require('../utils/avatarUrl');
+const taskService = require('../services/taskService');
 
 class UserController {
   // Get all users
@@ -13949,14 +13927,14 @@ class UserController {
     const nextTask = await taskService.getNextTaskForUser(nickname);
 
     if (!nextTask) {
-      res.json({
+      return res.json({
         success: false,
         task: null,
-        correlationId: 0
+        correlationId: req.correlationId
       });
     }
 
-    res.json({
+    return res.json({
       success: true,
       task: nextTask,
       correlationId: req.correlationId
@@ -14923,6 +14901,68 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
       ]
     `.trim();
   }
+
+  /**
+   * Constrói prompt para validação de atomicidade
+   * @param {Object} task - Tarefa
+   * @param {Object} project - Projeto
+   * @returns {string} Prompt formatado
+   */
+  static buildValidationPrompt(task, project) {
+    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
+
+ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
+
+Uma tarefa é considerada ATÔMICA quando:
+1. Tem objetivo claro e específico
+2. Possui instruções passo a passo executáveis
+3. Tem entrada e saída bem definidas
+4. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
+5. Tem escopo limitado (pode ser concluída em poucas horas)
+6. Tem critérios de aceitação claros
+7. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
+
+Uma tarefa NÃO é ATÔMICA quando:
+1. Não tem objetivo claro e específico
+2. Não possui instruções passo a passo executáveis
+3. Não tem entrada e saída bem definidas
+4. Não pode ser realizada por um programador pleno, pode ser apenas um plano
+5. Tem escopo muito amplo (não pode ser concluida em poucas horas)
+6. Não tem critérios de aceitação claros
+
+
+INFORMAÇÕES DA TAREFA:
+- Título: ${task.title}
+- Descrição: ${task.description}
+- Projeto: ${project.name}
+- Domínio: ${task.domain || 'Não especificado'}
+
+INFORMAÇÕES ADICIONAIS:
+- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
+- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
+
+ANÁLISE REQUERIDA:
+1. Esta tarefa está pronta para um estagiário executar?
+2. A tarefa tem arquivo e instrução clara?
+3. O escopo é limitado e bem definido?
+
+FORMATO DE RESPOSTA OBRIGATÓRIO:
+Retorne APENAS um objeto JSON válido com a seguinte estrutura:
+{
+  "isAtomic": boolean,
+  "reason": "string (explicação detalhada)",
+  "confidence": number (0.0 a 1.0),
+  "suggestions": ["sugestão 1", "sugestão 2"]
+}
+
+EXEMPLOS:
+- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
+- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
+
+RESPOSTA (APENAS JSON):`;
+  }
+
+
 }
 
 module.exports = PromptFactory;
