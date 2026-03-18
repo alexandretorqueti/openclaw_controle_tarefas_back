@@ -41,7 +41,7 @@ class WorkspaceSnapshotService {
    * Compara o snapshot inicial com o estado atual do diretório.
    * Retorna um array com os caminhos absolutos dos arquivos alterados ou criados.
    */
-  static async getModifiedFiles(initialSnapshot, dir, ignoreList = ['node_modules', '.git', 'dist', 'build', '.next']) {
+  static async getModifiedFiles(initialSnapshot, dir, ignoreList = ['node_modules', '.git', 'dist', 'build', '.next', '.db', '.log']) {
     const modifiedFiles = [];
     const currentSnapshot = await this.takeSnapshot(dir, ignoreList);
 

@@ -11,7 +11,7 @@ const prisma = require('./src/services/prismaService');
 const validationService = require('./src/services/validationService');
 const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
-
+let UserIdJarbas = null;
 /**
  * Busca a próxima tarefa elegível para processamento
  * @returns {Promise<Object|null>} Tarefa ou null se não houver
@@ -142,7 +142,7 @@ async function addComment(taskId, content) {
   try {
     await commentService.createComment({
       taskId,
-      userId: 'system',
+      userId: UserIdJarbas,
       content
     });
   } catch (error) {
@@ -327,6 +327,7 @@ async function main() {
         const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
         if (user) {
           MY_USER_ID = user.id;
+          UserIdJarbas = user.id;
         } else {
           await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Operacoes que exigem ID podem falhar.`);
         }

@@ -179,33 +179,49 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
    */
   static buildDecompositionPrompt(task) {
-    return `
-      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo, analisa-la, procurar no projeto os arquivos relevantes, e dividi-la em tarefas menores sequenciais.
-      Antes de dividí-los, considere as seguintes regras:
-      * Se a tarefa for de desenvolvimento, não divida se não tiver olhado os arquivos e entendido o projeto. A sua função é entender.
-      * Se a tarefa for de desenvolvimento, faça a análise em cima dos arquivos existentes, nunca peça ao desenvolvedor para procurar para ver se existe tal arquivo. Você já deve dizer a ele a localização exata.
-      * Entenda a lógica da tarefa antes de dividí-la em micro-tarefas.
-      * Se a tarefa for de desenvolvimento, É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
+    return `Você é um Arquiteto de Software Sênior. Sua missão é decompor uma "Tarefa Mãe" em sub-tarefas acionáveis.
 
-      Objetivo da Tarefa Mãe: ${task?.title}
-      Descrição: ${task?.description}
+REGRAS ABSOLUTAS DE SAÍDA:
+1. Você DEVE retornar APENAS um array JSON válido.
+2. NÃO inclua nenhum texto antes ou depois do array.
+3. NÃO explique, não narre, não analise.
+4. O sistema só processará o que estiver entre colchetes [].
 
-      Responda APENAS com um array JSON válido neste formato exato (sem markdown em volta, apenas o array). Não adicione nenhum texto antes ou depois do array:
-      [
-        {
-          "title": "[BACKEND] Criar tabela de X",
-          "description": "Passo a passo exato do que o estagiário deve fazer no arquivo Y...",
-          "domain": "BACKEND"
-        },
-        {
-          "title": "[FRONTEND] Criar componente de X",
-          "description": "Passo a passo exato do que o estagiário deve fazer no componente Z...",
-          "domain": "FRONTEND"
-        }
-      ]
-    `.trim();
+TAREFA MÃE:
+Título: ${task?.title}
+Descrição: ${task?.description}
+
+INSTRUÇÕES (execute internamente, não mostre na saída):
+1. Use ferramentas (bash, find, ls, cat, grep) para explorar o código.
+2. Identifique arquivos, controllers, models, componentes existentes.
+3. Mapeie caminhos exatos antes de criar tarefas.
+
+CRITÉRIOS PARA AS TAREFAS:
+1. Cada tarefa deve ser uma unidade funcional completa.
+2. Forneça caminhos exatos de arquivos (ex: "src/controllers/UserController.ts").
+3. BACKEND: banco de dados, rotas, lógica de negócio.
+4. FRONTEND: React components, UI, CSS, telas.
+5. NÃO crie tarefas exploratórias ("procure o arquivo X").
+6. NÃO crie tarefas de linha-a-lina.
+
+FORMATO DE SAÍDA (APENAS ISSO):
+[
+  {
+    "title": "[BACKEND] Título específico da tarefa",
+    "description": "Instruções passo a passo com caminhos exatos.",
+    "domain": "BACKEND"
+  },
+  {
+    "title": "[FRONTEND] Título específico da tarefa", 
+    "description": "Instruções passo a passo com caminhos exatos.",
+    "domain": "FRONTEND"
   }
+]
 
+LEMBRE: Sua ÚNICA saída deve ser o array JSON acima, nada mais.`;
+
+  }
+  
   /**
    * Constrói prompt para validação de atomicidade
    * @param {Object} task - Tarefa
@@ -213,23 +229,19 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    * @returns {string} Prompt formatado
    */
   static buildValidationPrompt(task, project) {
-    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
+    return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" (que chamamos de Atômica) para ser entregue a um desenvolvedor pleno.
 
-ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
+O QUE É UMA TAREFA ATÔMICA (TAMANHO IDEAL):
+1. É uma unidade coesa de funcionalidade ou correção. Exemplo: "Criar endpoint de login", "Implementar layout da tela de perfil", "Adicionar validação no formulário X".
+2. Pode e DEVE envolver a edição de múltiplos arquivos relacionados (ex: alterar Rota, Controller e Service) para entregar a funcionalidade de ponta a ponta.
+3. O desenvolvedor tem inteligência para usar ferramentas de busca (find, grep) e ler o código sozinho. O escopo foca no OBJETIVO (o que construir/corrigir).
+4. É uma tarefa que leva de algumas horas até um dia de trabalho.
 
-Uma tarefa é considerada ATÔMICA quando:
-1. O objetivo da tarefa é claro e específico
-2. Possui instruções passo a passo executáveis
-3. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
-4. Seu escopo é todo no mesmo lugar, ou em poucos arquivos relacionados
-5. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
+O QUE **NÃO** É ATÔMICO:
+1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada Atômica (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.
+2. Épicos ou Módulos Inteiros. Exemplo: "Fazer o módulo de pagamentos inteiro", "Refatorar todo o sistema", "Criar o painel de admin completo". Isso é muito grande e precisa ser dividido (Não é atômico).
 
-Uma tarefa NÃO é ATÔMICA quando:
-1. Não tem objetivo claro e específico
-2. Não possui instruções passo a passo executáveis
-3. É muito vaga ou ambigua - pede para altarar vários lugares
-4. Tem escopo muito amplo (não pode ser concluida em poucas horas)
-
+REGRA DE OURO: Não seja excessivamente radical. Se a tarefa descreve uma funcionalidade clara ou um bug específico que um dev consegue resolver em uma sessão sentada, ELA É ATÔMICA. Reprove (isAtomic: false) APENAS se for um Épico gigante que envolva dezenas de funcionalidades soltas.
 
 INFORMAÇÕES DA TAREFA:
 - Título: ${task.title}
@@ -237,29 +249,12 @@ INFORMAÇÕES DA TAREFA:
 - Projeto: ${project.name}
 - Domínio: ${task.domain || 'Não especificado'}
 
-INFORMAÇÕES ADICIONAIS:
-- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
-- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
-
-ANÁLISE REQUERIDA:
-1. Esta tarefa está pronta para um desenvolvedor pleno?
-2. A tarefa tem arquivo e instrução clara?
-3. O escopo é limitado e bem definido?
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-Retorne APENAS um objeto JSON válido com a seguinte estrutura:
+FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 {
   "isAtomic": boolean,
-  "reason": "string (explicação detalhada)",
-  "confidence": number (0.0 a 1.0),
-  "suggestions": ["sugestão 1", "sugestão 2"]
-}
-
-EXEMPLOS:
-- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
-- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
-
-RESPOSTA (APENAS JSON):`;
+  "reason": "Explique brevemente por que a tarefa tem um bom escopo funcional ou por que é um épico grande demais.",
+  "confidence": number (0.0 a 1.0)
+}`;
   }
 
 

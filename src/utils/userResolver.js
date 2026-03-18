@@ -44,7 +44,7 @@ class UserResolver {
       }
 
       // Tentar apelidos padrão do sistema (alexandre e jarbas)
-      const defaultNicknames = ['alexandre', env.MY_USER_NICKNAME || 'jarbas'];
+      const defaultNicknames = ['alexandre', process.env.MY_USER_NICKNAME || 'jarbas'];
       for (const defaultNick of defaultNicknames) {
         const user = await prisma.user.findUnique({
           where: { nickname: defaultNick },
