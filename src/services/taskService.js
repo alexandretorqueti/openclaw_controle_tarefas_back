@@ -6,7 +6,7 @@ const path = require('path');
 
 const prisma = require('./prismaService');
 const NotificationService = require('./notificationService');
-//const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
 
 class TaskService {
   // Função auxiliar para executar git
@@ -210,6 +210,11 @@ class TaskService {
         }
       }
     });
+    
+    // Emitir evento SSE para criação em tempo real
+    sseService.broadcast('task_created', newTask);
+    
+    return newTask;
   }
 
   // Get all tasks with filters
@@ -620,7 +625,6 @@ class TaskService {
         }
       })
     );
-    //sseService.broadcast('task_updated', data);
 
     // Add history record if status changed
     if (data.statusId && oldTask && data.statusId !== oldTask.statusId) {
@@ -646,6 +650,10 @@ class TaskService {
     }
 
     const results = await prisma.$transaction(transaction);
+    
+    // Broadcast SSE event AFTER transaction is complete
+    sseService.broadcast('task_updated', results[0]);
+    
     return results[0]; // Return the updated task
   }
 
@@ -673,14 +681,19 @@ class TaskService {
     ]);
 
     // Then delete the task
-    return await prisma.task.delete({
+    const deletedTask = await prisma.task.delete({
       where: { id }
     });
+    
+    // Emitir evento SSE para deleção em tempo real
+    sseService.broadcast('task_deleted', { id: deletedTask.id });
+    
+    return deletedTask;
   }
 
   // Update task position (for drag and drop)
   async updateTaskPosition(id, position) {
-    return await prisma.task.update({
+    const updatedTask = await prisma.task.update({
       where: { id },
       data: { position },
       include: {
@@ -689,6 +702,11 @@ class TaskService {
         priority: true
       }
     });
+    
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updatedTask);
+    
+    return updatedTask;
   }
 
   // Toggle task completion
@@ -702,7 +720,7 @@ class TaskService {
       throw new Error('Task not found');
     }
 
-    return await prisma.task.update({
+    const updatedTask = await prisma.task.update({
       where: { id },
       data: { 
         isCompleted: !task.isCompleted,
@@ -714,6 +732,11 @@ class TaskService {
         priority: true
       }
     });
+    
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updatedTask);
+    
+    return updatedTask;
   }
 
   // Get tasks by project

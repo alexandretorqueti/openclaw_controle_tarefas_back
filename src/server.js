@@ -179,6 +179,14 @@ app.use('/api/agents', agentRoutes);
 app.use('/api', require('./routes/avatarRoutes'));
 app.use('/api/stages', require('./routes/stageRoutes'));
 
+// Importar serviço SSE
+const sseService = require('./services/sseService');
+
+// Rota para conexão SSE (Server-Sent Events)
+app.get('/api/sse/events', (req, res) => {
+  sseService.addClient(req, res);
+});
+
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
   res.json({ 
