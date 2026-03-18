@@ -5,6 +5,7 @@ const path = require('path');
 // src/services/taskService.js
 
 const prisma = require('./prismaService');
+const NotificationService = require('./notificationService');
 //const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
 
 class TaskService {
@@ -1166,6 +1167,48 @@ class TaskService {
         console.error('Git automation failed:', gitError.message);
       }
 
+      // ==========================================
+      // NOTIFICAÇÃO NO TELEGRAM PARA TAREFAS RECURSIVAS
+      // ==========================================
+      try {
+        // Buscar informações completas do usuário
+        const user = await prisma.user.findUnique({
+          where: { id: actionUserId }
+        });
+        
+        if (user) {
+          // Construir mensagem específica para tarefas recursivas
+          const projectName = updatedTask.project?.name || 'Projeto desconhecido';
+          const userName = user.name || 'Usuário desconhecido';
+          const taskTitle = updatedTask.title || 'Tarefa sem título';
+          const nextExecution = nextExecutionAt ? new Date(nextExecutionAt).toLocaleString('pt-BR') : 'Não agendada';
+          
+          let message = `🔄 *TAREFA RECURSIVA REINICIADA!*\n\n`;
+          message += `*Tarefa:* ${taskTitle}\n`;
+          message += `*Projeto:* ${projectName}\n`;
+          message += `*Executada por:* ${userName}\n`;
+          message += `*Próxima execução:* ${nextExecution}\n`;
+          
+          if (executionNotes && executionNotes.trim() !== '') {
+            message += `\n*Notas:* ${executionNotes.substring(0, 200)}${executionNotes.length > 200 ? '...' : ''}\n`;
+          }
+          
+          message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
+          message += `\n🔗 *ID:* ${taskId.substring(0, 8)}...`;
+          
+          // Enviar notificação
+          await NotificationService.sendTelegramNotification(message);
+          
+          console.log(`📱 Notificação de tarefa recursiva enviada para ${user.name}`);
+        } else {
+          console.warn(`⚠️ Usuário ${actionUserId} não encontrado para notificação de tarefa recursiva`);
+        }
+        
+      } catch (notificationError) {
+        console.error(`❌ Erro ao enviar notificação de tarefa recursiva: ${notificationError.message}`);
+        // Não falhar a operação principal por causa da notificação
+      }
+
 return {
         task: updatedTask,
         status: firstStatus,
@@ -1311,6 +1354,55 @@ return {
       }
     } catch (gitError) {
       console.error('Git automation failed:', gitError.message);
+    }
+
+    // ==========================================
+    // NOTIFICAÇÃO NO TELEGRAM
+    // ==========================================
+    try {
+      // Buscar informações completas do usuário
+      const user = await prisma.user.findUnique({
+        where: { id: actionUserId }
+      });
+      
+      if (user) {
+        // Enviar notificação da tarefa concluída
+        await NotificationService.sendTaskCompletedNotification(
+          updatedTask,
+          user,
+          executionNotes
+        );
+        
+        console.log(`📱 Notificação no Telegram enviada para ${user.name} (${user.nickname})`);
+      } else {
+        console.warn(`⚠️ Usuário ${actionUserId} não encontrado para notificação`);
+      }
+      
+      // Se a tarefa pai foi finalizada automaticamente, enviar notificação adicional
+      if (parentTaskFinalized) {
+        // Buscar todas as subtasks para listar na notificação
+        const allSubtasks = await prisma.task.findMany({
+          where: {
+            parentTaskId: existingTask.parentTaskId
+          },
+          select: {
+            id: true,
+            title: true,
+            status: true
+          }
+        });
+        
+        await NotificationService.sendParentTaskAutoCompletedNotification(
+          parentTaskFinalized,
+          allSubtasks
+        );
+        
+        console.log(`📱 Notificação de tarefa pai automaticamente finalizada enviada`);
+      }
+      
+    } catch (notificationError) {
+      console.error(`❌ Erro ao enviar notificação no Telegram: ${notificationError.message}`);
+      // Não falhar a operação principal por causa da notificação
     }
 
     return {

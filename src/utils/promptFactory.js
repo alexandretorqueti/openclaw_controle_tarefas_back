@@ -101,6 +101,7 @@ class PromptFactory {
 1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
 2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
 3. SÓ FINALIZE criando o arquivo .done QUANDO TUDO ESTIVER CONCLUÍDO.
+4. SE PRECISAR CRIAR ARQUIVOS TEMPORÁRIOS, CRIE NO SEU WORKSPACE, NÃO NO PROJETO.
 
 [REGRAS CRÍTICAS PARA A FERRAMENTA 'EDIT']
 1. O campo 'old_text' (ou equivalente) DEVE ser uma cópia EXATA, byte por byte, do arquivo original. Isso inclui todos os espaços em branco, tabs e quebras de linha.
@@ -179,10 +180,9 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    */
   static buildDecompositionPrompt(task) {
     return `
-      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo, analisa-la, procurar no projeto os arquivos relevantes, e dividi-la em micro-tarefas sequenciais e atômicas.
+      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo, analisa-la, procurar no projeto os arquivos relevantes, e dividi-la em tarefas menores sequenciais.
       Antes de dividí-los, considere as seguintes regras:
       * Se a tarefa for de desenvolvimento, não divida se não tiver olhado os arquivos e entendido o projeto. A sua função é entender.
-      * Se a tarefa for de desenvolvimento, considere que o projeto possui os arquivos de desenvolvimento.
       * Se a tarefa for de desenvolvimento, faça a análise em cima dos arquivos existentes, nunca peça ao desenvolvedor para procurar para ver se existe tal arquivo. Você já deve dizer a ele a localização exata.
       * Entenda a lógica da tarefa antes de dividí-la em micro-tarefas.
       * Se a tarefa for de desenvolvimento, É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
@@ -218,21 +218,17 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
 ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
 
 Uma tarefa é considerada ATÔMICA quando:
-1. Tem objetivo claro e específico
+1. O objetivo da tarefa é claro e específico
 2. Possui instruções passo a passo executáveis
-3. Tem entrada e saída bem definidas
-4. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
-5. Tem escopo limitado (pode ser concluída em poucas horas)
-6. Tem critérios de aceitação claros
-7. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
+3. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
+4. Seu escopo é todo no mesmo lugar, ou em poucos arquivos relacionados
+5. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
 
 Uma tarefa NÃO é ATÔMICA quando:
 1. Não tem objetivo claro e específico
 2. Não possui instruções passo a passo executáveis
-3. Não tem entrada e saída bem definidas
-4. Não pode ser realizada por um programador pleno, pode ser apenas um plano
-5. Tem escopo muito amplo (não pode ser concluida em poucas horas)
-6. Não tem critérios de aceitação claros
+3. É muito vaga ou ambigua - pede para altarar vários lugares
+4. Tem escopo muito amplo (não pode ser concluida em poucas horas)
 
 
 INFORMAÇÕES DA TAREFA:
@@ -246,7 +242,7 @@ INFORMAÇÕES ADICIONAIS:
 - Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
 
 ANÁLISE REQUERIDA:
-1. Esta tarefa está pronta para um estagiário executar?
+1. Esta tarefa está pronta para um desenvolvedor pleno?
 2. A tarefa tem arquivo e instrução clara?
 3. O escopo é limitado e bem definido?
 
