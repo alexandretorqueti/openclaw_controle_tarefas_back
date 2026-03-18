@@ -85,7 +85,8 @@ class SessionChainUtils {
     if (sessionType === 'arquiteto') {
       // Sessão do arquiteto: ID da primeira tarefa + "-arquiteto"
       // Todas as tarefas da cadeia compartilham a MESMA sessão de arquiteto
-      return `${firstTaskId}-arquiteto`;
+      const timestamp = new Date().getTime();
+      return `${firstTaskId}-arquiteto-${timestamp}`;
     } else if (sessionType === 'turno') {
       // Sessão do turno: ID da primeira tarefa + "-turno-" + número do turno
       // Todas as tarefas da cadeia compartilham a MESMA sessão por turno

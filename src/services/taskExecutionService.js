@@ -24,6 +24,26 @@ const prisma = new PrismaClient();
 
 class TaskExecutionService {
   
+  static async readTaskOutputFile(taskId, baseDir, fileType) {
+    const fileNameMap = {
+      relatorio: `relatorio-${taskId}.txt`,
+      terminal: `terminal-${taskId}.log`
+    };
+    const fileName = fileNameMap[fileType];
+    if (!fileName) return null;
+
+    const filePath = path.join(baseDir, fileName);
+    try {
+      if (await fileExists(filePath)) {
+        const content = await fs.readFile(filePath, 'utf8');
+        return content;
+      }
+    } catch (error) {
+      // Ignorar erro silenciosamente se não existir
+    }
+    return null;
+  }
+
   // ==========================================
   // MÉTODOS AUXILIARES DE LOG
   // ==========================================
@@ -400,10 +420,40 @@ class TaskExecutionService {
     }
 
     // ==============================================================
-    // PREPARAÇÃO DO PROTOCOLO AMNÉSIA (STATELESS)
+    // PREPARAÇÃO DO PROTOCOLO AMNÉSIA E CONTEXTO DE DEPENDÊNCIAS
     // ==============================================================
+    const SessionChainUtils = require('../utils/sessionChainUtils');
+    let contextFromPreviousTasks = '';
+    
+    try {
+      const taskChain = await SessionChainUtils.getTaskChain(task.id);
+      const previousTasks = taskChain.filter(t => t.id !== task.id);
+      
+      if (previousTasks.length > 0) {
+        contextFromPreviousTasks += `\n\n=== CONTEXTO DAS TAREFAS ANTERIORES ===\n`;
+        contextFromPreviousTasks += `Você está continuando um trabalho. Abaixo estão os relatórios e logs das tarefas que vieram antes desta:\n`;
+        
+        for (const prevTask of previousTasks) {
+          const prevReport = await TaskExecutionService.readTaskOutputFile(prevTask.id, config.TASKS_DIR, 'relatorio');
+          const prevTerminal = await TaskExecutionService.readTaskOutputFile(prevTask.id, config.TASKS_DIR, 'terminal');
+          
+          contextFromPreviousTasks += `\n--- Tarefa Anterior: ${prevTask.id} (${prevTask.title}) ---\n`;
+          if (prevReport) {
+            contextFromPreviousTasks += `Relatório gerado:\n${prevReport}\n`;
+          }
+          if (prevTerminal) {
+            contextFromPreviousTasks += `Últimas linhas do terminal:\n${prevTerminal.slice(-1500)}\n`;
+          }
+        }
+        contextFromPreviousTasks += `=== FIM DO CONTEXTO ANTERIOR ===\n\n`;
+        await log(`📚 [Desenvolvedor] Contexto de ${previousTasks.length} tarefas anteriores carregado.`);
+      }
+    } catch (chainErr) {
+      await log(`⚠️ [Desenvolvedor] Erro ao buscar cadeia de dependências: ${chainErr.message}`);
+    }
+
     // O basePrompt é a bíblia da tarefa. Nunca muda.
-    const basePrompt = currentInput; 
+    const basePrompt = currentInput + contextFromPreviousTasks; 
     
     // O lastFeedback guarda o que aconteceu no turno imediatamente anterior
     let lastFeedback = null; 
@@ -420,13 +470,11 @@ class TaskExecutionService {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
-      // Importar utilitário de sessões em cadeia (se ainda não importado)
-      const SessionChainUtils = require('../utils/sessionChainUtils');
+      // 1. GERAÇÃO DA SESSÃO DO DESENVOLVEDOR (Isolada por Tarefa/Turno)
+      const timestamp = new Date().getTime();
+      const turnSessionId = `programador-${task.id}-${timestamp}`;
       
-      // 1. GERAÇÃO DE SESSÃO UNIFICADA (baseada na primeira tarefa da cadeia)
-      const turnSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'turno', turnos);
-      
-      await log(`🔗 Sessão do turno ${turnos}: ${turnSessionId} (baseada na cadeia de dependências)`);
+      await log(`🔗 Sessão do turno ${turnos}: ${turnSessionId} (isolada por tarefa/turno)`);
 
       // 2. MONTAGEM DO DOSSIÊ DO TURNO
       let promptDesteTurno = basePrompt;
