@@ -34,14 +34,26 @@ class SseService {
    * @param {Object} data - Os dados que vão para o frontend
    */
   broadcast(eventName, data) {
-    if (this.clients.length === 0) return;
+    console.log(`📢 SSE Service: Tentando broadcast evento ${eventName} para ${this.clients.length} clientes`);
+    
+    if (this.clients.length === 0) {
+      console.log('⚠️ SSE Service: Nenhum cliente conectado, ignorando broadcast');
+      return;
+    }
 
     // O protocolo SSE exige este formato exato de string
     const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
     
-    this.clients.forEach(client => {
-      // Usamos apenas o write, e não o send(), para não fechar a conexão
-      client.write(payload);
+    console.log(`📢 SSE Service: Payload para ${eventName}: ${JSON.stringify(data).substring(0, 100)}...`);
+    
+    this.clients.forEach((client, index) => {
+      try {
+        // Usamos apenas o write, e não o send(), para não fechar a conexão
+        client.write(payload);
+        console.log(`✅ SSE Service: Evento ${eventName} enviado para cliente ${index + 1}/${this.clients.length}`);
+      } catch (error) {
+        console.error(`❌ SSE Service: Erro ao enviar evento ${eventName} para cliente ${index + 1}:`, error.message);
+      }
     });
   }
 }

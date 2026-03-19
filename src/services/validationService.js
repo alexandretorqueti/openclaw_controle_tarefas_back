@@ -155,7 +155,7 @@ class ValidationService {
         llmResponse = JSON.parse(llmResponse);
       }
       // Validar estrutura do resultado
-      if (typeof llmResponse.isAtomic !== 'boolean') {
+      if (typeof llmResponse.isIdeal !== 'boolean') {
         throw new Error('Campo isAtomic não é booleano');
       }
       
@@ -164,7 +164,7 @@ class ValidationService {
       }
       
       if (typeof llmResponse.confidence !== 'number' || llmResponse.confidence < 0 || llmResponse.confidence > 1) {
-        llmResponse.confidence = llmResponse.isAtomic ? 0.7 : 0.5;
+        llmResponse.confidence = llmResponse.isIdeal ? 0.7 : 0.5;
       }
       
       if (!Array.isArray(llmResponse.suggestions)) {
@@ -172,7 +172,7 @@ class ValidationService {
       }
       
       return {
-        isAtomic: llmResponse.isAtomic,
+        isAtomic: llmResponse.isIdeal,
         reason: llmResponse.reason,
         confidence: llmResponse.confidence,
         suggestions: llmResponse.suggestions,
@@ -197,7 +197,7 @@ class ValidationService {
    */
   getFallbackValidation(task, error = 'Serviço LLM indisponível') {
     return {
-      isAtomic: false,
+      isAtomic: true,
       reason: `Não foi possível validar atomicidade: ${error}`,
       confidence: 0,
       suggestions: ['Verificar conexão com Ollama', 'Usar validação manual'],

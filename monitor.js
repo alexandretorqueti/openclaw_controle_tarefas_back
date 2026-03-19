@@ -298,17 +298,10 @@ async function main() {
       await log(`⚠️ Nao foi possivel finalizar tarefa na API pois MY_USER_ID é nulo.`);
     }
 
-    // Marcar tarefa como finalizada (isExecuting: false)
-    try {
-      await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
-      await log(`✅ Tarefa "${task.title}" marcada como finalizada no sistema (isExecuting: false)`);
-    } catch (error) {
-      await log(`❌ Erro ao marcar tarefa como finalizada: ${error.message}`);
-      // Continuar mesmo com erro - não é crítico
-    }
-
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
     await stateService.cleanupTask(task.id);
+    
+    // O lockService.releaseLock() será chamado automaticamente e marcará isExecuting: false
   }
 
   /**
@@ -320,7 +313,7 @@ async function main() {
     
     if (lockCheck.locked) {
       if (lockCheck.ageRecent) {
-        // await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
+        await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
         return;
       }
       
@@ -339,11 +332,6 @@ async function main() {
       await stateService.clearState();
     }
     
-    if (!await lockService.acquireLock()) {
-      await log(`❌ Falha ao adquirir lock.`);
-      return;
-    }
-
     try {
       // Busca dados do usuario pelo nickname para usar ao longo do ciclo de vida da tarefa
       try {
@@ -369,13 +357,10 @@ async function main() {
 
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
       
-      // AGORA marcar a tarefa como isExecuting: true (após criar o arquivo LOCK)
-      try {
-        await axios.put(`${API_URL}/api/tasks/${task.id}`, { isExecuting: true });
-        await log(`✅ Tarefa "${task.title}" marcada como em execução (isExecuting: true)`);
-      } catch (error) {
-        await log(`❌ Erro ao marcar tarefa como em execução: ${error.message}`);
-        // Continuar mesmo com erro - não é crítico
+      // Adquirir lock passando o taskId - o lockService agora marca isExecuting: true automaticamente
+      if (!await lockService.acquireLock(task.id)) {
+        await log(`❌ Falha ao adquirir lock.`);
+        return;
       }
       
       // Registrar tarefa como ativa

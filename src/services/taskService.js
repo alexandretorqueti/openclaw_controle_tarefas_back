@@ -7,6 +7,7 @@ const path = require('path');
 const prisma = require('./prismaService');
 const NotificationService = require('./notificationService');
 const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const taskHierarchyService = require('./taskHierarchyService'); // <-- Serviço de hierarquia
 
 class TaskService {
   // Função auxiliar para executar git
@@ -152,7 +153,7 @@ class TaskService {
     if (data.isRecurring && data.recurrenceType) {
       nextExecutionAt = this.calculateNextExecution(data);
     }
-    return await prisma.task.create({
+    const newTask = await prisma.task.create({
       data: {
         title: data.title,
         description: data.description,
@@ -212,7 +213,13 @@ class TaskService {
     });
     
     // Emitir evento SSE para criação em tempo real
-    sseService.broadcast('task_created', newTask);
+    try {
+      console.log(`📢 TaskService (PRE-BROADCAST): Preparando para emitir task_created para ${newTask.id}. Clientes conectados: ${sseService.clients.length}`);
+      sseService.broadcast('task_created', newTask);
+      console.log(`✅ TaskService: Evento task_created emitido com sucesso`);
+    } catch (error) {
+      console.error(`❌ TaskService: Erro ao emitir evento task_created:`, error);
+    }
     
     return newTask;
   }
@@ -532,11 +539,29 @@ class TaskService {
     // Check if status is changing to record history
     const oldTask = await prisma.task.findUnique({
       where: { id },
-      select: { statusId: true, createdById: true }
+      select: { statusId: true, createdById: true, isExecuting: true }
     });
 
     if (!oldTask) {
       throw new Error(`Task with ID ${id} not found`);
+    }
+
+    // Se isExecuting foi alterado, atualizar hierarquia ANTES da transação
+    if (data.isExecuting !== undefined && data.isExecuting !== null) {
+      console.log(`🔍 TaskService: Verificando mudança de isExecuting para task ${id}, novo valor: ${data.isExecuting}, antigo: ${oldTask.isExecuting}`);
+      
+      if (oldTask.isExecuting !== data.isExecuting) {
+        console.log(`🔄 TaskService: isExecuting MUDOU de ${oldTask.isExecuting} para ${data.isExecuting} na tarefa ${id}`);
+        try {
+          await taskHierarchyService.updateHierarchyOnExecutionChange(id, data.isExecuting);
+          console.log(`✅ TaskService: Hierarquia atualizada para task ${id}`);
+        } catch (hierarchyError) {
+          console.error(`❌ TaskService: Erro ao atualizar hierarquia: ${hierarchyError.message}`);
+          // Não lançar erro para não quebrar a atualização principal
+        }
+      } else {
+        console.log(`ℹ️ TaskService: isExecuting NÃO mudou para task ${id} (antigo: ${oldTask.isExecuting}, novo: ${data.isExecuting})`);
+      }
     }
 
     // Process recurrence fields
@@ -880,6 +905,8 @@ class TaskService {
     } else {
       updateData.nextExecutionAt = null;
     }
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updateData);
 
     return await prisma.task.update({
       where: { id: taskId },
@@ -1129,7 +1156,7 @@ class TaskService {
   }
 
   // Finalize task - find first final status and update task
-// Finalize task - Lida com finalização de normais e reinício de recursivas
+  // Finalize task - Lida com finalização de normais e reinício de recursivas
   async finalizeTask(taskId, userId, executionNotes = null) {
     // 1. Busca a tarefa atual
     const existingTask = await prisma.task.findUnique({
@@ -1240,7 +1267,10 @@ class TaskService {
         // Não falhar a operação principal por causa da notificação
       }
 
-return {
+      // Broadcast SSE event AFTER transaction is complete
+      sseService.broadcast('task_updated', updatedTask);
+    
+      return {
         task: updatedTask,
         status: firstStatus,
         history: historyRecord,
@@ -1435,7 +1465,9 @@ return {
       console.error(`❌ Erro ao enviar notificação no Telegram: ${notificationError.message}`);
       // Não falhar a operação principal por causa da notificação
     }
-
+    // Broadcast SSE event AFTER transaction is complete
+    sseService.broadcast('task_updated', updatedTask);
+    
     return {
       task: updatedTask,
       status: finalStatus,

@@ -216,19 +216,21 @@ Descrição: ${task.description}
    * @returns {string} Prompt formatado
    */
   static buildValidationPrompt(task, project) {
-    return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" (que chamamos de Atômica) para ser entregue a um desenvolvedor pleno.
+    return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" para ser entregue a um desenvolvedor senior.
 
-O QUE É UMA TAREFA ATÔMICA (TAMANHO IDEAL):
+O QUE É UMA TAREFA DE TAMANHO IDEAL:
 1. É uma unidade coesa de funcionalidade ou correção. Exemplo: "Criar endpoint de login", "Implementar layout da tela de perfil", "Adicionar validação no formulário X".
-2. Pode e DEVE envolver a edição de múltiplos arquivos relacionados (ex: alterar Rota, Controller e Service) para entregar a funcionalidade de ponta a ponta.
+2. Pode a edição de múltiplos arquivos relacionados (ex: alterar Rota, Controller e Service) para entregar a funcionalidade de ponta a ponta.
 3. O desenvolvedor tem inteligência para usar ferramentas de busca (find, grep) e ler o código sozinho. O escopo foca no OBJETIVO (o que construir/corrigir).
 4. É uma tarefa que leva de algumas horas até um dia de trabalho.
+5. Se uma tarefa é só no front, ou só no back, e ela envolve um módulo, ela deve ser considerada IDEAL.
+6. Se uma tarefa envolve apenas um arquivo, ela deve ser considerada IDEAL.
 
-O QUE **NÃO** É ATÔMICO:
-1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada Atômica (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.
-2. Épicos ou Módulos Inteiros. Exemplo: "Fazer o módulo de pagamentos inteiro", "Refatorar todo o sistema", "Criar o painel de admin completo". Isso é muito grande e precisa ser dividido (Não é atômico).
-
-REGRA DE OURO: Não seja excessivamente radical. Se a tarefa descreve uma funcionalidade clara ou um bug específico que um dev consegue resolver em uma sessão sentada, ELA É ATÔMICA. Reprove (isAtomic: false) APENAS se for um Épico gigante que envolva dezenas de funcionalidades soltas.
+O QUE **NÃO** É UMA TAREFA DE TAMANHO IDEAL:
+1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada IDEAL (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.
+2. Épicos ou Módulos Inteiros. Exemplo: "Fazer o módulo de pagamentos inteiro", "Refatorar todo o sistema", "Criar o painel de admin completo". Isso é muito grande e precisa ser dividido (Não é ideal).
+3. Tarefas que mexem em apenas uma arquivo não deve ser dividido.
+REGRA DE OURO: Não seja excessivamente radical. Se a tarefa descreve uma funcionalidade clara ou um bug específico que um dev consegue resolver em um dia, ela deve ser considerada, IDEAL. Reprove (isIdeal: false) APENAS se for um Épico gigante que envolva dezenas de funcionalidades soltas.
 
 INFORMAÇÕES DA TAREFA:
 - Título: ${task.title}
@@ -238,7 +240,7 @@ INFORMAÇÕES DA TAREFA:
 
 FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 {
-  "isAtomic": boolean,
+  "isIdeal": boolean,
   "reason": "Explique brevemente por que a tarefa tem um bom escopo funcional ou por que é um épico grande demais.",
   "confidence": number (0.0 a 1.0)
 }`;

@@ -3,10 +3,14 @@
 
 const fs = require('fs').promises;
 const { fileExists } = require('../utils/fileUtils');
+const prisma = require('./prismaService');
+const taskHierarchyService = require('./taskHierarchyService');
+const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
 
 class LockService {
   constructor(lockFilePath) {
     this.lockFilePath = lockFilePath;
+    this.currentTaskId = null;
   }
 
   /**
@@ -114,40 +118,130 @@ class LockService {
    * Adquire o lock
    * @returns {Promise<boolean>}
    */
-  async acquireLock() {
+  /**
+   * Adquire o lock e marca a tarefa como em execução
+   * @param {string} taskId - ID da tarefa que será executada
+   * @returns {Promise<boolean>}
+   */
+  async acquireLock(taskId = null) {
     try {
+      // Armazenar taskId para uso posterior
+      this.currentTaskId = taskId;
+      
+      // Criar arquivo de lock
       await fs.writeFile(this.lockFilePath, process.pid.toString());
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: true
+      if (taskId) {
+        try {
+          // Primeiro vamos marcar todas as tarefas como isExecuting: false
+          await prisma.task.updateMany({
+            where: { isExecuting: true },
+            data: { isExecuting: false }
+          });
+          // Marcar a tarefa como em execução
+          const updated = await prisma.task.update({
+            where: { id: taskId },
+            data: { isExecuting: true }
+          });
+          console.log(`✅ LockService: Tarefa "${taskId}" marcada como isExecuting: true`);
+          
+          // Emitir evento SSE para atualização em tempo real
+          sseService.broadcast('task_updated', updated);
+
+          
+          // Atualizar hierarquia (marcar ancestrais como hasChildExecuting: true)
+          await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, true);
+          
+        } catch (taskError) {
+          console.error(`❌ LockService: Erro ao marcar tarefa como em execução: ${taskError.message}`);
+          // Continuar mesmo com erro - o lock foi adquirido
+        }
+      }
+      
       return true;
     } catch (error) {
+      console.error(`❌ LockService: Erro ao adquirir lock: ${error.message}`);
       return false;
     }
   }
 
   /**
-   * Libera o lock
+   * Libera o lock e marca a tarefa como não mais em execução
    * @returns {Promise<boolean>}
    */
   async releaseLock() {
     try {
+      let lockReleased = false;
+      
+      // Remover arquivo de lock
       if (await fileExists(this.lockFilePath)) {
         await fs.unlink(this.lockFilePath);
-        return true;
+        lockReleased = true;
       }
-      return false;
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: false e atualizar hierarquia
+      if (this.currentTaskId) {
+        try {
+          const updated = await prisma.task.update({
+            where: { id: this.currentTaskId },
+            data: { isExecuting: false }
+          });
+          sseService.broadcast('task_updated', updated);
+          console.log(`✅ LockService: Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
+          
+          // Atualizar hierarquia (verificar ancestrais para hasChildExecuting: false)
+          await taskHierarchyService.updateHierarchyOnExecutionChange(this.currentTaskId, false);
+          
+        } catch (taskError) {
+          console.error(`❌ LockService: Erro ao marcar tarefa como finalizada: ${taskError.message}`);
+          // Continuar mesmo com erro - o lock foi liberado
+        }
+        
+        // Limpar taskId atual
+        this.currentTaskId = null;
+      }
+      
+      return lockReleased;
     } catch (error) {
+      console.error(`❌ LockService: Erro ao liberar lock: ${error.message}`);
       return false;
     }
   }
 
   /**
-   * Forca a remocao do lock (para locks orfaos)
+   * Forca a remocao do lock (para locks orfaos) e marca tarefa como não mais em execução
    * @returns {Promise<boolean>}
    */
   async forceReleaseLock() {
     try {
+      // Remover arquivo de lock
       await fs.unlink(this.lockFilePath).catch(() => {});
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: false e atualizar hierarquia
+      if (this.currentTaskId) {
+        try {
+          const updated = await prisma.task.update({
+            where: { id: this.currentTaskId },
+            data: { isExecuting: false }
+          });
+          sseService.broadcast('task_updated', updated);
+          console.log(`✅ LockService (force): Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
+          
+          // Atualizar hierarquia (verificar ancestrais para hasChildExecuting: false)
+          await taskHierarchyService.updateHierarchyOnExecutionChange(this.currentTaskId, false);
+          
+        } catch (taskError) {
+          console.error(`❌ LockService (force): Erro ao marcar tarefa como finalizada: ${taskError.message}`);
+        }
+        
+        // Limpar taskId atual
+        this.currentTaskId = null;
+      }
+      
       return true;
     } catch (error) {
+      console.error(`❌ LockService (force): Erro ao forçar liberação de lock: ${error.message}`);
       return false;
     }
   }

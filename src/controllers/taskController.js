@@ -438,6 +438,9 @@ class TaskController {
   finishTaskExecution = ErrorMiddleware.catchAsync(async (req, res, next) => {
     const { id } = req.params;
     
+    console.warn(`⚠️ DEPRECATED: Endpoint /api/tasks/${id}/finish-execution chamado. ` +
+                `Use lockService.releaseLock() em vez disso.`);
+    
     // Verificar se a tarefa existe
     const task = await prisma.task.findUnique({
       where: { id }

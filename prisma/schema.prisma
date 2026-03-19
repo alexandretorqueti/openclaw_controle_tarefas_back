@@ -111,6 +111,7 @@ model Task {
   isDecomposed    Boolean            @default(false)
   isAtomic        Boolean            @default(false)
   isExecuting     Boolean            @default(false) @map("bool_executando")
+  hasChildExecuting Boolean          @default(false) @map("bool_filho_executando")
   projectId       String
   parentTaskId    String?
   statusId        String
