@@ -17,13 +17,19 @@ class PromptFactory {
       - Título: ${task.title}
       - Descrição: ${task.description}
 
-      REGRAS:
+      REGRAS DE CLASSIFICAÇÃO:
       1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
       2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
       3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
       4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
       5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
       6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
+      
+      REGRAS DE EXECUÇÃO:
+      1. Tarefas 'analysis' serão EXECUTADAS IMEDIATAMENTE pelo arquiteto (sem passar para o desenvolvedor).
+      2. Tarefas 'automation' simples serão executadas pelo arquiteto; complexas passarão para o desenvolvedor.
+      3. Tarefas 'development' sempre passarão para o desenvolvedor após planejamento.
+      
       7. Escreva no arquivo ${preAnalysisFile} o motivo que você classificou a tarefa daquela forma.
       Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
       {
@@ -37,41 +43,78 @@ class PromptFactory {
     `.trim();
   }
 
-  static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '') {
-        const path = require('path');
-        const truncatedFiles = fileList.slice(0, 500).join('\n');
-        
-        const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
-        const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
+   static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
+    const path = require('path');
+    const truncatedFiles = fileList.slice(0, 500).join('\n');
+    
+    const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
+    const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
 
-        return `
-      Você é o Arquiteto de Software Planejador.
-      Seu ÚNICO OBJETIVO é criar um documento de texto contendo o plano de ação e encerrar o seu turno. Você passará o bastão para o Desenvolvedor.
-  
-      PROJETO:
-      Frontend: ${frontDir}
-      Backend: ${backDir}
+    let portasCtx = '';
+    if (project?.frontendPort || project?.backendPort) {
+      portasCtx = `\n[INFRAESTRUTURA DE PORTAS]\n`;
+      if (project?.frontendPort) portasCtx += `- Frontend roda na porta: ${project.frontendPort}\n`;
+      if (project?.backendPort) portasCtx += `- Backend roda na porta: ${project.backendPort}\n`;
+      portasCtx += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
+    }
 
-      ESTRUTURA DE ARQUIVOS (Resumo):
-      ${truncatedFiles}
+    // Diferentes instruções baseadas no tipo de tarefa
+    const taskTypeInstructions = {
+      development: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
+1. Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
+2. Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
+3. Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
+4. PROIBIDO criar ou editar arquivos de código-fonte.
+5. PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
+6. Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
+      `,
+      
+      analysis: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (ANÁLISE) ===
+1. Esta é uma tarefa EXCLUSIVA de leitura e investigação. NÃO modifique códigos.
+2. Use a ferramenta 'read' ou 'exec' (comandos bash como cat, grep) para inspecionar os arquivos solicitados.
+3. Use a ferramenta 'write' para gerar um RELATÓRIO COMPLETO com suas descobertas EXATAMENTE neste arquivo: ${planFilePath}
+4. Após gerar e salvar o relatório, você DEVE finalizar a tarefa executando o comando \`touch .done\` no diretório da tarefa usando a ferramenta 'exec'.
+5. Redija seu relatório e mensagens no PASSADO (ex: "verifiquei", "encontrei", "descobri") para provar que a ação foi concluída.
+6. Responda com: "Análise concluída. Tarefa finalizada pelo arquiteto."
+      `,
+      
+      automation: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (AUTOMAÇÃO) ===
+1. Avalie se o script ou comando de automação pode ser rodado por você agora mesmo (ex: comandos shell simples, limpeza, git).
+2. Se puder resolver agora, EXECUTE a ação usando a ferramenta 'exec'.
+3. Use a ferramenta 'write' para registrar o resultado da execução no arquivo: ${planFilePath}
+4. Se você executou com sucesso, finalize criando o marcador de conclusão via ferramenta 'exec' rodando \`touch .done\`.
+5. Se for complexo demais e exigir codificação pesada, crie apenas um plano de ação (como em 'development') e NÃO crie o arquivo .done.
+      `
+    };
 
-      TAREFA A SER ANALISADA:
-      Título: ${task?.title}
-      Descrição: ${task?.description}${commentsSection}
+    const instructions = taskTypeInstructions[taskType] || taskTypeInstructions.development;
 
-      REGRAS CRÍTICAS DE ENTREGA:
-      1. Você NÃO PODE simplesmente dizer "Eu criei o plano" ou "O plano está salvo". 
-      2. Você é OBRIGADO a usar a ferramenta 'write' para criar fisicamente o arquivo TXT contendo o seu plano detalhado.
-      3. Se você não puder usar a ferramenta 'write', você DEVE imprimir o plano técnico COMPLETO aqui no terminal (arquitetura, passos, arquivos afetados), para que o sistema possa copiá-lo. Não resuma!
+    return `
+Você é o Arquiteto de Software Líder do projeto.
+Tipo de Tarefa: [${taskType.toUpperCase()}]
 
-      SEU FLUXO DE TRABALHO OBRIGATÓRIO (Siga na ordem):
-      1. Apenas analise a tarefa e decida quais arquivos o desenvolvedor precisará criar ou alterar.
-      2. Formule um passo a passo técnico (ex: "1. Vá no arquivo X e adicione Y").
-      3. Use a sua ferramenta de escrita (write, bash ou exec) para salvar todo esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
-      4. PROIBIDO criar qualquer outro arquivo além do especificado no passo 3. NÃO crie arquivos de status, de conclusão ou marcadores soltos. Seu trabalho é estritamente de planejamento.
-      5. Assim que a ferramenta confirmar que o arquivo foi salvo com sucesso, PARE. Não tente editar os arquivos do projeto. Apenas responda com a frase: "Plano salvo. Passando o bastão para o Desenvolvedor."
-      Inicie agora seguindo o fluxo acima.
-    `.trim();
+[CONTEXTO DO PROJETO]
+Frontend: ${frontDir}
+Backend: ${backDir}${portasCtx}
+
+[ESTRUTURA DE ARQUIVOS]
+${truncatedFiles}
+
+[TAREFA ATUAL]
+Título: ${task?.title}
+Descrição: ${task?.description}${commentsSection}
+
+[REGRAS CRÍTICAS DE SISTEMA]
+- Você NÃO PODE interagir de forma conversacional. Você deve AGIR utilizando as ferramentas JSON fornecidas.
+- Se a ferramenta 'write' falhar, você DEVE imprimir o plano ou relatório completo no seu output de texto, cercado por tags <PLANO> ... </PLANO>.
+
+${instructions}
+
+Inicie agora o seu fluxo de trabalho estrito.
+`.trim();
   }
  
   static buildAgentSystemPrompt(agentContext) {
@@ -180,33 +223,33 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    */
   static buildDecompositionPrompt(task) {
     return `# ROLE
-Você é um Engenheiro de Software Sênior focado em automação de workflow. Sua única função é descompor uma tarefa complexa em formato JSON.
+Você é um Arquiteto de Software focado em automação de workflow. Sua função é avaliar e, se estritamente necessário, descompor uma tarefa complexa em formato JSON.
 
 # TAREFA MÃE
 Título: ${task.title}
 Descrição: ${task.description}
 
-# PROCESSO INTERNO (OBRIGATÓRIO)
-1. Identifique o domínio da tarefa (BACKEND ou FRONTEND)
-2. Estude o projeto antes de criar o JSON
-3. Divida a tarefa em pelo menos duas tarefas menores
-4. Uma tarefa deve ser de um único domínio (BACKEND ou FRONTEND)
+# REGRAS DE AVALIAÇÃO E DIVISÃO (CRÍTICO)
+1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é realmente complexa. Se for uma tarefa pequena, direta ou indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
+2. REGRA DE MUTAÇÃO DE CÓDIGO: Toda subtarefa gerada DEVE, obrigatoriamente, resultar na criação ou alteração física de arquivos de código.
+3. PROIBIDO TAREFAS EXPLORATÓRIAS: É estritamente proibido criar tarefas de "leitura", "análise", "verificação" ou "planejamento" (ex: "verifique se a pasta X existe" ou "estude a estrutura"). O sistema de validação quebrará se uma tarefa não gerar alterações de arquivos.
+4. ISOLAMENTO DE DOMÍNIO: Uma subtarefa deve ser inteiramente de um único domínio (BACKEND ou FRONTEND).
 
-# REGRAS DE SAÍDA (CRÍTICO)
-1. Retorne EXCLUSIVAMENTE um array JSON. 
-2. Proibido incluir saudações, explicações, markdown fora do JSON ou comentários.
-3. Se você falar qualquer palavra fora do array JSON, o sistema quebrará.
-4. Responda começando exatamente com o caractere: [
+# REGRAS DE SAÍDA DE DADOS
+1. Retorne EXCLUSIVAMENTE um array JSON puro. 
+2. Proibido incluir saudações, explicações, formatação markdown (não use \`\`\`json) ou comentários.
+3. Se a tarefa for ATÔMICA (não precisa ser dividida), retorne EXATAMENTE um array vazio: []
+4. Se a tarefa for COMPLEXA, retorne o array contendo os objetos das subtarefas.
+5. Sua resposta deve começar obrigatoriamente com o caractere [ e terminar com ]
 
 # FORMATO DO JSON
 [
   {
-    "title": "[DOMÍNIO] Breve título",
-    "description": "Passo a passo técnico mencionando arquivos específicos.",
+    "title": "[DOMÍNIO] Ação direta (ex: Criar rota X, Alterar componente Y)",
+    "description": "Passo a passo técnico detalhando exatamente quais arquivos criar/modificar.",
     "domain": "BACKEND ou FRONTEND"
   }
 ]`;
-
   }
   
   /**
@@ -246,6 +289,18 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 }`;
   }
 
+  static ensureAndValidateBuildPrompt(pkgContent) {
+    return `
+        Analise este package.json de um projeto Node.js e decida qual o melhor comando para VALIDAR se o código está funcionando (smoke test).
+        Regras:
+        1. Se houver um script de 'test' real, use 'npm test'.
+        2. Se não houver testes, mas houver um script 'start', use um comando que tente iniciar e feche após 5 segundos, ex: "timeout 5s npm start".
+        3. Retorne APENAS um JSON no formato: {"command": "string do comando"}.
+        
+        Conteúdo do package.json:
+        ${pkgContent}
+    `;
+  }
 
 }
 

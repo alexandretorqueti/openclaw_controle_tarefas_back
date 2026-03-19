@@ -156,6 +156,33 @@ app.get('/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/callback', require('./routes/callbackProxy'));
 
+// Test route for terminal SSE (temporary)
+app.post('/api/test/terminal-update', (req, res) => {
+  try {
+    const { type, content, taskId } = req.body;
+    
+    console.log(`📡 Terminal update received: ${type} for task ${taskId}`);
+    console.log(`   Content: "${content}"`);
+    
+    // Emitir evento SSE
+    const sseService = require('./services/sseService');
+    sseService.broadcast('terminal_update', { type, content, taskId });
+    
+    res.json({ 
+      success: true, 
+      message: `Terminal update sent for ${type}`,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in terminal-update:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 
 // Logs interface
 app.get("/logs", (req, res) => {

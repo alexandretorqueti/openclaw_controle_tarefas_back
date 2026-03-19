@@ -3,9 +3,9 @@
 
 const fs = require('fs').promises;
 const { fileExists } = require('../utils/fileUtils');
-const prisma = require('./prismaService');
 const taskHierarchyService = require('./taskHierarchyService');
 const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const taskService = require('./taskService'); // <-- 2. Importa o TaskService
 
 class LockService {
   constructor(lockFilePath) {
@@ -74,7 +74,7 @@ class LockService {
     }
   }
 
-/**
+  /**
    * Verifica se ha um lock ativo
    * @param {number} timeoutThresholdMs - Tempo em ms para considerar o lock como "recente"
    * @returns {Promise<Object>}
@@ -115,10 +115,6 @@ class LockService {
   }
 
   /**
-   * Adquire o lock
-   * @returns {Promise<boolean>}
-   */
-  /**
    * Adquire o lock e marca a tarefa como em execução
    * @param {string} taskId - ID da tarefa que será executada
    * @returns {Promise<boolean>}
@@ -134,24 +130,16 @@ class LockService {
       // Se temos um taskId, marcar a tarefa como isExecuting: true
       if (taskId) {
         try {
-          // Primeiro vamos marcar todas as tarefas como isExecuting: false
-          await prisma.task.updateMany({
-            where: { isExecuting: true },
-            data: { isExecuting: false }
-          });
-          // Marcar a tarefa como em execução
-          const updated = await prisma.task.update({
-            where: { id: taskId },
-            data: { isExecuting: true }
-          });
+          // OBS: A lógica de desmarcar outras tarefas que estavam em execução
+          // agora deve ser feita caso a caso ou via um método específico no TaskService
+          // se for um requisito estrito. Por ora, atualizamos apenas a tarefa alvo.
+
+          const updated = await taskService.updateTask(taskId, { isExecuting: true });
           console.log(`✅ LockService: Tarefa "${taskId}" marcada como isExecuting: true`);
           
-          // Emitir evento SSE para atualização em tempo real
-          sseService.broadcast('task_updated', updated);
-
-          
-          // Atualizar hierarquia (marcar ancestrais como hasChildExecuting: true)
-          await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, true);
+          // O TaskService.updateTask já cuida de atualizar a hierarquia internamente 
+          // e de emitir o sseService.broadcast('task_updated', updated), 
+          // então não precisamos duplicar isso aqui!
           
         } catch (taskError) {
           console.error(`❌ LockService: Erro ao marcar tarefa como em execução: ${taskError.message}`);
@@ -180,18 +168,12 @@ class LockService {
         lockReleased = true;
       }
       
-      // Se temos um taskId, marcar a tarefa como isExecuting: false e atualizar hierarquia
+      // Se temos um taskId, marcar a tarefa como isExecuting: false
       if (this.currentTaskId) {
         try {
-          const updated = await prisma.task.update({
-            where: { id: this.currentTaskId },
-            data: { isExecuting: false }
-          });
-          sseService.broadcast('task_updated', updated);
+          // O updateTask já lida com a hierarquia e os eventos SSE
+          await taskService.updateTask(this.currentTaskId, { isExecuting: false });
           console.log(`✅ LockService: Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
-          
-          // Atualizar hierarquia (verificar ancestrais para hasChildExecuting: false)
-          await taskHierarchyService.updateHierarchyOnExecutionChange(this.currentTaskId, false);
           
         } catch (taskError) {
           console.error(`❌ LockService: Erro ao marcar tarefa como finalizada: ${taskError.message}`);
@@ -218,18 +200,12 @@ class LockService {
       // Remover arquivo de lock
       await fs.unlink(this.lockFilePath).catch(() => {});
       
-      // Se temos um taskId, marcar a tarefa como isExecuting: false e atualizar hierarquia
+      // Se temos um taskId, marcar a tarefa como isExecuting: false
       if (this.currentTaskId) {
         try {
-          const updated = await prisma.task.update({
-            where: { id: this.currentTaskId },
-            data: { isExecuting: false }
-          });
-          sseService.broadcast('task_updated', updated);
+          // O updateTask já lida com a hierarquia e os eventos SSE
+          await taskService.updateTask(this.currentTaskId, { isExecuting: false });
           console.log(`✅ LockService (force): Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
-          
-          // Atualizar hierarquia (verificar ancestrais para hasChildExecuting: false)
-          await taskHierarchyService.updateHierarchyOnExecutionChange(this.currentTaskId, false);
           
         } catch (taskError) {
           console.error(`❌ LockService (force): Erro ao marcar tarefa como finalizada: ${taskError.message}`);
@@ -282,4 +258,3 @@ class LockService {
 }
 
 module.exports = LockService;
-

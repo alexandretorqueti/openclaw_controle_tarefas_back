@@ -1,3 +1,4 @@
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -578,7 +579,12 @@ class TaskService {
       parentTaskId: data.parentTaskId,
       agent: data.agent,
       isExecuting: data.isExecuting,
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      arquitetosPromptContent: data.arquitetosPromptContent,
+      arquitetosAnalysisContent: data.arquitetosAnalysisContent,
+      arquitetosTerminalContent: data.arquitetosTerminalContent,
+      programadorTerminalContent: data.programadorTerminalContent,
+      programadorReportContent: data.programadorReportContent
     };
 
     // Add recurrence fields if provided
@@ -681,6 +687,40 @@ class TaskService {
     sseService.broadcast('task_updated', results[0]);
     
     return results[0]; // Return the updated task
+  }
+
+
+  // No seu TaskService.js
+
+  /**
+   * INICIA a execução exclusiva de uma tarefa.
+   */
+  async startTaskExecution(taskId) {
+    console.log(`🚀 Iniciando execução exclusiva da tarefa ${taskId}...`);
+
+    // 1. O GATILHO GLOBAL: Desliga todas as outras tarefas ativas no banco.
+    // Fazemos isso direto no Prisma porque é uma operação em lote rápida.
+    await prisma.task.updateMany({
+      where: { 
+        isExecuting: true,
+        id: { not: taskId } // Garante que não vamos desligar a própria tarefa à toa
+      },
+      data: { isExecuting: false }
+    });
+
+    // 2. REUSO INTELIGENTE: Delega para o seu método principal.
+    // A updateTask vai alterar para true, atualizar a hierarquia e disparar o SSE!
+    return await this.updateTask(taskId, { isExecuting: true });
+  }
+
+  /**
+   * PARA a execução de uma tarefa.
+   */
+  async stopTaskExecution(taskId) {
+    console.log(`🛑 Parando a execução da tarefa ${taskId}...`);
+    
+    // Novamente, reuso total. A updateTask faz toda a mágica do teardown.
+    return await this.updateTask(taskId, { isExecuting: false });
   }
 
   // Delete task
@@ -1311,82 +1351,129 @@ class TaskService {
       })
     ];
 
-    // Variável para armazenar tarefa pai finalizada (se aplicável)
-    let parentTaskFinalized = null;
+    // Variáveis para armazenar tarefas ancestrais finalizadas
+    let finalizedAncestors = []; // Array de objetos {task, historyRecord}
     let parentHistoryRecord = null;
 
     // ==========================================
-    // LÓGICA DE PROPAGAÇÃO PARA TAREFA PAI
+    // FUNÇÃO RECURSIVA PARA VERIFICAR ANCESTRAIS
     // ==========================================
-    // Se esta tarefa tem um pai, verificar se todas as irmãs estão finalizadas
-    if (existingTask.parentTaskId) {
-      console.log(`🔍 Tarefa ${taskId} tem pai ${existingTask.parentTaskId}. Verificando irmãs...`);
+    const checkAndFinalizeAncestors = async (currentTaskId, userId, finalStatusId, transactionArray) => {
+      const ancestorsToFinalize = [];
       
-      // Buscar todas as subtasks (irmãs) da tarefa pai
-      const allSubtasks = await prisma.task.findMany({
-        where: {
-          parentTaskId: existingTask.parentTaskId,
-          id: { not: taskId } // Excluir a tarefa atual que estamos finalizando
-        },
-        include: {
-          status: true
-        }
-      });
-
-      // Verificar se TODAS as subtasks estão no status final
-      const allSubtasksFinalized = allSubtasks.every(subtask => 
-        subtask.status && subtask.status.isFinalState
-      );
-
-      console.log(`📊 Status das irmãs: ${allSubtasks.length} irmãs encontradas, todas finalizadas? ${allSubtasksFinalized}`);
-
-      // Se todas as irmãs já estavam finalizadas E esta é a última sendo finalizada agora
-      // (ou se não há outras irmãs além desta)
-      if (allSubtasksFinalized || allSubtasks.length === 0) {
-        console.log(`✅ Todas as subtasks da tarefa pai ${existingTask.parentTaskId} estão finalizadas. Finalizando pai também...`);
+      // Função recursiva interna
+      const checkAncestor = async (taskId) => {
+        // Buscar a tarefa atual para obter o parentTaskId
+        const task = await prisma.task.findUnique({
+          where: { id: taskId },
+          select: { parentTaskId: true }
+        });
         
-        // Buscar a tarefa pai
-        const parentTask = await prisma.task.findUnique({
-          where: { id: existingTask.parentTaskId },
-          include: { status: true }
+        if (!task || !task.parentTaskId) {
+          return; // Não tem pai, fim da recursão
+        }
+        
+        const parentId = task.parentTaskId;
+        
+        // Buscar todas as subtasks (irmãs) da tarefa pai
+        const allSubtasks = await prisma.task.findMany({
+          where: {
+            parentTaskId: parentId
+          },
+          include: {
+            status: true
+          }
         });
 
-        if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
-          // Adicionar atualização da tarefa pai à transação
-          transaction.push(
-            prisma.task.update({
-              where: { id: existingTask.parentTaskId },
-              data: {
-                statusId: finalStatus.id,
-                isCompleted: false,
-                lastExecutedAt: new Date(),
-                nextExecutionAt: null
-              },
-              include: { project: true, status: true, priority: true }
-            })
-          );
+        // Verificar se TODAS as subtasks estão no status final
+        const allSubtasksFinalized = allSubtasks.every(subtask => 
+          subtask.status && subtask.status.isFinalState
+        );
 
-          // Adicionar histórico para a tarefa pai
-          transaction.push(
-            prisma.taskHistory.create({
-              data: {
-                taskId: existingTask.parentTaskId,
-                userId: actionUserId,
-                oldStatusId: parentTask.statusId,
-                newStatusId: finalStatus.id,
-                notes: `Tarefa pai finalizada automaticamente porque todas as subtasks foram concluídas.`
-              }
-            })
-          );
+        console.log(`📊 Verificando pai ${parentId}: ${allSubtasks.length} subtasks, todas finalizadas? ${allSubtasksFinalized}`);
 
-          parentTaskFinalized = true;
-          console.log(`🎯 Tarefa pai ${existingTask.parentTaskId} será finalizada automaticamente.`);
+        // Se todas as subtasks estão finalizadas
+        if (allSubtasksFinalized && allSubtasks.length > 0) {
+          // Buscar a tarefa pai
+          const parentTask = await prisma.task.findUnique({
+            where: { id: parentId },
+            include: { status: true }
+          });
+
+          if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
+            console.log(`✅ Todas as subtasks da tarefa pai ${parentId} estão finalizadas. Finalizando pai também...`);
+            
+            // Adicionar à lista de ancestrais para finalizar
+            ancestorsToFinalize.push({
+              task: parentTask,
+              parentId: parentId
+            });
+            
+            // Continuar recursivamente para o avô, bisavô, etc.
+            await checkAncestor(parentId);
+          } else if (parentTask && parentTask.status && parentTask.status.isFinalState) {
+            console.log(`ℹ️ Tarefa pai ${parentId} já está finalizada.`);
+            // Mesmo já finalizada, continuar verificando ancestrais
+            await checkAncestor(parentId);
+          }
         } else {
-          console.log(`ℹ️ Tarefa pai ${existingTask.parentTaskId} já está finalizada ou não encontrada.`);
+          console.log(`⏳ Tarefa pai ${parentId} não será finalizada ainda: ${allSubtasks.length} subtasks, ${allSubtasks.filter(s => s.status && s.status.isFinalState).length} finalizadas.`);
         }
-      } else {
-        console.log(`⏳ Tarefa pai ${existingTask.parentTaskId} não será finalizada ainda: ${allSubtasks.length} irmãs pendentes.`);
+      };
+      
+      // Iniciar verificação recursiva
+      await checkAncestor(currentTaskId);
+      
+      // Processar todos os ancestrais encontrados (do mais próximo ao mais distante)
+      for (const ancestor of ancestorsToFinalize) {
+        const { task: parentTask, parentId } = ancestor;
+        
+        // Adicionar atualização da tarefa ancestral à transação
+        transactionArray.push(
+          prisma.task.update({
+            where: { id: parentId },
+            data: {
+              statusId: finalStatusId,
+              isCompleted: false,
+              lastExecutedAt: new Date(),
+              nextExecutionAt: null
+            },
+            include: { project: true, status: true, priority: true }
+          })
+        );
+
+        // Adicionar histórico para a tarefa ancestral
+        transactionArray.push(
+          prisma.taskHistory.create({
+            data: {
+              taskId: parentId,
+              userId: userId,
+              oldStatusId: parentTask.statusId,
+              newStatusId: finalStatusId,
+              notes: `Tarefa ancestral finalizada automaticamente porque todas as subtasks foram concluídas.`
+            }
+          })
+        );
+        
+        console.log(`🎯 Tarefa ancestral ${parentId} será finalizada automaticamente.`);
       }
+      
+      return ancestorsToFinalize.length;
+    };
+
+    // ==========================================
+    // EXECUTAR VERIFICAÇÃO RECURSIVA DE ANCESTRAIS
+    // ==========================================
+    if (existingTask.parentTaskId) {
+      console.log(`🔍 Tarefa ${taskId} tem pai ${existingTask.parentTaskId}. Verificando ancestrais recursivamente...`);
+      const ancestorsFinalized = await checkAndFinalizeAncestors(
+        taskId, 
+        actionUserId, 
+        finalStatus.id, 
+        transaction
+      );
+      
+      console.log(`📈 ${ancestorsFinalized} tarefas ancestrais serão finalizadas.`);
     }
 
     // Executar todas as operações em uma única transação
@@ -1395,11 +1482,22 @@ class TaskService {
     const updatedTask = transactionResults[0];
     const historyRecord = transactionResults[1];
     
-    // Se a tarefa pai foi finalizada, extrair seus dados dos resultados da transação
-    if (parentTaskFinalized) {
-      parentTaskFinalized = transactionResults[2]; // Tarefa pai atualizada
-      parentHistoryRecord = transactionResults[3]; // Histórico da tarefa pai
+    // Extrair dados dos ancestrais finalizados (se houver)
+    // Cada ancestral ocupa 2 posições na transação: update + history
+    const ancestorsFinalized = [];
+    const ancestorsHistory = [];
+    
+    // Começamos na posição 2 (após a tarefa atual e seu histórico)
+    for (let i = 2; i < transactionResults.length; i += 2) {
+      if (i < transactionResults.length) {
+        ancestorsFinalized.push(transactionResults[i]); // Tarefa ancestral atualizada
+      }
+      if (i + 1 < transactionResults.length) {
+        ancestorsHistory.push(transactionResults[i + 1]); // Histórico da tarefa ancestral
+      }
     }
+    
+    console.log(`📊 ${ancestorsFinalized.length} tarefas ancestrais foram finalizadas.`);
 
     // Controle de versão automático após finalização
     try {
@@ -1439,26 +1537,30 @@ class TaskService {
         console.warn(`⚠️ Usuário ${actionUserId} não encontrado para notificação`);
       }
       
-      // Se a tarefa pai foi finalizada automaticamente, enviar notificação adicional
-      if (parentTaskFinalized) {
-        // Buscar todas as subtasks para listar na notificação
-        const allSubtasks = await prisma.task.findMany({
-          where: {
-            parentTaskId: existingTask.parentTaskId
-          },
-          select: {
-            id: true,
-            title: true,
-            status: true
-          }
-        });
+      // Se houver ancestrais finalizados automaticamente, enviar notificações adicionais
+      if (ancestorsFinalized.length > 0) {
+        console.log(`📱 Enviando notificações para ${ancestorsFinalized.length} tarefas ancestrais finalizadas...`);
         
-        await NotificationService.sendParentTaskAutoCompletedNotification(
-          parentTaskFinalized,
-          allSubtasks
-        );
-        
-        console.log(`📱 Notificação de tarefa pai automaticamente finalizada enviada`);
+        for (const ancestorTask of ancestorsFinalized) {
+          // Buscar todas as subtasks para listar na notificação
+          const allSubtasks = await prisma.task.findMany({
+            where: {
+              parentTaskId: ancestorTask.id
+            },
+            select: {
+              id: true,
+              title: true,
+              status: true
+            }
+          });
+          
+          await NotificationService.sendParentTaskAutoCompletedNotification(
+            ancestorTask,
+            allSubtasks
+          );
+          
+          console.log(`📱 Notificação para tarefa ancestral ${ancestorTask.id} (${ancestorTask.title}) enviada`);
+        }
       }
       
     } catch (notificationError) {
@@ -1472,8 +1574,11 @@ class TaskService {
       task: updatedTask,
       status: finalStatus,
       history: historyRecord,
-      parentTaskFinalized: parentTaskFinalized,
-      parentHistory: parentHistoryRecord,
+      ancestorsFinalized: ancestorsFinalized,
+      ancestorsHistory: ancestorsHistory,
+      // Mantendo compatibilidade total com código existente
+      parentTaskFinalized: ancestorsFinalized.length > 0 ? ancestorsFinalized[0] : null,
+      parentHistory: ancestorsHistory.length > 0 ? ancestorsHistory[0] : null,
       isRecurringReset: false
     };
   }

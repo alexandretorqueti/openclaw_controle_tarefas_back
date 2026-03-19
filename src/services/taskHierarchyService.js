@@ -2,7 +2,7 @@
 // Serviço para gerenciar marcação hierárquica de tarefas em execução
 
 const prisma = require('./prismaService');
-const sseService = require('./sseService');
+// Removida a importação do sseService, pois o TaskService já cuida dos broadcasts.
 
 class TaskHierarchyService {
   /**
@@ -22,33 +22,30 @@ class TaskHierarchyService {
         return;
       }
       
-      // Atualizar todos os ancestrais
       const ancestorIds = ancestors.map(ancestor => ancestor.id);
-      // Aqui temos que fazer um while para poder chamar o sseService.broadcast('task_updated', updateData);
-      while (ancestorIds.length > 0) {
-        const ancestorId = ancestorIds.pop();
-        const updateData = await prisma.task.update({
-          where: { id: ancestorId },
-          data: {
-            hasChildExecuting: true
-          }
-        });
-        sseService.broadcast('task_updated', updateData);
-      }
-      
-      /*
-      await prisma.task.updateMany({
-        where: {
-          id: { in: ancestorIds }
-        },
-        data: {
-          hasChildExecuting: true
-        }
-      });
-      */
+      console.log(`✅ TaskHierarchyService: ${ancestors.length} ancestrais encontrados para marcar: ${ancestorIds.join(', ')}`);
 
-      console.log(`✅ TaskHierarchyService: ${ancestors.length} ancestrais marcados como hasChildExecuting: true`);
-      console.log(`   Ancestrais: ${ancestorIds.join(', ')}`);
+      // Usando require tardio para evitar dependência circular com taskService
+      const taskService = require('./taskService');
+      
+      // Atualizar todos os ancestrais usando o TaskService
+      // IMPORTANTE: Não desmarcamos todas as tarefas do sistema!
+      // Apenas marcamos os ancestrais desta tarefa específica
+      for (const ancestorId of ancestorIds) {
+        // Verificar se o ancestral já está marcado (para evitar atualização desnecessária)
+        const ancestor = await prisma.task.findUnique({
+          where: { id: ancestorId },
+          select: { hasChildExecuting: true }
+        });
+        
+        if (!ancestor || !ancestor.hasChildExecuting) {
+          // Só atualiza se não estiver já marcado
+          await taskService.updateTask(ancestorId, { hasChildExecuting: true });
+          console.log(`   ✅ Ancestral ${ancestorId}: marcado como hasChildExecuting: true`);
+        } else {
+          console.log(`   ℹ️ Ancestral ${ancestorId}: já estava marcado como hasChildExecuting: true`);
+        }
+      }
       
     } catch (error) {
       console.error(`❌ TaskHierarchyService: Erro ao marcar ancestrais: ${error.message}`);
@@ -101,11 +98,9 @@ class TaskHierarchyService {
       
       if (executingDescendantsCount === 0) {
         // Nenhum descendente em execução, pode desmarcar
-        const updateData = await prisma.task.update({
-          where: { id: ancestorId },
-          data: { hasChildExecuting: false }
-        });
-        sseService.broadcast('task_updated', updateData);
+        const taskService = require('./taskService'); // Require tardio
+        
+        await taskService.updateTask(ancestorId, { hasChildExecuting: false });
         console.log(`   ✅ Ancestral ${ancestorId}: hasChildExecuting: false (0 descendentes em execução)`);
       } else {
         console.log(`   ℹ️ Ancestral ${ancestorId}: mantém hasChildExecuting: true (${executingDescendantsCount} descendentes em execução)`);
@@ -160,6 +155,7 @@ class TaskHierarchyService {
       let currentTaskId = taskId;
       
       // Subir na hierarquia até chegar à raiz
+      // Leitura é segura no Prisma aqui, não precisa delegar pro TaskService
       while (true) {
         const task = await prisma.task.findUnique({
           where: { id: currentTaskId },

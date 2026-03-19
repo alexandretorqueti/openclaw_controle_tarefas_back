@@ -1,11 +1,12 @@
 // src/services/taskExecutionService.js
 
-const { PrismaClient } = require('@prisma/client');
 const fs = require('fs').promises;
 const path = require('path');
 const { execSync } = require('child_process');
 
 // Importação dos serviços
+const prisma = require('./prismaService'); // <-- 1. Usa o Singleton ao invés de 'new PrismaClient()'
+const taskService = require('./taskService'); // <-- 2. Importa o TaskService
 const agentService = require('./agentService');
 const WorkspaceSnapshotService = require('./workspaceSnapshotService');
 const OpenClawService = require('./openclawService');
@@ -14,13 +15,12 @@ const EvidenceService = require('./evidenceService');
 const TaskAnalysisService = require('./taskAnalysisService');
 const PromptFactory = require('../utils/promptFactory');
 const SmartFileFinder = require('../utils/smartFileFinder'); 
+
 // Utilitários
 const { fileExists } = require('../utils/fileUtils');
 const { runPipeline } = require('../utils/pipelineUtils'); 
 const { log } = require('../../aux/logger');
 const { arch } = require('os');
-
-const prisma = new PrismaClient();
 
 class TaskExecutionService {
   
@@ -55,6 +55,7 @@ class TaskExecutionService {
         model = agentDetails.identity?.model || model;
       } catch (error) { /* Silencioso */ }
     }
+    // Mantemos o uso do prisma aqui pois TaskExecutionLog é o domínio nativo deste arquivo
     return await prisma.taskExecutionLog.create({
       data: { taskId: task.id, userId, model, startedAt: new Date(), success: false }
     });
@@ -83,16 +84,20 @@ class TaskExecutionService {
   /**
    * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
    */
+/**
+   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
+   */
   static async stepSetupContext(ctx) {
     const { task, userId, config } = ctx;
     const { TASKS_DIR } = config;
 
     const project = task.projectId ? await prisma.project.findUnique({ where: { id: task.projectId } }) : null;
     const taskId = task.id;
+    
+    // 1. Analisa o escopo da tarefa para definir o taskType (development, analysis, automation)
     const analysisPlan = await TaskAnalysisService.analyzeTaskScope(task, project, path.join(TASKS_DIR, `terminal-pre-analise-${taskId}.log`));
     
-    // Prepara os caminhos dos arquivos
-   
+    // 2. Prepara os caminhos dos arquivos
     const files = {
       promptFile: path.join(TASKS_DIR, `prompt-${taskId}.txt`),
       relatorioFile: path.join(TASKS_DIR, `relatorio-${taskId}.txt`),
@@ -102,10 +107,9 @@ class TaskExecutionService {
       architectLogFile: path.join(TASKS_DIR, `terminal-arquiteto-${taskId}.log`)
     };
 
-    // Cria o prompt LIMPO para o arquiteto (apenas tarefa + contexto)
     const dirBase = project?.pastaBase || 'Diretório atual';
     
-    // Adiciona comentários ao prompt se existirem
+    // 3. Monta a seção de comentários
     let commentsSection = '';
     if (task.comments && task.comments.length > 0) {
       commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
@@ -116,37 +120,58 @@ class TaskExecutionService {
       });
     }
 
-    const architectPrompt = `ARQUITETO: Analise esta tarefa e crie um plano de ação.\n\nTAREFA: ${task.title}\nDESCRIÇÃO: ${task.description}\nBASE: ${dirBase}${commentsSection}`;
+    // 4. Tira o Snapshot PRIMEIRO (Para obtermos a lista de arquivos para o prompt)
+    const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+    const fileList = Array.from(initialSnapshot.keys());
+
+    // 5. Geração do Prompt Inteligente do Arquiteto usando o PromptFactory
+    // Aqui a mágica acontece: passamos a lista de arquivos e o TIPO da tarefa
+    const architectPrompt = PromptFactory.buildArchitectPrompt(
+      task, 
+      project, 
+      fileList, 
+      files.architectPlanFile, 
+      commentsSection, 
+      analysisPlan.taskType // <-- Injetando o tipo exato para o prompt condicional!
+    );
     
-    // Salvar também em um arquivo backup para garantir que não seja perdido
+    // 6. Salva nos arquivos físicos
     const architectPromptBackupFile = path.join(TASKS_DIR, `architect-prompt-${taskId}.txt`);
     await fs.writeFile(architectPromptBackupFile, architectPrompt);
-    
-    // Engine rules serão adicionadas APENAS para o desenvolvedor depois
-    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
-    const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
-    
     await fs.writeFile(files.promptFile, architectPrompt);
     await fs.writeFile(files.terminalLogFile, '');
 
-    const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+    // 7. Geração do Prompt do Desenvolvedor
+    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
+    const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
+    
+    // 8. Cria o log de execução no banco
     const executionLog = await TaskExecutionService.createExecutionLog(task, userId, task.agent);
 
-    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: architectPrompt, developerPrompt, commentsSection };
+    return { 
+      ...ctx, 
+      project, 
+      analysisPlan, 
+      files, 
+      initialSnapshot, 
+      executionLog, 
+      currentInput: architectPrompt, 
+      developerPrompt, 
+      commentsSection 
+    };
   }
 
   /**
-   * Passo 2: Se for desenvolvimento, o Arquiteto planeja a execução.
+   * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
    */
   static async stepArchitectPlanning(ctx) {
-    if (ctx.analysisPlan.taskType !== 'development') {
-      await log(`⏭️ [Arquiteto] Pulado: Tarefa não é de desenvolvimento.`);
-      return ctx; 
-    }
-
-    const { task, project, files, initialSnapshot, config } = ctx;
+    const { task, project, files, initialSnapshot, config, analysisPlan } = ctx;
+    
+    // Log do tipo de tarefa
+    await log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
+    
     const fileList = Array.from(initialSnapshot.keys());
-    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '');
+    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '', analysisPlan.taskType);
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
     
     // Importar utilitário de sessões em cadeia
@@ -209,7 +234,10 @@ class TaskExecutionService {
         const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
         const architectDoneExists = await fileExists(files.doneFile);
         const architectReportExists = await fileExists(files.relatorioFile);
-        const hasEvidence = hasRealChanges || architectDoneExists || architectReportExists;
+        
+        // Para tarefas de análise, evidência pode ser apenas relatório/.done (não precisa de alterações)
+        const hasEvidence = architectDoneExists || architectReportExists || 
+                           (analysisPlan.taskType === 'analysis' ? true : hasRealChanges);
         
         if (!hasEvidence) {
           await log(`⚠️ [Validação] NENHUMA evidência encontrada! IA provavelmente errou. Corrigindo análise...`);
@@ -224,7 +252,11 @@ class TaskExecutionService {
           };
           await log(`📊 [Arquiteto] Análise CORRIGIDA: hasExecuted=false, hasPlan=true (falta de evidências)`);
         } else {
-          await log(`✅ [Validação] Evidências confirmadas: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados`);
+          if (analysisPlan.taskType === 'analysis') {
+            await log(`✅ [Validação] Evidências confirmadas para análise: relatório/.done criados`);
+          } else {
+            await log(`✅ [Validação] Evidências confirmadas: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados`);
+          }
         }
       }
       
@@ -313,12 +345,17 @@ class TaskExecutionService {
       return { needsDeveloper: true, message: `O arquiteto analisou a tarefa, mas não encontramos evidências de execução.\n\n${architectPlan || 'Siga a descrição original da tarefa.'}` };
     }
     
-    if (!hasRealChanges) {
-      await log(`📝 [Verificação] Arquiteto deixou .done/relatório, mas não alterou arquivos.`);
+    // Para tarefas de análise, não exigimos alterações de arquivos (apenas leitura)
+    if (analysisPlan.taskType !== 'analysis' && !hasRealChanges) {
+      await log(`📝 [Verificação] Arquiteto deixou .done/relatório, mas não alterou arquivos (e a tarefa não é de análise).`);
       return { needsDeveloper: true, message: `O arquiteto analisou e disse que já fez a tarefa, mas não encontramos alterações nos arquivos.\n\n${architectPlan}\n\nPor favor, execute a tarefa conforme descrito acima.` };
     }
     
-    await log(`📁 [Verificação] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+    if (analysisPlan.taskType === 'analysis') {
+      await log(`📝 [Verificação] Tarefa de análise: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados (alterações são opcionais para análise).`);
+    } else {
+      await log(`📁 [Verificação] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+    }
     
     // Verificar contrato
     const contractResult = await ContractVerificationService.verifyContract(
@@ -339,61 +376,212 @@ class TaskExecutionService {
       return { needsDeveloper: true, message: contractResult.feedbackToAgent || `O arquiteto fez alterações, mas não cumpriu o contrato: ${contractResult.executionNotes}\n\nPor favor, corrija.` };
     }
     
-    await log(`✅ [Verificação] Contrato cumprido pelo arquiteto. Verificando build...`);
     
-    // QA/Build validation
-    let qa = { passed: true };
-    if (project) {
-      const BUILD_TIMEOUT = 60000;
-      // Corrigir PATH do Node.js: injetar o diretório do node atual (geralmente NVM) no início do PATH.
-      // Isso impede que o child_process use um node legado (ex: Node 12 em /usr/bin) sob ambiente de cron job.
-      const nodeBinDir = path.dirname(process.execPath);
-      const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
-
-      if (project.backendBuildCmd && project.backendPath) {
-        try {
-          await log(`⏳ Testando build Backend...`);
-          execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
-        } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
+    await log(`✅ [Verificação] Contrato cumprido pelo arquiteto.`);
+    
+    // Para tarefas de desenvolvimento, verificar ecossistema (build, testes)
+    if (analysisPlan.taskType === 'development') {
+      await log(`🔧 [Verificação] Verificando ecossistema (build, testes)...`);
+      
+      const qa = await TaskExecutionService.ensureAndValidateEcosystem(project, ctx.config);
+      
+      if (!qa.passed) {
+        await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
+        await fs.unlink(files.doneFile).catch(()=>{});
+        return { needsDeveloper: true, message: `O arquiteto fez alterações, mas a validação de ecossistema falhou:\n\n${qa.message}\n\nCorrija o código e finalize novamente com .done.` };
       }
-      if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
-        try {
-          await log(`⏳ Testando build Frontend...`);
-          const frontendCwd = path.join(project.pastaBase, project.frontendPath);
-          const buildCmd = project.frontendBuildCmd;
-          
-          execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
-        } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
-      }
+      
+      await log(`✅ [Verificação] Ecossistema verificado com sucesso!`);
+      
+      return {
+        success: true,
+        contractResult: {
+          contractFulfilled: true,
+          executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.`
+        },
+        finalResult: { 
+          success: true, 
+          executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.` 
+        }
+      };
+    } else {
+      // Para tarefas de análise/automação, não verificar ecossistema
+      await log(`✅ [Verificação] Tarefa de ${analysisPlan.taskType} concluída pelo arquiteto.`);
+      
+      return {
+        success: true,
+        contractResult: {
+          contractFulfilled: true,
+          executionNotes: `Tarefa de ${analysisPlan.taskType} executada pelo arquiteto.`
+        },
+        finalResult: { 
+          success: true, 
+          executionNotes: `Tarefa de ${analysisPlan.taskType} executada pelo arquiteto.` 
+        }
+      };
     }
-    
-    if (!qa.passed) {
-      await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
-      await fs.unlink(files.doneFile).catch(()=>{});
-      return { needsDeveloper: true, message: `Build falhou: ${qa.message}. O arquiteto fez alterações, mas o build não passa. Corrija o código e finalize novamente com .done.` };
-    }
-    
-    await log(`✅ [Verificação] Tudo verificado! Arquiteto concluiu tarefa com sucesso.`);
-    
-    return {
-      success: true,
-      contractResult: {
-        contractFulfilled: true,
-        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.`
-      },
-      finalResult: { 
-        success: true, 
-        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.` 
-      }
-    };
   }
 
   /**
-   * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
+   * Varredura de Ecossistema (Sistema 1)
+   * Descobre automaticamente as aplicações dentro do projeto, usa IA para 
+   * entender a tecnologia de cada uma, e valida todas elas.
    */
-/**
+  static async ensureAndValidateEcosystem(project, config) {
+    if (!project || !project.pastaBase) return { passed: true };
+
+    const { execSync } = require('child_process');
+    const path = require('path');
+    const fs = require('fs').promises;
+    const { fileExists } = require('../utils/fileUtils');
+    const LlmService = require('./llmService');
+    const { log } = require('../../aux/logger');
+
+    const baseDir = project.pastaBase;
+    
+    // 1. AUTO-DESCOBRIMENTO (Lê as subpastas, ignorando node_modules e arquivos ocultos)
+    const items = await fs.readdir(baseDir, { withFileTypes: true });
+    const apps = [];
+
+    for (const item of items) {
+        if (item.isDirectory() && !item.name.startsWith('.') && item.name !== 'node_modules') {
+            const appDir = path.join(baseDir, item.name);
+            const pkgPath = path.join(appDir, 'package.json'); // No futuro pode adicionar pyproject.toml, pom.xml, etc.
+            
+            if (await fileExists(pkgPath)) {
+                apps.push({ name: item.name, path: appDir, pkgPath });
+            }
+        }
+    }
+
+    if (apps.length === 0) {
+        await log(`⚠️ [Sistema 1] Nenhum módulo inicializado encontrado em ${baseDir}.`);
+        return { passed: true }; // Nada para testar ainda
+    }
+
+    // 2. MEMÓRIA DA IA (Gerencia os comandos descobertos sem depender do Prisma)
+    const cachePath = path.join(baseDir, '.jarbas-builds.json');
+    let buildCache = {};
+    if (await fileExists(cachePath)) {
+        buildCache = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    }
+
+    // 3. ANÁLISE E VALIDAÇÃO DE CADA MÓDULO ENCONTRADO
+    const nodeBinDir = path.dirname(process.execPath);
+    const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
+
+    for (const app of apps) {
+        await log(`🔍 [Sistema 1] Inspecionando módulo encontrado: [${app.name}]`);
+        
+        // Se a IA ainda não sabe como buildar esta pasta específica:
+        if (!buildCache[app.name]) {
+            await log(`🧠 [Sistema 1] IA analisando a arquitetura de '${app.name}'...`);
+            
+            const pkgContent = await fs.readFile(app.pkgPath, 'utf8');
+            const ai = new LlmService();
+            
+            const prompt = `
+                Você é um Arquiteto de DevOps. Analise este package.json da pasta '${app.name}'.
+                1. Identifique que tipo de aplicação é esta (ex: React, API Node, Worker, Microservico).
+                2. Decida o melhor comando para VALIDAR se o código compila ou funciona.
+                3. Se for frontend, use comando de build. Se for backend, use teste ou timeout start.
+                
+                Retorne APENAS um JSON:
+                {"tipo": "string", "comando": "string do comando", "escopo": "front | back"}
+                
+                Conteúdo:
+                ${pkgContent}
+            `;
+
+            try {
+                const decision = await ai.analyze(prompt);
+                // Salva a decisão na memória do projeto
+                buildCache[app.name] = {
+                    tipo: decision?.tipo || 'desconhecido',
+                    comando: decision?.comando || 'node -c index.js',
+                    escopo: decision?.escopo
+                };
+                await fs.writeFile(cachePath, JSON.stringify(buildCache, null, 2));
+                await log(`⚙️ [Sistema 1] Identificado como ${buildCache[app.name].tipo}. Comando: ${buildCache[app.name].comando}`);
+                // Tem .env?
+                if (!(await fileExists(path.join(app.path, '.env')))) {
+                  // Tenho que identificar se o tipo é front ou back
+                  let PORT = 7000;
+                  if (buildCache[app.name].escopo && buildCache[app.name].escopo === 'front') {
+                    PORT = project.frontendPort || 7000;
+                  } else if (buildCache[app.name].escopo && buildCache[app.name].escopo === 'back') {
+                    PORT = project.backendPort || 7001;
+                  }
+
+                  /*
+                    TODO: Node.js nativas não leem o .env a menos que você instale a biblioteca dotenv no código delas. Para garantir que o backend respeite a porta do .env sem depender do código que a IA gerou, precisamos injetar essa variável de ambiente na hora do execSync.
+                  */
+
+                  await fs.writeFile(path.join(app.path, '.env'), `PORT=${PORT}`);
+                  await log(`⚙️ [Sistema 1] Criado arquivo .env com PORT=${PORT}`);
+                }
+            } catch (err) {
+                return { passed: false, message: `Falha da IA ao analisar a pasta ${app.name}: ${err.message}` };
+            }
+        }
+
+        // EXECUÇÃO DO TESTE PARA ESTA PASTA
+        const cmd = buildCache[app.name].comando;
+        try {
+            await log(`⏳ [Sistema 1] Testando [${app.name}]: ${cmd}`);
+            execSync(cmd, { 
+                cwd: app.path, 
+                stdio: 'pipe', 
+                timeout: 90000, 
+                shell: true, 
+                env: childEnv 
+            });
+        } catch (e) {
+          // execSync junta o log de erro no stderr e a saída normal no stdout
+          const stdout = e.stdout ? e.stdout.toString() : '';
+          const stderr = e.stderr ? e.stderr.toString() : '';
+          const errorLog = stderr + '\n' + stdout + '\n' + e.message;
+          
+          // 1. VERIFICAÇÃO ESTRITA DE COMANDO INVÁLIDO (Auto-correção do Orquestrador)
+          // Agora só pega erros específicos do sistema operacional ou do npm
+          const isInvalidCommand = 
+              errorLog.includes("npm ERR! missing script") || 
+              errorLog.includes("command not found") || 
+              errorLog.includes("is not recognized as an internal or external command") ||
+              (errorLog.includes("sh:") && errorLog.includes("not found"));
+
+          if (isInvalidCommand) {
+              delete buildCache[app.name]; // Apaga da memória para forçar nova análise
+              await fs.writeFile(cachePath, JSON.stringify(buildCache, null, 2));
+              return { passed: false, message: `Comando inválido gerado para [${app.name}]. O orquestrador tentará reconfigurar.` };
+          }
+
+          // 2. TIMEOUT DE SERVIDOR (Sucesso!)
+          // Se a IA escolheu "npm run dev", o servidor fica rodando para sempre.
+          // Se ele sobreviveu até o timeout (90s) sem crashar, consideramos um sucesso!
+          if (e.signal === 'SIGTERM' || e.code === 'ETIMEDOUT' || errorLog.includes('ETIMEDOUT')) {
+              await log(`✅ [Sistema 1] Módulo [${app.name}] rodou até o timeout sem falhas. Considerado operacional.`);
+              return { passed: true };
+          }
+
+          // 3. ERRO REAL DA APLICAÇÃO (Ex: MongoDB ECONNREFUSED)
+          // É aqui que o erro que você viu vai cair. Vamos mandá-lo para a IA!
+          // Pegamos a saída mais relevante para não estourar o limite de tokens do LLM
+          const cleanError = (stderr || stdout || e.message).substring(0, 2000);
+          
+          return { passed: false, message: `O código do módulo [${app.name}] falhou na execução/teste:\n\n${cleanError}` };
+      }
+    }
+
+    await log(`✅ [Sistema 1] Todos os ${apps.length} módulos operacionais.`);
+    return { passed: true };
+  }
+
+
+
+  /**
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor) - STATLESS (Protocolo Amnésia)
-   */
+  */
   static async stepDeveloperLoop(ctx) {
     let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectAnalysis, architectPlan } = ctx;
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
@@ -483,8 +671,6 @@ class TaskExecutionService {
       }
 
       // Salva o prompt do turno no disco para você poder auditar o que foi enviado
-      // ATENÇÃO: Aqui está o BUG! Estamos sobrescrevendo o prompt do arquiteto com o prompt do desenvolvedor
-      // Vamos criar um arquivo separado para o prompt do desenvolvedor
       const developerPromptFile = path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnos}.txt`);
       await fs.writeFile(developerPromptFile, promptDesteTurno).catch(()=>{});
 
@@ -509,40 +695,21 @@ class TaskExecutionService {
         taskType: analysisPlan.taskType, 
         evidence, task, project, analysisPlan, initialSnapshot
       });
-      
+
       if (contractResult.contractFulfilled) {
-        // Build Validation
-        let qa = { passed: true };
-        if (project) {
-          const BUILD_TIMEOUT = 60000;
-          const nodeBinDir = path.dirname(process.execPath);
-          const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
-
-          if (project.backendBuildCmd && project.backendPath) {
-            try {
-              await log(`⏳ Testando build Backend...`);
-              execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
-            } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
-          }
-          if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
-            try {
-              await log(`⏳ Testando build Frontend...`);
-              const frontendCwd = path.join(project.pastaBase, project.frontendPath);
-              const buildCmd = project.frontendBuildCmd;
-              
-              execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env: childEnv });
-            } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
-          }
-        }
-
+        
+        // Uma única linha aciona a IA de DevOps para varrer e testar tudo!
+        const qa = await TaskExecutionService.ensureAndValidateEcosystem(project, config);
+        
         if (!qa.passed) {
           await fs.unlink(files.doneFile).catch(()=>{});
-          lastFeedback = `Build falhou: ${qa.message}. Corrija o erro no código e finalize novamente com .done.`;
+          lastFeedback = `Validação de Ecossistema falhou:\n\n${qa.message}\n\nCorrija o código no módulo indicado e finalize novamente.`;
           await log(`❌ QA Reprovado. Retornando erro para o agente: ${qa.message}`);
           contractResult.contractFulfilled = false;
           continue;
         }
-        break; // Passou no contrato e no QA
+        
+        break; // Passou no contrato e todo o ecossistema compilou/testou com sucesso!
       }
 
       // 4. ANÁLISE E FEEDBACK DO TURNO ATUAL
@@ -630,7 +797,7 @@ class TaskExecutionService {
   static async stepTeardown(ctx) {
     console.log(`🔧 [DEBUG] stepTeardown chamado para tarefa ${ctx.task?.id}`);
     const { executionLog, files, task, architectPlan, config } = ctx;
-    let { contractResult } = ctx; // Mudar para let para permitir reatribuição
+    let { contractResult } = ctx; 
     const { TASKS_DIR } = config || {};
     
     // Validação de segurança
@@ -668,11 +835,9 @@ class TaskExecutionService {
         return null;
       };
       
-      // SEMPRE usar o prompt original do arquiteto, não o arquivo que pode ter sido sobrescrito
       const architectPromptFile = path.join(TASKS_DIR, `architect-prompt-${task.id}.txt`);
       updateData.arquitetosPromptContent = await readFileSafe(architectPromptFile);
       
-      // Se não encontrar o backup, tentar o arquivo original (mas avisar)
       if (!updateData.arquitetosPromptContent) {
         await log(`⚠️ [Teardown] Arquivo de prompt do arquiteto não encontrado: ${architectPromptFile}`);
         updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
@@ -683,23 +848,21 @@ class TaskExecutionService {
       updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
       updateData.programadorReportContent = await readFileSafe(files?.relatorioFile);
       
-      // Filtrar chaves nulas antes de atualizar
       const finalUpdateData = Object.fromEntries(Object.entries(updateData).filter(([_, v]) => v !== null));
       
       if (Object.keys(finalUpdateData).length > 0 && task && task.id) {
         await log(`💾 [Teardown] ATUALIZANDO tarefa ${task.id} com ${Object.keys(finalUpdateData).length} campos de log...`);
-        await prisma.task.update({
-          where: { id: task.id },
-          data: finalUpdateData
-        });
-        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso no banco de dados.`);
+        
+        // 3. Substituído a chamada crua do Prisma pelo TaskService!
+        await taskService.updateTask(task.id, finalUpdateData);
+        
+        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso pelo TaskService.`);
       } else if (task && task.id) {
         await log(`⚠️ [Teardown] Nenhum conteúdo de arquivo encontrado para salvar na tarefa ${task.id}`);
       }
       
     } catch (error) {
       await log(`💥 [FATAL Teardown] Erro CRÍTICO ao salvar conteúdos no banco: ${error.message}\n${error.stack}`);
-      // Não falhar a execução inteira, mas logar o erro de forma grave
     }
 
     return { ...ctx, finalResult };
@@ -712,7 +875,6 @@ class TaskExecutionService {
   static async executeTask(task, userId, config) {
     const initialContext = { task, userId, config };
 
-    // Definição limpa da esteira de produção
     const steps = [
       this.stepSetupContext,
       this.stepArchitectPlanning,
@@ -721,7 +883,6 @@ class TaskExecutionService {
     ];
 
     try {
-      // O motor do pipeline assume o controle
       const finalState = await runPipeline(`Task-${task.id}`, initialContext, steps);
       
       return { 
@@ -731,7 +892,6 @@ class TaskExecutionService {
       };
 
     } catch (error) {
-      // Tratamento de segurança caso alguma etapa estoure um erro não tratado
       await log(`💥 [FATAL] O pipeline falhou: ${error.message}`);
       throw error;
     }
@@ -739,5 +899,3 @@ class TaskExecutionService {
 }
 
 module.exports = TaskExecutionService;
-
-

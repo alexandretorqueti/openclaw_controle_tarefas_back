@@ -12,6 +12,7 @@ const validationService = require('./src/services/validationService');
 const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
 const { extractJsonObjects } = require('./src/utils/jsonUtils');
+const taskService = require('./src/services/taskService');
 
 let UserIdJarbas = null;
 /**
@@ -113,7 +114,9 @@ async function callAnalyst(task) {
     }
 
     if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
-      throw new Error("O Arquiteto retornou um array vazio de tarefas.");
+      // Marcar essa tarefa como atômica e seguir para o fluxo normal.
+      await taskService.updateTask(task.id, { isAtomic: true });
+      return { success: true, subtasksCreated: 0 };
     }
 
     const mappedSubtasks = subtasksPlan.map(st => ({
@@ -403,11 +406,7 @@ async function main() {
           const validation = await validationService.validateWithAuxModel(task, task.project);
           
           // Atualizar atomicidade no banco
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { isAtomic: validation.isAtomic }
-          });
-          
+          await taskService.updateTask(task.id, { isAtomic: validation.isAtomic });
           if (!validation.isAtomic) {
             // Manda pro Analista
             routingResult = await callAnalyst(task);
