@@ -179,46 +179,33 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
    */
   static buildDecompositionPrompt(task) {
-    return `Você é um Arquiteto de Software Sênior. Sua missão é decompor uma "Tarefa Mãe" em sub-tarefas acionáveis.
+    return `# ROLE
+Você é um Engenheiro de Software Sênior focado em automação de workflow. Sua única função é descompor uma tarefa complexa em formato JSON.
 
-REGRAS ABSOLUTAS DE SAÍDA:
-1. Você DEVE retornar APENAS um array JSON válido.
-2. NÃO inclua nenhum texto antes ou depois do array.
-3. NÃO explique, não narre, não analise.
-4. O sistema só processará o que estiver entre colchetes [].
+# TAREFA MÃE
+Título: ${task.title}
+Descrição: ${task.description}
 
-TAREFA MÃE:
-Título: ${task?.title}
-Descrição: ${task?.description}
+# PROCESSO INTERNO (OBRIGATÓRIO)
+1. Identifique o domínio da tarefa (BACKEND ou FRONTEND)
+2. Estude o projeto antes de criar o JSON
+3. Divida a tarefa em pelo menos duas tarefas menores
+4. Uma tarefa deve ser de um único domínio (BACKEND ou FRONTEND)
 
-INSTRUÇÕES (execute internamente, não mostre na saída):
-1. Use ferramentas (bash, find, ls, cat, grep) para explorar o código.
-2. Identifique arquivos, controllers, models, componentes existentes.
-3. Mapeie caminhos exatos antes de criar tarefas.
+# REGRAS DE SAÍDA (CRÍTICO)
+1. Retorne EXCLUSIVAMENTE um array JSON. 
+2. Proibido incluir saudações, explicações, markdown fora do JSON ou comentários.
+3. Se você falar qualquer palavra fora do array JSON, o sistema quebrará.
+4. Responda começando exatamente com o caractere: [
 
-CRITÉRIOS PARA AS TAREFAS:
-1. Cada tarefa deve ser uma unidade funcional completa.
-2. Forneça caminhos exatos de arquivos (ex: "src/controllers/UserController.ts").
-3. BACKEND: banco de dados, rotas, lógica de negócio.
-4. FRONTEND: React components, UI, CSS, telas.
-5. NÃO crie tarefas exploratórias ("procure o arquivo X").
-6. NÃO crie tarefas de linha-a-lina.
-
-FORMATO DE SAÍDA (APENAS ISSO):
+# FORMATO DO JSON
 [
   {
-    "title": "[BACKEND] Título específico da tarefa",
-    "description": "Instruções passo a passo com caminhos exatos.",
-    "domain": "BACKEND"
-  },
-  {
-    "title": "[FRONTEND] Título específico da tarefa", 
-    "description": "Instruções passo a passo com caminhos exatos.",
-    "domain": "FRONTEND"
+    "title": "[DOMÍNIO] Breve título",
+    "description": "Passo a passo técnico mencionando arquivos específicos.",
+    "domain": "BACKEND ou FRONTEND"
   }
-]
-
-LEMBRE: Sua ÚNICA saída deve ser o array JSON acima, nada mais.`;
+]`;
 
   }
   

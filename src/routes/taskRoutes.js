@@ -35,5 +35,8 @@ router.get('/project/:projectId', taskController.getTasksByProject);
 // PATCH /api/tasks/:id/finalize - Finalize task (mark as final status)
 router.patch('/:id/finalize', taskController.finalizeTask);
 
+// PUT /api/tasks/:id/finish-execution - Finish task execution (set isExecuting to false)
+router.put('/:id/finish-execution', taskController.finishTaskExecution);
+
 module.exports = router;
 

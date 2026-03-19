@@ -2,9 +2,8 @@
 // Utilitarios para manipulacao de JSON
 
 /**
- * Extrai objetos JSON de um texto
- * @param {string} text - Texto contendo JSON
- * @returns {string[]}
+ * Extrai objetos ou arrays JSON de uma string de texto.
+ * Melhora a lógica original para suportar arrays e parsing automático.
  */
 function extractJsonObjects(text) {
   const results = [];
@@ -12,6 +11,10 @@ function extractJsonObjects(text) {
   let start = -1;
   let inString = false;
   let escape = false;
+  let activeChar = null; // Guarda se estamos rastreando { ou [
+
+  // Mapeamento de pares
+  const pairs = { '{': '}', '[': ']' };
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
@@ -22,9 +25,7 @@ function extractJsonObjects(text) {
     }
 
     if (char === '\\') {
-      if (inString) {
-        escape = true;
-      }
+      if (inString) escape = true;
       continue;
     }
 
@@ -35,14 +36,31 @@ function extractJsonObjects(text) {
 
     if (inString) continue;
 
-    if (char === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        results.push(text.substring(start, i + 1));
-        start = -1;
+    // Se não estamos dentro de um JSON, procura início de objeto ou array
+    if (depth === 0) {
+      if (char === '{' || char === '[') {
+        start = i;
+        depth = 1;
+        activeChar = char;
+      }
+    } else {
+      // Se já estamos dentro, checa se o caractere atual fecha ou abre o nível
+      if (char === activeChar) {
+        depth++;
+      } else if (char === pairs[activeChar]) {
+        depth--;
+        
+        if (depth === 0) {
+          const jsonStr = text.substring(start, i + 1);
+          try {
+            results.push(JSON.parse(jsonStr));
+          } catch (e) {
+            // Se o JSON extraído for inválido (ex: truncado), ignoramos ou tratamos
+            console.error("JSON extraído é inválido:", e.message);
+          }
+          start = -1;
+          activeChar = null;
+        }
       }
     }
   }

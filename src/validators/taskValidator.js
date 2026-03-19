@@ -44,7 +44,8 @@ const taskSchema = z.object({
     }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
     .optional()
     .nullable(),
-  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable()
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
+  isExecuting: z.boolean().optional().default(false)
 });
 
 const updateTaskSchema = z.object({
@@ -94,7 +95,8 @@ const updateTaskSchema = z.object({
     .nullable(),
   agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   statusChangeNotes: z.string().max(500).optional(),
-  userId: z.string().uuid('Invalid user ID format').optional()
+  userId: z.string().uuid('Invalid user ID format').optional(),
+  isExecuting: z.boolean().optional()
 });
 
 const taskFiltersSchema = z.object({

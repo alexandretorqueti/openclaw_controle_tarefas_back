@@ -110,6 +110,7 @@ model Task {
   domain          String?
   isDecomposed    Boolean            @default(false)
   isAtomic        Boolean            @default(false)
+  isExecuting     Boolean            @default(false) @map("bool_executando")
   projectId       String
   parentTaskId    String?
   statusId        String

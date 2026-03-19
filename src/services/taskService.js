@@ -552,6 +552,7 @@ class TaskService {
       assignedToId: data.assignedToId,
       parentTaskId: data.parentTaskId,
       agent: data.agent,
+      isExecuting: data.isExecuting,
       updatedAt: new Date()
     };
 
@@ -1117,7 +1118,14 @@ class TaskService {
    
     console.log(`\nDEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}\n`);
     
-    return playableTasks[0];
+    const nextTask = playableTasks[0];
+    
+    if (!nextTask) return null;
+    
+    // Retornar a tarefa sem marcar como em execução
+    // O monitor.js será responsável por marcar isExecuting: true após criar o arquivo LOCK
+    console.log(`📋 Tarefa "${nextTask.title}" selecionada para execução (ainda não marcada como isExecuting: true)`);
+    return nextTask;
   }
 
   // Finalize task - find first final status and update task

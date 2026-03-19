@@ -11,6 +11,8 @@ const prisma = require('./src/services/prismaService');
 const validationService = require('./src/services/validationService');
 const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
+const { extractJsonObjects } = require('./src/utils/jsonUtils');
+
 let UserIdJarbas = null;
 /**
  * Busca a próxima tarefa elegível para processamento
@@ -42,7 +44,7 @@ async function getNextEligibleTask(nickname) {
       return null;
     }
 
-    await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
+    // await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
     return null;
   }
 }
@@ -102,7 +104,12 @@ async function callAnalyst(task) {
       
       subtasksPlan = JSON.parse(architectResult.rawOutput);
     } catch (parseError) {
-      throw new Error(`O Arquiteto não retornou um formato JSON válido. Erro: ${parseError.message}`);
+      try {
+        // Tenta de novo com a função extractJson
+        subtasksPlan = extractJsonObjects(architectResult.rawOutput);  
+      } catch (extractError) {
+        throw new Error(`Falha ao extrair o JSON da saída do OpenClaw: ${extractError.message}`);
+      }
     }
 
     if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
@@ -259,6 +266,14 @@ async function main() {
       await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
     }
     
+    // Em caso de erro, tentar desmarcar a tarefa como em execução
+    try {
+      await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
+      await log(`⚠️ Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
+    } catch (cleanupError) {
+      await log(`❌ Erro ao limpar estado de execução: ${cleanupError.message}`);
+    }
+    
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, ERROR_DIR);
     await stateService.cleanupTask(task.id);
   }
@@ -283,6 +298,15 @@ async function main() {
       await log(`⚠️ Nao foi possivel finalizar tarefa na API pois MY_USER_ID é nulo.`);
     }
 
+    // Marcar tarefa como finalizada (isExecuting: false)
+    try {
+      await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
+      await log(`✅ Tarefa "${task.title}" marcada como finalizada no sistema (isExecuting: false)`);
+    } catch (error) {
+      await log(`❌ Erro ao marcar tarefa como finalizada: ${error.message}`);
+      // Continuar mesmo com erro - não é crítico
+    }
+
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
     await stateService.cleanupTask(task.id);
   }
@@ -296,7 +320,7 @@ async function main() {
     
     if (lockCheck.locked) {
       if (lockCheck.ageRecent) {
-        await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
+        // await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
         return;
       }
       
@@ -339,11 +363,20 @@ async function main() {
       const task = await getNextEligibleTask(MY_USER_NICKNAME);
       
       if (!task) {
-        await log(`🔍 Nenhuma tarefa disponível.`);
+        // await log(`🔍 Nenhuma tarefa disponível.`);
         return;
       }
 
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
+      
+      // AGORA marcar a tarefa como isExecuting: true (após criar o arquivo LOCK)
+      try {
+        await axios.put(`${API_URL}/api/tasks/${task.id}`, { isExecuting: true });
+        await log(`✅ Tarefa "${task.title}" marcada como em execução (isExecuting: true)`);
+      } catch (error) {
+        await log(`❌ Erro ao marcar tarefa como em execução: ${error.message}`);
+        // Continuar mesmo com erro - não é crítico
+      }
       
       // Registrar tarefa como ativa
       await stateService.registerActiveTask(task.id);
@@ -466,7 +499,7 @@ async function main() {
       await lockService.releaseLock();
     }
   }
-  log("🚀 Iniciando monitor de tarefas...");
+  //await log("🚀 Iniciando monitor de tarefas...");
 
   await run();
 }

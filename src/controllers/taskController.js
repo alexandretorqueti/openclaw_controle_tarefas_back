@@ -433,6 +433,53 @@ class TaskController {
       correlationId: req.correlationId
     });
   });
+
+  // Finish task execution - Set isExecuting to false
+  finishTaskExecution = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    
+    // Verificar se a tarefa existe
+    const task = await prisma.task.findUnique({
+      where: { id }
+    });
+    
+    if (!task) {
+      const error = new Error(`Task with ID ${id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+    
+    // Atualizar isExecuting para false
+    const updatedTask = await prisma.task.update({
+      where: { id },
+      data: { isExecuting: false },
+      include: {
+        priority: true,
+        status: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            ativo: true,
+            status: true,
+            modeloAuxiliar: true,
+            programadorBack: true,
+            programadorFront: true,
+            projectType: true,
+            agent: true
+          }
+        }
+      }
+    });
+    
+    console.log(`✅ Tarefa "${updatedTask.title}" finalizada (isExecuting: false)`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Task execution finished successfully',
+      task: updatedTask
+    });
+  });
 }
 
 module.exports = new TaskController();
