@@ -29,8 +29,9 @@ let UserIdJarbas = null;
  * @returns {Promise<Object|null>} Tarefa ou null se não houver
  */
 async function getNextEligibleTask(nickname) {
-  const { getNextTask } = require('./src/steps/adapters/legacyGetNextTask');
-  return await getNextTask(nickname, require('./aux/config').API_URL);
+  const { createLegacyGetNextTask } = require('./src/steps/adapters/legacyGetNextTask');
+  const getNextTask = createLegacyGetNextTask(require('./aux/config').API_URL);
+  return await getNextTask(nickname);
 }
 
 /**
@@ -39,7 +40,8 @@ async function getNextEligibleTask(nickname) {
  * @returns {Promise<Object>} Resultado da decomposição
  */
 async function callAnalyst(task) {
-  const { callAnalyst: legacyCallAnalyst } = require('./src/steps/adapters/legacyCallAnalyst');
+  const { createLegacyCallAnalyst } = require('./src/steps/adapters/legacyCallAnalyst');
+  const legacyCallAnalyst = createLegacyCallAnalyst(UserIdJarbas);
   return await legacyCallAnalyst(task);
 }
 
@@ -281,9 +283,33 @@ async function main() {
       await lockService.releaseLock();
     }
   }
-  //await log("🚀 Iniciando monitor de tarefas...");
+  
 
-  await run();
+  // Função principal do daemon com loop infinito
+  async function daemonLoop() {
+    await log("🚀 Iniciando monitor de tarefas (modo daemon)...");
+    
+    // Intervalo entre verificações (1 minuto)
+    const CHECK_INTERVAL_MS = 60000;
+    
+    while (true) {
+      try {
+        await run();
+        
+        // Aguardar antes da próxima verificação
+        await log(`⏳ Aguardando ${CHECK_INTERVAL_MS/1000} segundos para próxima verificação...`);
+        await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
+        
+      } catch (loopError) {
+        await log(`💥 Erro no loop do daemon: ${loopError.message}`);
+        await log(`🔄 Reiniciando loop em 30 segundos...`);
+        await new Promise(resolve => setTimeout(resolve, 30000));
+      }
+    }
+  }
+
+  // Iniciar o daemon
+  await daemonLoop();
 }
 
 // Exporta para testes
