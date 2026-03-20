@@ -19,6 +19,9 @@ const MonitorStateService = require('./services/monitorStateService');
 const TaskFileService = require('./services/taskFileService');
 const FileUtils = require('./utils/fileUtils');
 const TimeUtils = require('./utils/timeUtils');
+const PrismaService = require('./services/prismaService');
+const TaskAnalysisService = require('./services/taskAnalysisService');
+const WorkspaceSnapshotService = require('./services/workspaceSnapshotService');
 const { log } = require('../aux/logger'); // caminho relativo ao bootstrap
 const config = require('../aux/config');
 const fs = require('fs').promises;
@@ -40,6 +43,9 @@ container.register('axios', axios);
 container.register('path', path);
 container.register('fileUtils', FileUtils);
 container.register('timeUtils', TimeUtils);
+container.register('prisma', PrismaService);
+container.register('taskAnalysisService', TaskAnalysisService);
+container.register('workspaceSnapshotService', WorkspaceSnapshotService);
 
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
