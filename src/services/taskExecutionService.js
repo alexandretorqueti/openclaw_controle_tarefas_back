@@ -21,6 +21,7 @@ const { fileExists } = require('../utils/fileUtils');
 const { runPipeline } = require('../utils/pipelineUtils'); 
 const { log } = require('../../aux/logger');
 const { arch } = require('os');
+const projectService = require('./projectService');
 
 class TaskExecutionService {
   
@@ -195,9 +196,6 @@ class TaskExecutionService {
       config.TASK_TIMEOUT_MS
     );
     
-    // Remove .done se o arquiteto criou indevidamente
-    await fs.unlink(files.doneFile).catch(() => {});
-    
     let architectPlan = "";
     let architectAnalysis = null;
     
@@ -220,12 +218,14 @@ class TaskExecutionService {
       // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
       // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
       await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
-      architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
-        
-      await log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
+      architectAnalysis = {};
+      const existsDoneFile = await fileExists(files.doneFile);
       
+      architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
+      await log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
+      const hadExecuted = architectAnalysis.hadExecuted;
       // VALIDAÇÃO CRÍTICA: Se a IA diz que executou, verificar evidências reais
-      if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) {
+      if ((architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) || existsDoneFile) {
         await log(`🔍 [Validação] IA diz que arquiteto executou. Verificando evidências...`);
         
         // Verificar se há evidências reais de execução
@@ -237,7 +237,7 @@ class TaskExecutionService {
         
         // Para tarefas de análise, evidência pode ser apenas relatório/.done (não precisa de alterações)
         const hasEvidence = architectDoneExists || architectReportExists || 
-                           (analysisPlan.taskType === 'analysis' ? true : hasRealChanges);
+                           (analysisPlan.taskType === 'analysis' ? true : (hasRealChanges || hadExecuted));
         
         if (!hasEvidence) {
           await log(`⚠️ [Validação] NENHUMA evidência encontrada! IA provavelmente errou. Corrigindo análise...`);
@@ -383,7 +383,11 @@ class TaskExecutionService {
     if (analysisPlan.taskType === 'development') {
       await log(`🔧 [Verificação] Verificando ecossistema (build, testes)...`);
       
-      const qa = await TaskExecutionService.ensureAndValidateEcosystem(project, ctx.config);
+      const qa = await TaskExecutionService.ensureAndValidateEcosystem(
+        task, 
+        project, 
+        ctx.config
+      );
       
       if (!qa.passed) {
         await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
@@ -427,7 +431,7 @@ class TaskExecutionService {
    * Descobre automaticamente as aplicações dentro do projeto, usa IA para 
    * entender a tecnologia de cada uma, e valida todas elas.
    */
-  static async ensureAndValidateEcosystem(project, config) {
+  static async ensureAndValidateEcosystem(task, project, config) {
     if (!project || !project.pastaBase) return { passed: true };
 
     const { execSync } = require('child_process');
@@ -435,145 +439,134 @@ class TaskExecutionService {
     const fs = require('fs').promises;
     const { fileExists } = require('../utils/fileUtils');
     const LlmService = require('./llmService');
+    const projectService = require('./projectService'); 
     const { log } = require('../../aux/logger');
 
+    const domain = task.domain; // FRONTEND, BACKEND ou nulo
     const baseDir = project.pastaBase;
+    const nodeBinDir = path.dirname(process.execPath);
+
+    // --- FUNÇÃO AUXILIAR DE EXECUÇÃO (O "Coração" do Teste) ---
+// --- FUNÇÃO AUXILIAR DE EXECUÇÃO ---
+    const tryExecutingCommand = async (cmd, appName, appPath, port) => {
+      try {
+          await log(`⏳ [Sistema 1] Validando [${appName}] na porta ${port}: ${cmd}`);
+          
+          // --- ATUALIZAÇÃO CIRÚRGICA DO .ENV (Preservando outras variáveis) ---
+          const envPath = path.join(appPath, '.env');
+          let envContent = '';
+          
+          if (await fileExists(envPath)) {
+              envContent = await fs.readFile(envPath, 'utf8');
+          }
+          
+          // Se já tem PORT=alguma_coisa, substitui. Se não tem, adiciona no final.
+          if (envContent.match(/^PORT=.*$/m)) {
+              envContent = envContent.replace(/^PORT=.*$/m, `PORT=${port}`);
+          } else {
+              envContent += `\nPORT=${port}`;
+          }
+          
+          // Salva o arquivo preservando todo o resto
+          await fs.writeFile(envPath, envContent.trim() + '\n');
+          // ------------------------------------------------------------------
+
+          execSync(cmd, { 
+              cwd: appPath, 
+              stdio: 'pipe', 
+              timeout: 90000, 
+              shell: true, 
+              env: { 
+                  ...process.env, 
+                  PORT: String(port),
+                  PATH: `${nodeBinDir}:${process.env.PATH || ''}`
+              } 
+          });
+          return { passed: true }; 
+      } catch (e) {
+          const errorLog = (e.stderr?.toString() || e.stdout?.toString() || e.message);
+          if (e.signal === 'SIGTERM' || e.code === 'ETIMEDOUT' || errorLog.includes('ETIMEDOUT')) {
+              await log(`✅ [Sistema 1] [${appName}] operacional (Server vivo).`);
+              return { passed: true };
+          }
+          return { passed: false, message: `Falha em [${appName}]: ${errorLog.substring(0, 1000)}` };
+      }
+    };
+
+    // --- 1. O SEU ATALHO (Fast Path) ---
+    // Se a tarefa já diz o domínio e o banco tem os dados, não perdemos tempo escaneando pastas.
+    if (domain === 'FRONTEND' && project.frontendBuildCmd && project.frontendPath && project.frontendPort) {
+        const pasta = path.join(baseDir, project.frontendPath);
+        return await tryExecutingCommand(project.frontendBuildCmd, 'FRONTEND', pasta, project.frontendPort || 7000);
+    } 
     
-    // 1. AUTO-DESCOBRIMENTO (Lê as subpastas, ignorando node_modules e arquivos ocultos)
+    if (domain === 'BACKEND' && project.backendBuildCmd && project.backendPath && project.backendPort) {
+        const pasta = path.join(baseDir, project.backendPath);
+        return await tryExecutingCommand(project.backendBuildCmd, 'BACKEND', pasta, project.backendPort || 7001);
+    }
+
+    // --- 2. DESCOBERTA E SINCRONIZAÇÃO (Discovery Path) ---
+    // Se o atalho falhou ou o domínio é nulo, varremos as pastas para "aprender" ou validar tudo.
     const items = await fs.readdir(baseDir, { withFileTypes: true });
     const apps = [];
 
     for (const item of items) {
         if (item.isDirectory() && !item.name.startsWith('.') && item.name !== 'node_modules') {
             const appDir = path.join(baseDir, item.name);
-            const pkgPath = path.join(appDir, 'package.json'); // No futuro pode adicionar pyproject.toml, pom.xml, etc.
-            
-            if (await fileExists(pkgPath)) {
-                apps.push({ name: item.name, path: appDir, pkgPath });
+            if (await fileExists(path.join(appDir, 'package.json'))) {
+                apps.push({ name: item.name, path: appDir });
             }
         }
     }
-
-    if (apps.length === 0) {
-        await log(`⚠️ [Sistema 1] Nenhum módulo inicializado encontrado em ${baseDir}.`);
-        return { passed: true }; // Nada para testar ainda
-    }
-
-    // 2. MEMÓRIA DA IA (Gerencia os comandos descobertos sem depender do Prisma)
-    const cachePath = path.join(baseDir, '.jarbas-builds.json');
-    let buildCache = {};
-    if (await fileExists(cachePath)) {
-        buildCache = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-    }
-
-    // 3. ANÁLISE E VALIDAÇÃO DE CADA MÓDULO ENCONTRADO
-    const nodeBinDir = path.dirname(process.execPath);
-    const childEnv = { ...process.env, PATH: `${nodeBinDir}:${process.env.PATH || ''}`, NODE_OPTIONS: '' };
 
     for (const app of apps) {
-        await log(`🔍 [Sistema 1] Inspecionando módulo encontrado: [${app.name}]`);
+        await log(`🔍 [Sistema 1] Analisando módulo: [${app.name}]`);
+
+        // 1. Identificação inicial (o que já sabemos no banco?)
+        const isMappedFront = project.frontendPath === app.name;
+        const isMappedBack = project.backendPath === app.name;
         
-        // Se a IA ainda não sabe como buildar esta pasta específica:
-        if (!buildCache[app.name]) {
-            await log(`🧠 [Sistema 1] IA analisando a arquitetura de '${app.name}'...`);
-            
-            const pkgContent = await fs.readFile(app.pkgPath, 'utf8');
+        let cmd = isMappedFront ? project.frontendBuildCmd : (isMappedBack ? project.backendBuildCmd : null);
+
+        // 2. DESCOBERTA (Se o banco estiver vazio para este app, a IA entra em cena)
+        if (!cmd) {
+            await log(`🧠 [Sistema 1] Novo módulo detectado [${app.name}]. IA definindo escopo...`);
+            const pkgContent = await fs.readFile(path.join(app.path, 'package.json'), 'utf8');
             const ai = new LlmService();
+            const decision = await ai.analyze(`Analise este package.json e retorne JSON: {"comando": "string", "escopo": "front|back"}\n\n${pkgContent}`);
             
-            const prompt = `
-                Você é um Arquiteto de DevOps. Analise este package.json da pasta '${app.name}'.
-                1. Identifique que tipo de aplicação é esta (ex: React, API Node, Worker, Microservico).
-                2. Decida o melhor comando para VALIDAR se o código compila ou funciona.
-                3. Se for frontend, use comando de build. Se for backend, use teste ou timeout start.
-                
-                Retorne APENAS um JSON:
-                {"tipo": "string", "comando": "string do comando", "escopo": "front | back"}
-                
-                Conteúdo:
-                ${pkgContent}
-            `;
+            cmd = decision?.comando || 'npm start';
+            const escopo = decision?.escopo || (app.name.toLowerCase().includes('front') ? 'front' : 'back');
 
-            try {
-                const decision = await ai.analyze(prompt);
-                // Salva a decisão na memória do projeto
-                buildCache[app.name] = {
-                    tipo: decision?.tipo || 'desconhecido',
-                    comando: decision?.comando || 'node -c index.js',
-                    escopo: decision?.escopo
-                };
-                await fs.writeFile(cachePath, JSON.stringify(buildCache, null, 2));
-                await log(`⚙️ [Sistema 1] Identificado como ${buildCache[app.name].tipo}. Comando: ${buildCache[app.name].comando}`);
-                // Tem .env?
-                if (!(await fileExists(path.join(app.path, '.env')))) {
-                  // Tenho que identificar se o tipo é front ou back
-                  let PORT = 7000;
-                  if (buildCache[app.name].escopo && buildCache[app.name].escopo === 'front') {
-                    PORT = project.frontendPort || 7000;
-                  } else if (buildCache[app.name].escopo && buildCache[app.name].escopo === 'back') {
-                    PORT = project.backendPort || 7001;
-                  }
-
-                  /*
-                    TODO: Node.js nativas não leem o .env a menos que você instale a biblioteca dotenv no código delas. Para garantir que o backend respeite a porta do .env sem depender do código que a IA gerou, precisamos injetar essa variável de ambiente na hora do execSync.
-                  */
-
-                  await fs.writeFile(path.join(app.path, '.env'), `PORT=${PORT}`);
-                  await log(`⚙️ [Sistema 1] Criado arquivo .env com PORT=${PORT}`);
-                }
-            } catch (err) {
-                return { passed: false, message: `Falha da IA ao analisar a pasta ${app.name}: ${err.message}` };
+            // Atualiza o objeto do projeto com a nova descoberta
+            if (escopo === 'front') {
+                project.frontendBuildCmd = cmd;
+                project.frontendPath = app.name;
+            } else {
+                project.backendBuildCmd = cmd;
+                project.backendPath = app.name;
             }
+            // Persiste no banco para não ter que perguntar à IA na próxima tarefa
+            await projectService.updateProject(project.id, project);
         }
 
-        // EXECUÇÃO DO TESTE PARA ESTA PASTA
-        const cmd = buildCache[app.name].comando;
-        try {
-            await log(`⏳ [Sistema 1] Testando [${app.name}]: ${cmd}`);
-            execSync(cmd, { 
-                cwd: app.path, 
-                stdio: 'pipe', 
-                timeout: 90000, 
-                shell: true, 
-                env: childEnv 
-            });
-        } catch (e) {
-          // execSync junta o log de erro no stderr e a saída normal no stdout
-          const stdout = e.stdout ? e.stdout.toString() : '';
-          const stderr = e.stderr ? e.stderr.toString() : '';
-          const errorLog = stderr + '\n' + stdout + '\n' + e.message;
-          
-          // 1. VERIFICAÇÃO ESTRITA DE COMANDO INVÁLIDO (Auto-correção do Orquestrador)
-          // Agora só pega erros específicos do sistema operacional ou do npm
-          const isInvalidCommand = 
-              errorLog.includes("npm ERR! missing script") || 
-              errorLog.includes("command not found") || 
-              errorLog.includes("is not recognized as an internal or external command") ||
-              (errorLog.includes("sh:") && errorLog.includes("not found"));
+        // 3. CÁLCULO DA PORTA (AGORA SIM! Com o cmd e o escopo já garantidos)
+        // Recalculamos as flags baseadas na decisão da IA ou do banco
+        const finalIsFront = project.frontendPath === app.name;
+        const finalPort = finalIsFront ? (project.frontendPort || 7000) : (project.backendPort || 7001);
 
-          if (isInvalidCommand) {
-              delete buildCache[app.name]; // Apaga da memória para forçar nova análise
-              await fs.writeFile(cachePath, JSON.stringify(buildCache, null, 2));
-              return { passed: false, message: `Comando inválido gerado para [${app.name}]. O orquestrador tentará reconfigurar.` };
-          }
+        // 4. GARANTE O .ENV (Backup visual)
+        const envPath = path.join(app.path, '.env');
+        if (!(await fileExists(envPath))) {
+            await fs.writeFile(envPath, `PORT=${finalPort}`);
+        }
 
-          // 2. TIMEOUT DE SERVIDOR (Sucesso!)
-          // Se a IA escolheu "npm run dev", o servidor fica rodando para sempre.
-          // Se ele sobreviveu até o timeout (90s) sem crashar, consideramos um sucesso!
-          if (e.signal === 'SIGTERM' || e.code === 'ETIMEDOUT' || errorLog.includes('ETIMEDOUT')) {
-              await log(`✅ [Sistema 1] Módulo [${app.name}] rodou até o timeout sem falhas. Considerado operacional.`);
-              return { passed: true };
-          }
-
-          // 3. ERRO REAL DA APLICAÇÃO (Ex: MongoDB ECONNREFUSED)
-          // É aqui que o erro que você viu vai cair. Vamos mandá-lo para a IA!
-          // Pegamos a saída mais relevante para não estourar o limite de tokens do LLM
-          const cleanError = (stderr || stdout || e.message).substring(0, 2000);
-          
-          return { passed: false, message: `O código do módulo [${app.name}] falhou na execução/teste:\n\n${cleanError}` };
-      }
+        // 5. EXECUÇÃO (O "Fast Path" e o "Discovery Path" se encontram aqui)
+        const result = await tryExecutingCommand(cmd, app.name, app.path, finalPort);
+        if (!result.passed) return result;
     }
 
-    await log(`✅ [Sistema 1] Todos os ${apps.length} módulos operacionais.`);
+    await log(`✅ [Sistema 1] Todos os módulos operacionais.`);
     return { passed: true };
   }
 
@@ -699,7 +692,11 @@ class TaskExecutionService {
       if (contractResult.contractFulfilled) {
         
         // Uma única linha aciona a IA de DevOps para varrer e testar tudo!
-        const qa = await TaskExecutionService.ensureAndValidateEcosystem(project, config);
+        const qa = await TaskExecutionService.ensureAndValidateEcosystem(
+          task, 
+          project, 
+          config
+        );
         
         if (!qa.passed) {
           await fs.unlink(files.doneFile).catch(()=>{});

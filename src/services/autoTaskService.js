@@ -35,14 +35,36 @@ class AutoTaskService {
         where: {
           projectId: projectId,
           isCompleted: false,
-          title: { contains: 'Bug automático detectado' }
+          title: { contains: 'Bug automático detectado' },
+          status: {
+            isFinalState: false
+          }
         }
       });
       
       // Filtrar por assinatura do erro na descrição
-      const matchingTasks = tasks.filter(task => 
-        task.description && task.description.includes(errorSignature)
-      );
+      const matchingTasks = tasks.filter(task => {
+        if (!task.description) return false;
+        
+        // Tentar buscar pela assinatura completa
+        if (task.description.includes(errorSignature)) {
+          return true;
+        }
+        
+        // Para tarefas antigas (sem linha **Error Signature:**), 
+        // tentar reconstruir a assinatura a partir do endpoint e primeira linha do erro
+        const endpointMatch = task.description.match(/\*\*Endpoint:\*\*\s*(.+)/);
+        const errorMatch = task.description.match(/\*\*Error:\*\*\s*([^\n]+)/);
+        
+        if (endpointMatch && errorMatch) {
+          const endpoint = endpointMatch[1].trim();
+          const firstErrorLine = errorMatch[1].trim();
+          const reconstructedSignature = `${endpoint}:${firstErrorLine}`.substring(0, 100);
+          return reconstructedSignature === errorSignature;
+        }
+        
+        return false;
+      });
       
       return matchingTasks.length > 0 ? matchingTasks[0] : null;
     } catch (error) {
@@ -66,6 +88,9 @@ class AutoTaskService {
     
     if (req) {
       parts.push(`**Endpoint:** ${req.method} ${req.originalUrl}`);
+      // Adicionar assinatura do erro para detecção de duplicatas
+      const errorSignature = this.generateErrorSignature(error, req);
+      parts.push(`**Error Signature:** ${errorSignature}`);
       parts.push(`**IP:** ${req.ip || 'N/A'}`);
       parts.push(`**User Agent:** ${req.get('User-Agent') || 'N/A'}`);
       

@@ -13,6 +13,7 @@ const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
 const { extractJsonObjects } = require('./src/utils/jsonUtils');
 const taskService = require('./src/services/taskService');
+const { agent } = require('supertest');
 
 let UserIdJarbas = null;
 /**
@@ -113,7 +114,7 @@ async function callAnalyst(task) {
       }
     }
 
-    if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
+    if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0 || subtasksPlan.length === 1) {
       // Marcar essa tarefa como atômica e seguir para o fluxo normal.
       await taskService.updateTask(task.id, { isAtomic: true });
       return { success: true, subtasksCreated: 0 };
@@ -126,7 +127,8 @@ async function callAnalyst(task) {
       projectId: task.projectId,
       statusId: task.statusId,
       priorityId: task.priorityId,
-      userId: task.assignedToId
+      userId: task.assignedToId, 
+      agent: task.agent
     }));
     
     const decompositionResult = await decompositionService.decompose(task.id, mappedSubtasks);
@@ -271,10 +273,18 @@ async function main() {
     
     // Em caso de erro, tentar desmarcar a tarefa como em execução
     try {
-      await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
-      await log(`⚠️ Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
+      // Usar lockService.releaseLock() em vez da rota depreciada
+      await lockService.releaseLock();
+      await log(`🔓 Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
     } catch (cleanupError) {
       await log(`❌ Erro ao limpar estado de execução: ${cleanupError.message}`);
+      // Fallback: tentar a rota depreciada
+      try {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
+        await log(`⚠️ Usando fallback para finish-execution`);
+      } catch (fallbackError) {
+        await log(`❌ Fallback também falhou: ${fallbackError.message}`);
+      }
     }
     
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, ERROR_DIR);
@@ -304,7 +314,13 @@ async function main() {
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
     await stateService.cleanupTask(task.id);
     
-    // O lockService.releaseLock() será chamado automaticamente e marcará isExecuting: false
+    // IMPORTANTE: Liberar o lock para marcar isExecuting: false
+    try {
+      await lockService.releaseLock();
+      await log(`🔓 Lock liberado para tarefa ${task.id} (isExecuting: false)`);
+    } catch (lockError) {
+      await log(`⚠️ Erro ao liberar lock: ${lockError.message}`);
+    }
   }
 
   /**
@@ -354,7 +370,7 @@ async function main() {
       const task = await getNextEligibleTask(MY_USER_NICKNAME);
       
       if (!task) {
-        // await log(`🔍 Nenhuma tarefa disponível.`);
+        await log(`🔍 Nenhuma tarefa disponível.`);
         return;
       }
 

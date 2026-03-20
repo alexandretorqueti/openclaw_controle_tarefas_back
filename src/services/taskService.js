@@ -310,7 +310,13 @@ class TaskService {
             title: true,
             isCompleted: true
           }
-        }
+        },
+        parentTask: {
+          select: {
+            id: true,
+            title: true
+          }
+        },
       },
       orderBy: {
         [filters.sortBy || 'deadline']: filters.sortOrder || 'asc'
@@ -579,12 +585,14 @@ class TaskService {
       parentTaskId: data.parentTaskId,
       agent: data.agent,
       isExecuting: data.isExecuting,
+      hasChildExecuting: data.hasChildExecuting,
       updatedAt: new Date(),
       arquitetosPromptContent: data.arquitetosPromptContent,
       arquitetosAnalysisContent: data.arquitetosAnalysisContent,
       arquitetosTerminalContent: data.arquitetosTerminalContent,
       programadorTerminalContent: data.programadorTerminalContent,
-      programadorReportContent: data.programadorReportContent
+      programadorReportContent: data.programadorReportContent,
+      isAtomic: data.isAtomic
     };
 
     // Add recurrence fields if provided
@@ -1231,6 +1239,7 @@ class TaskService {
           where: { id: taskId },
           data: {
             statusId: firstStatus.id, // Volta pro início do quadro
+            isExecuting: false, // IMPORTANTE: Marca como não executando
             lastExecutedAt: new Date(),
             nextExecutionAt: nextExecutionAt,
             isCompleted: false // Garante que a tarefa continua viva
@@ -1335,6 +1344,7 @@ class TaskService {
         data: {
           statusId: finalStatus.id,
           isCompleted: false, // Marca como finalizada de fato
+          isExecuting: false, // IMPORTANTE: Marca como não executando
           lastExecutedAt: new Date(),
           nextExecutionAt: null
         },
@@ -1435,6 +1445,7 @@ class TaskService {
             data: {
               statusId: finalStatusId,
               isCompleted: false,
+              isExecuting: false, // IMPORTANTE: Ancestrais também não estão executando
               lastExecutedAt: new Date(),
               nextExecutionAt: null
             },

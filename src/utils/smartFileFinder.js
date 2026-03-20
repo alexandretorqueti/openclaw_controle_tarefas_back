@@ -38,7 +38,7 @@ class SmartFileFinder {
         
         const candidateFiles = files.filter(f => {
           const lower = f.toLowerCase();
-          return (lower.startsWith('plano-') || lower.startsWith('plan-') || lower.includes('architect')) 
+          return (lower.startsWith('plano-') || lower.startsWith('plan-') || lower.includes('architect') && (!(lower.includes('prompt')))) 
                  && (lower.endsWith('.txt') || lower.endsWith('.md'));
         });
 
@@ -68,7 +68,7 @@ class SmartFileFinder {
         // Se chegou até aqui e não achou NADA, dá um respiro de 1 segundo para o disco e tenta de novo
         if (tentativa < maxRetries) {
           console.log(`⏳ [SISTEMA] Arquivo do plano ainda não apareceu no disco. Aguardando gravação (Tentativa ${tentativa}/${maxRetries})...`);
-          await this.sleep(60000); // 1 minuto
+          await this.sleep(100); // 1 minuto
         }
       }
 

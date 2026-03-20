@@ -1,0 +1,119 @@
+{
+  "gerado_em": "2026-03-20T03:04:29.391Z",
+  "total_tarefas": 13,
+  "total_assinaturas_unicas": 2,
+  "total_repetidos": 1,
+  "total_tarefas_repetidas": 12,
+  "repetidos": {
+    "GET /api/tasks:Invalid `prisma.task.findMany()` invocation in": [
+      {
+        "id": "471c47b5-bda0-4ef4-a831-a912d0fc1720",
+        "createdAt": "2026-03-20T01:52:21.782Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "e4d114e1-d851-4369-a3bc-2ae1a0a5fdfd",
+        "createdAt": "2026-03-20T01:52:21.772Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "68f31ea9-f47d-4f70-82e0-f8320f0cc16e",
+        "createdAt": "2026-03-20T01:52:00.091Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "d9780a06-71ef-4fe8-8b66-b9ca4c791f11",
+        "createdAt": "2026-03-20T01:52:00.090Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "6c375ea0-4e62-4031-8774-e728fe3465d6",
+        "createdAt": "2026-03-20T00:51:56.890Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "7d34841f-5082-4c40-9b4b-e1260a24424c",
+        "createdAt": "2026-03-20T00:51:56.879Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "19981248-cd6d-4b63-b400-3aa88c7613d1",
+        "createdAt": "2026-03-20T00:50:01.076Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "e393c4e6-4466-4ed8-ae29-48cd0ccdc340",
+        "createdAt": "2026-03-20T00:50:01.075Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "974fe267-495a-47c1-bf80-6f9f6a8bcb9c",
+        "createdAt": "2026-03-20T00:44:29.289Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "b79f27c7-847d-4750-bb87-d9e19481572a",
+        "createdAt": "2026-03-20T00:44:29.279Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "d48493c2-8af4-4a12-a854-40519cc34ccd",
+        "createdAt": "2026-03-20T00:43:17.168Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      },
+      {
+        "id": "e601df2b-cc9a-49a7-9bdc-afee7cca18ff",
+        "createdAt": "2026-03-20T00:43:17.166Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      }
+    ]
+  },
+  "unicos": {
+    "GET /api/tasks?parentTaskId=3bdbf288-4602-4281-ab68-05f96ce1950c:Invalid `prisma.task.findMany()` in": [
+      {
+        "id": "bc35f359-3d7f-45fe-9496-da61a44231a4",
+        "createdAt": "2026-03-20T01:51:46.651Z",
+        "status": "Pendente",
+        "isFinalState": false,
+        "isCompleted": false,
+        "project": "Sistema de Gestão de Tarefas"
+      }
+    ]
+  }
+}

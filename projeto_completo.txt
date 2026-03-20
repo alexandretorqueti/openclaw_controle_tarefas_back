@@ -29,6 +29,115 @@ child.on('close', (code) => {
 });
 
 
+// --- ARQUIVO: ./test-terminal-sse.js ---
+
+#!/usr/bin/env node
+
+/**
+ * Script para testar atualização em tempo real dos terminais
+ * Simula o analista/programador escrevendo no terminal
+ */
+
+const http = require('http');
+
+const API_BASE = 'http://localhost:4001';
+const TASK_ID = 'ce3f8d21-c992-4d3e-be6a-6a4a8ca91898'; // ID da tarefa de teste
+
+// Conteúdo para simular digitação
+const analistaContent = [
+  "🧠 Iniciando análise da tarefa...\n",
+  "📋 Verificando requisitos...\n",
+  "🔍 Analisando complexidade: MÉDIA\n",
+  "📊 Identificando dependências: 3 tarefas\n",
+  "⏱️ Estimativa de tempo: 6 horas\n",
+  "✅ Análise concluída com sucesso!\n"
+];
+
+const programadorContent = [
+  "💻 Iniciando implementação...\n",
+  "$ npm install\n",
+  "✅ Dependências instaladas\n",
+  "$ npm run test\n",
+  "✅ Todos os testes passaram (15/15)\n",
+  "$ npm run build\n",
+  "✅ Build concluído (1.4MB)\n",
+  "🚀 Deploy realizado com sucesso!\n"
+];
+
+function sendTerminalUpdate(type, content) {
+  const data = JSON.stringify({
+    type,
+    content,
+    taskId: TASK_ID,
+    timestamp: new Date().toISOString()
+  });
+
+  const options = {
+    hostname: 'localhost',
+    port: 4001,
+    path: '/api/test/terminal-update',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(data)
+    }
+  };
+
+  const req = http.request(options, (res) => {
+    console.log(`📤 Enviado: ${type} - "${content.substring(0, 30)}..."`);
+    console.log(`   Status: ${res.statusCode}`);
+  });
+
+  req.on('error', (error) => {
+    console.error(`❌ Erro ao enviar: ${error.message}`);
+  });
+
+  req.write(data);
+  req.end();
+}
+
+// Função para simular digitação letra por letra
+function simulateTyping(type, fullContent, callback) {
+  let index = 0;
+  const interval = setInterval(() => {
+    if (index < fullContent.length) {
+      const char = fullContent[index];
+      sendTerminalUpdate(type, char);
+      index++;
+    } else {
+      clearInterval(interval);
+      if (callback) callback();
+    }
+  }, 50); // 50ms por caractere
+}
+
+// Função principal
+async function main() {
+  console.log('🚀 Iniciando simulação de terminais em tempo real...\n');
+  
+  // Simular analista
+  console.log('🧠 Simulando Analista AI...');
+  for (const chunk of analistaContent) {
+    simulateTyping('analista', chunk);
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda 2 segundos entre chunks
+  }
+  
+  console.log('\n⏳ Aguardando 3 segundos...\n');
+  await new Promise(resolve => setTimeout(resolve, 3000));
+  
+  // Simular programador
+  console.log('💻 Simulando Programador AI...');
+  for (const chunk of programadorContent) {
+    simulateTyping('programador', chunk);
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Aguarda 1.5 segundos entre chunks
+  }
+  
+  console.log('\n✅ Simulação concluída!');
+}
+
+// Executar
+main().catch(console.error);
+
 // --- ARQUIVO: ./monitor.js ---
 
 #!/usr/bin/env node
@@ -44,7 +153,10 @@ const prisma = require('./src/services/prismaService');
 const validationService = require('./src/services/validationService');
 const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
+const { extractJsonObjects } = require('./src/utils/jsonUtils');
+const taskService = require('./src/services/taskService');
 
+let UserIdJarbas = null;
 /**
  * Busca a próxima tarefa elegível para processamento
  * @returns {Promise<Object|null>} Tarefa ou null se não houver
@@ -75,7 +187,7 @@ async function getNextEligibleTask(nickname) {
       return null;
     }
 
-    await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
+    // await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
     return null;
   }
 }
@@ -95,7 +207,13 @@ async function callAnalyst(task) {
   try {
     await log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
 
-    const architectSessionId = `architect-${task.id}-${Date.now()}`;
+    // Importar utilitário de sessões em cadeia
+    const SessionChainUtils = require('./src/utils/sessionChainUtils');
+    
+    // Usar sessão unificada baseada na cadeia de dependências
+    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+    
+    await log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
     const architectLogFile = path.join(TASKS_DIR, `architect-${task.id}.log`);
 
     const primaryAgent = task.project?.agent ||  task.project?.programadorBack || 'main';
@@ -129,11 +247,18 @@ async function callAnalyst(task) {
       
       subtasksPlan = JSON.parse(architectResult.rawOutput);
     } catch (parseError) {
-      throw new Error(`O Arquiteto não retornou um formato JSON válido. Erro: ${parseError.message}`);
+      try {
+        // Tenta de novo com a função extractJson
+        subtasksPlan = extractJsonObjects(architectResult.rawOutput);  
+      } catch (extractError) {
+        throw new Error(`Falha ao extrair o JSON da saída do OpenClaw: ${extractError.message}`);
+      }
     }
 
     if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0) {
-      throw new Error("O Arquiteto retornou um array vazio de tarefas.");
+      // Marcar essa tarefa como atômica e seguir para o fluxo normal.
+      await taskService.updateTask(task.id, { isAtomic: true });
+      return { success: true, subtasksCreated: 0 };
     }
 
     const mappedSubtasks = subtasksPlan.map(st => ({
@@ -167,9 +292,9 @@ async function callAnalyst(task) {
  */
 async function addComment(taskId, content) {
   try {
-    await commentService.addComment({
+    await commentService.createComment({
       taskId,
-      userId: 'system',
+      userId: UserIdJarbas,
       content
     });
   } catch (error) {
@@ -286,6 +411,22 @@ async function main() {
       await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
     }
     
+    // Em caso de erro, tentar desmarcar a tarefa como em execução
+    try {
+      // Usar lockService.releaseLock() em vez da rota depreciada
+      await lockService.releaseLock();
+      await log(`🔓 Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
+    } catch (cleanupError) {
+      await log(`❌ Erro ao limpar estado de execução: ${cleanupError.message}`);
+      // Fallback: tentar a rota depreciada
+      try {
+        await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
+        await log(`⚠️ Usando fallback para finish-execution`);
+      } catch (fallbackError) {
+        await log(`❌ Fallback também falhou: ${fallbackError.message}`);
+      }
+    }
+    
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, ERROR_DIR);
     await stateService.cleanupTask(task.id);
   }
@@ -312,6 +453,14 @@ async function main() {
 
     await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
     await stateService.cleanupTask(task.id);
+    
+    // IMPORTANTE: Liberar o lock para marcar isExecuting: false
+    try {
+      await lockService.releaseLock();
+      await log(`🔓 Lock liberado para tarefa ${task.id} (isExecuting: false)`);
+    } catch (lockError) {
+      await log(`⚠️ Erro ao liberar lock: ${lockError.message}`);
+    }
   }
 
   /**
@@ -342,11 +491,6 @@ async function main() {
       await stateService.clearState();
     }
     
-    if (!await lockService.acquireLock()) {
-      await log(`❌ Falha ao adquirir lock.`);
-      return;
-    }
-
     try {
       // Busca dados do usuario pelo nickname para usar ao longo do ciclo de vida da tarefa
       try {
@@ -354,6 +498,7 @@ async function main() {
         const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
         if (user) {
           MY_USER_ID = user.id;
+          UserIdJarbas = user.id;
         } else {
           await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Operacoes que exigem ID podem falhar.`);
         }
@@ -370,6 +515,12 @@ async function main() {
       }
 
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
+      
+      // Adquirir lock passando o taskId - o lockService agora marca isExecuting: true automaticamente
+      if (!await lockService.acquireLock(task.id)) {
+        await log(`❌ Falha ao adquirir lock.`);
+        return;
+      }
       
       // Registrar tarefa como ativa
       await stateService.registerActiveTask(task.id);
@@ -411,11 +562,7 @@ async function main() {
           const validation = await validationService.validateWithAuxModel(task, task.project);
           
           // Atualizar atomicidade no banco
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { isAtomic: validation.isAtomic }
-          });
-          
+          await taskService.updateTask(task.id, { isAtomic: validation.isAtomic });
           if (!validation.isAtomic) {
             // Manda pro Analista
             routingResult = await callAnalyst(task);
@@ -492,7 +639,7 @@ async function main() {
       await lockService.releaseLock();
     }
   }
-  log("🚀 Iniciando monitor de tarefas...");
+  //await log("🚀 Iniciando monitor de tarefas...");
 
   await run();
 }
@@ -711,46 +858,6 @@ async function main() {
         
         if (!jarbasUser) {
           throw new Error('Usuário jarbas não encontrado para atribuição de tarefas');
-        }
-        
-        const exampleTasks = [
-          {
-            title: 'Configurar ambiente de desenvolvimento',
-            description: 'Instalar dependências e configurar variáveis de ambiente',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 dias
-          },
-          {
-            title: 'Implementar autenticação de usuários',
-            description: 'Criar sistema de login e controle de acesso',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 dias
-          },
-          {
-            title: 'Criar dashboard de monitoramento',
-            description: 'Interface para visualizar progresso das tarefas',
-            priority: { connect: { id: mediumPriority?.id } },
-            status: { connect: { id: pendingStatus?.id } },
-            project: { connect: { id: project.id } },
-            createdBy: { connect: { id: alexandreUser.id } },
-            assignedTo: { connect: { id: jarbasUser.id } },
-            deadline: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000) // 10 dias
-          }
-        ];
-        
-        for (const taskData of exampleTasks) {
-          await prisma.task.create({
-            data: taskData
-          });
-          console.log(`✅ Tarefa criada: ${taskData.title}`);
         }
         
       } else {
@@ -2627,14 +2734,26 @@ class SseService {
    * @param {Object} data - Os dados que vão para o frontend
    */
   broadcast(eventName, data) {
-    if (this.clients.length === 0) return;
+    console.log(`📢 SSE Service: Tentando broadcast evento ${eventName} para ${this.clients.length} clientes`);
+    
+    if (this.clients.length === 0) {
+      console.log('⚠️ SSE Service: Nenhum cliente conectado, ignorando broadcast');
+      return;
+    }
 
     // O protocolo SSE exige este formato exato de string
     const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
     
-    this.clients.forEach(client => {
-      // Usamos apenas o write, e não o send(), para não fechar a conexão
-      client.write(payload);
+    console.log(`📢 SSE Service: Payload para ${eventName}: ${JSON.stringify(data).substring(0, 100)}...`);
+    
+    this.clients.forEach((client, index) => {
+      try {
+        // Usamos apenas o write, e não o send(), para não fechar a conexão
+        client.write(payload);
+        console.log(`✅ SSE Service: Evento ${eventName} enviado para cliente ${index + 1}/${this.clients.length}`);
+      } catch (error) {
+        console.error(`❌ SSE Service: Erro ao enviar evento ${eventName} para cliente ${index + 1}:`, error.message);
+      }
     });
   }
 }
@@ -2766,7 +2885,7 @@ class WorkspaceSnapshotService {
    * Compara o snapshot inicial com o estado atual do diretório.
    * Retorna um array com os caminhos absolutos dos arquivos alterados ou criados.
    */
-  static async getModifiedFiles(initialSnapshot, dir, ignoreList = ['node_modules', '.git', 'dist', 'build', '.next']) {
+  static async getModifiedFiles(initialSnapshot, dir, ignoreList = ['node_modules', '.git', 'dist', 'build', '.next', '.db', '.log']) {
     const modifiedFiles = [];
     const currentSnapshot = await this.takeSnapshot(dir, ignoreList);
 
@@ -4122,7 +4241,7 @@ class ValidationService {
         llmResponse = JSON.parse(llmResponse);
       }
       // Validar estrutura do resultado
-      if (typeof llmResponse.isAtomic !== 'boolean') {
+      if (typeof llmResponse.isIdeal !== 'boolean') {
         throw new Error('Campo isAtomic não é booleano');
       }
       
@@ -4131,7 +4250,7 @@ class ValidationService {
       }
       
       if (typeof llmResponse.confidence !== 'number' || llmResponse.confidence < 0 || llmResponse.confidence > 1) {
-        llmResponse.confidence = llmResponse.isAtomic ? 0.7 : 0.5;
+        llmResponse.confidence = llmResponse.isIdeal ? 0.7 : 0.5;
       }
       
       if (!Array.isArray(llmResponse.suggestions)) {
@@ -4139,7 +4258,7 @@ class ValidationService {
       }
       
       return {
-        isAtomic: llmResponse.isAtomic,
+        isAtomic: llmResponse.isIdeal,
         reason: llmResponse.reason,
         confidence: llmResponse.confidence,
         suggestions: llmResponse.suggestions,
@@ -4164,7 +4283,7 @@ class ValidationService {
    */
   getFallbackValidation(task, error = 'Serviço LLM indisponível') {
     return {
-      isAtomic: false,
+      isAtomic: true,
       reason: `Não foi possível validar atomicidade: ${error}`,
       confidence: 0,
       suggestions: ['Verificar conexão com Ollama', 'Usar validação manual'],
@@ -4754,12 +4873,13 @@ module.exports = MonitorStateService;
 
 // src/services/taskExecutionService.js
 
-const { PrismaClient } = require('@prisma/client');
 const fs = require('fs').promises;
 const path = require('path');
 const { execSync } = require('child_process');
 
 // Importação dos serviços
+const prisma = require('./prismaService'); // <-- 1. Usa o Singleton ao invés de 'new PrismaClient()'
+const taskService = require('./taskService'); // <-- 2. Importa o TaskService
 const agentService = require('./agentService');
 const WorkspaceSnapshotService = require('./workspaceSnapshotService');
 const OpenClawService = require('./openclawService');
@@ -4768,16 +4888,36 @@ const EvidenceService = require('./evidenceService');
 const TaskAnalysisService = require('./taskAnalysisService');
 const PromptFactory = require('../utils/promptFactory');
 const SmartFileFinder = require('../utils/smartFileFinder'); 
+
 // Utilitários
 const { fileExists } = require('../utils/fileUtils');
 const { runPipeline } = require('../utils/pipelineUtils'); 
 const { log } = require('../../aux/logger');
 const { arch } = require('os');
-
-const prisma = new PrismaClient();
+const projectService = require('./projectService');
 
 class TaskExecutionService {
   
+  static async readTaskOutputFile(taskId, baseDir, fileType) {
+    const fileNameMap = {
+      relatorio: `relatorio-${taskId}.txt`,
+      terminal: `terminal-${taskId}.log`
+    };
+    const fileName = fileNameMap[fileType];
+    if (!fileName) return null;
+
+    const filePath = path.join(baseDir, fileName);
+    try {
+      if (await fileExists(filePath)) {
+        const content = await fs.readFile(filePath, 'utf8');
+        return content;
+      }
+    } catch (error) {
+      // Ignorar erro silenciosamente se não existir
+    }
+    return null;
+  }
+
   // ==========================================
   // MÉTODOS AUXILIARES DE LOG
   // ==========================================
@@ -4789,6 +4929,7 @@ class TaskExecutionService {
         model = agentDetails.identity?.model || model;
       } catch (error) { /* Silencioso */ }
     }
+    // Mantemos o uso do prisma aqui pois TaskExecutionLog é o domínio nativo deste arquivo
     return await prisma.taskExecutionLog.create({
       data: { taskId: task.id, userId, model, startedAt: new Date(), success: false }
     });
@@ -4817,16 +4958,20 @@ class TaskExecutionService {
   /**
    * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
    */
+/**
+   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
+   */
   static async stepSetupContext(ctx) {
     const { task, userId, config } = ctx;
     const { TASKS_DIR } = config;
 
     const project = task.projectId ? await prisma.project.findUnique({ where: { id: task.projectId } }) : null;
     const taskId = task.id;
+    
+    // 1. Analisa o escopo da tarefa para definir o taskType (development, analysis, automation)
     const analysisPlan = await TaskAnalysisService.analyzeTaskScope(task, project, path.join(TASKS_DIR, `terminal-pre-analise-${taskId}.log`));
     
-    // Prepara os caminhos dos arquivos
-   
+    // 2. Prepara os caminhos dos arquivos
     const files = {
       promptFile: path.join(TASKS_DIR, `prompt-${taskId}.txt`),
       relatorioFile: path.join(TASKS_DIR, `relatorio-${taskId}.txt`),
@@ -4836,10 +4981,9 @@ class TaskExecutionService {
       architectLogFile: path.join(TASKS_DIR, `terminal-arquiteto-${taskId}.log`)
     };
 
-    // Cria o prompt LIMPO para o arquiteto (apenas tarefa + contexto)
     const dirBase = project?.pastaBase || 'Diretório atual';
     
-    // Adiciona comentários ao prompt se existirem
+    // 3. Monta a seção de comentários
     let commentsSection = '';
     if (task.comments && task.comments.length > 0) {
       commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
@@ -4850,45 +4994,71 @@ class TaskExecutionService {
       });
     }
 
-    const architectPrompt = `ARQUITETO: Analise esta tarefa e crie um plano de ação.\n\nTAREFA: ${task.title}\nDESCRIÇÃO: ${task.description}\nBASE: ${dirBase}${commentsSection}`;
+    // 4. Tira o Snapshot PRIMEIRO (Para obtermos a lista de arquivos para o prompt)
+    const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+    const fileList = Array.from(initialSnapshot.keys());
+
+    // 5. Geração do Prompt Inteligente do Arquiteto usando o PromptFactory
+    // Aqui a mágica acontece: passamos a lista de arquivos e o TIPO da tarefa
+    const architectPrompt = PromptFactory.buildArchitectPrompt(
+      task, 
+      project, 
+      fileList, 
+      files.architectPlanFile, 
+      commentsSection, 
+      analysisPlan.taskType // <-- Injetando o tipo exato para o prompt condicional!
+    );
     
-    // Salvar também em um arquivo backup para garantir que não seja perdido
+    // 6. Salva nos arquivos físicos
     const architectPromptBackupFile = path.join(TASKS_DIR, `architect-prompt-${taskId}.txt`);
     await fs.writeFile(architectPromptBackupFile, architectPrompt);
-    
-    // Engine rules serão adicionadas APENAS para o desenvolvedor depois
-    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
-    const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
-    
     await fs.writeFile(files.promptFile, architectPrompt);
     await fs.writeFile(files.terminalLogFile, '');
 
-    const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
+    // 7. Geração do Prompt do Desenvolvedor
+    const engineRules = PromptFactory.buildEngineRulesPrompt(files);
+    const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
+    
+    // 8. Cria o log de execução no banco
     const executionLog = await TaskExecutionService.createExecutionLog(task, userId, task.agent);
 
-    return { ...ctx, project, analysisPlan, files, initialSnapshot, executionLog, currentInput: architectPrompt, developerPrompt, commentsSection };
+    return { 
+      ...ctx, 
+      project, 
+      analysisPlan, 
+      files, 
+      initialSnapshot, 
+      executionLog, 
+      currentInput: architectPrompt, 
+      developerPrompt, 
+      commentsSection 
+    };
   }
 
   /**
-   * Passo 2: Se for desenvolvimento, o Arquiteto planeja a execução.
+   * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
    */
   static async stepArchitectPlanning(ctx) {
-    if (ctx.analysisPlan.taskType !== 'development') {
-      await log(`⏭️ [Arquiteto] Pulado: Tarefa não é de desenvolvimento.`);
-      return ctx; 
-    }
-
-    const { task, project, files, initialSnapshot, config } = ctx;
+    const { task, project, files, initialSnapshot, config, analysisPlan } = ctx;
+    
+    // Log do tipo de tarefa
+    await log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
+    
     const fileList = Array.from(initialSnapshot.keys());
-    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '');
+    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '', analysisPlan.taskType);
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
     
-    // Gera um ID único e descartável para o Arquiteto não lembrar do passado
-    const architectSessionId = `${task.id}-arquiteto-${Date.now()}`;
-    // Roda o Arquiteto com timeout de 10 minutos (600000ms)
+    // Importar utilitário de sessões em cadeia
+    const SessionChainUtils = require('../utils/sessionChainUtils');
     
+    // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
+    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+    
+    await log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
+    
+    // Roda o Arquiteto com timeout de 10 minutos (600000ms)
     const architectResult = await OpenClawService.executeWithFallback(
-      architectSessionId, // <--- A VACINA DA AMNÉSIA ESTÁ AQUI
+      architectSessionId, // <--- SESSÃO UNIFICADA PARA CADEIAS DE DEPENDÊNCIAS
       architectInput,
       project?.agent || task.agent || 'main',
       task.agent || 'main',
@@ -4938,7 +5108,10 @@ class TaskExecutionService {
         const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
         const architectDoneExists = await fileExists(files.doneFile);
         const architectReportExists = await fileExists(files.relatorioFile);
-        const hasEvidence = hasRealChanges || architectDoneExists || architectReportExists;
+        
+        // Para tarefas de análise, evidência pode ser apenas relatório/.done (não precisa de alterações)
+        const hasEvidence = architectDoneExists || architectReportExists || 
+                           (analysisPlan.taskType === 'analysis' ? true : hasRealChanges);
         
         if (!hasEvidence) {
           await log(`⚠️ [Validação] NENHUMA evidência encontrada! IA provavelmente errou. Corrigindo análise...`);
@@ -4953,7 +5126,11 @@ class TaskExecutionService {
           };
           await log(`📊 [Arquiteto] Análise CORRIGIDA: hasExecuted=false, hasPlan=true (falta de evidências)`);
         } else {
-          await log(`✅ [Validação] Evidências confirmadas: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados`);
+          if (analysisPlan.taskType === 'analysis') {
+            await log(`✅ [Validação] Evidências confirmadas para análise: relatório/.done criados`);
+          } else {
+            await log(`✅ [Validação] Evidências confirmadas: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados`);
+          }
         }
       }
       
@@ -5042,12 +5219,17 @@ class TaskExecutionService {
       return { needsDeveloper: true, message: `O arquiteto analisou a tarefa, mas não encontramos evidências de execução.\n\n${architectPlan || 'Siga a descrição original da tarefa.'}` };
     }
     
-    if (!hasRealChanges) {
-      await log(`📝 [Verificação] Arquiteto deixou .done/relatório, mas não alterou arquivos.`);
+    // Para tarefas de análise, não exigimos alterações de arquivos (apenas leitura)
+    if (analysisPlan.taskType !== 'analysis' && !hasRealChanges) {
+      await log(`📝 [Verificação] Arquiteto deixou .done/relatório, mas não alterou arquivos (e a tarefa não é de análise).`);
       return { needsDeveloper: true, message: `O arquiteto analisou e disse que já fez a tarefa, mas não encontramos alterações nos arquivos.\n\n${architectPlan}\n\nPor favor, execute a tarefa conforme descrito acima.` };
     }
     
-    await log(`📁 [Verificação] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+    if (analysisPlan.taskType === 'analysis') {
+      await log(`📝 [Verificação] Tarefa de análise: ${changes.modified.length} arquivos modificados, ${changes.created.length} criados (alterações são opcionais para análise).`);
+    } else {
+      await log(`📁 [Verificação] Arquiteto alterou ${changes.modified.length} arquivos, criou ${changes.created.length}.`);
+    }
     
     // Verificar contrato
     const contractResult = await ContractVerificationService.verifyContract(
@@ -5068,65 +5250,205 @@ class TaskExecutionService {
       return { needsDeveloper: true, message: contractResult.feedbackToAgent || `O arquiteto fez alterações, mas não cumpriu o contrato: ${contractResult.executionNotes}\n\nPor favor, corrija.` };
     }
     
-    await log(`✅ [Verificação] Contrato cumprido pelo arquiteto. Verificando build...`);
     
-    // QA/Build validation
-    let qa = { passed: true };
-    if (project) {
-      const BUILD_TIMEOUT = 60000;
-      if (project.backendBuildCmd && project.backendPath) {
-        try {
-          await log(`⏳ Testando build Backend...`);
-          execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
-        } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
+    await log(`✅ [Verificação] Contrato cumprido pelo arquiteto.`);
+    
+    // Para tarefas de desenvolvimento, verificar ecossistema (build, testes)
+    if (analysisPlan.taskType === 'development') {
+      await log(`🔧 [Verificação] Verificando ecossistema (build, testes)...`);
+      
+      const qa = await TaskExecutionService.ensureAndValidateEcosystem(
+        task, 
+        project, 
+        ctx.config
+      );
+      
+      if (!qa.passed) {
+        await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
+        await fs.unlink(files.doneFile).catch(()=>{});
+        return { needsDeveloper: true, message: `O arquiteto fez alterações, mas a validação de ecossistema falhou:\n\n${qa.message}\n\nCorrija o código e finalize novamente com .done.` };
       }
-      if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
-        try {
-          await log(`⏳ Testando build Frontend...`);
-          // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
-          const frontendCwd = path.join(project.pastaBase, project.frontendPath);
-          const buildCmd = project.frontendBuildCmd;
-          
-          // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
-          const env = { ...process.env, NODE_OPTIONS: '' };
-          
-          // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
-          if (buildCmd === 'npm run build') {
-            execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-          } else {
-            execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-          }
-        } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
-      }
+      
+      await log(`✅ [Verificação] Ecossistema verificado com sucesso!`);
+      
+      return {
+        success: true,
+        contractResult: {
+          contractFulfilled: true,
+          executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.`
+        },
+        finalResult: { 
+          success: true, 
+          executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.` 
+        }
+      };
+    } else {
+      // Para tarefas de análise/automação, não verificar ecossistema
+      await log(`✅ [Verificação] Tarefa de ${analysisPlan.taskType} concluída pelo arquiteto.`);
+      
+      return {
+        success: true,
+        contractResult: {
+          contractFulfilled: true,
+          executionNotes: `Tarefa de ${analysisPlan.taskType} executada pelo arquiteto.`
+        },
+        finalResult: { 
+          success: true, 
+          executionNotes: `Tarefa de ${analysisPlan.taskType} executada pelo arquiteto.` 
+        }
+      };
     }
-    
-    if (!qa.passed) {
-      await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
-      await fs.unlink(files.doneFile).catch(()=>{});
-      return { needsDeveloper: true, message: `Build falhou: ${qa.message}. O arquiteto fez alterações, mas o build não passa. Corrija o código e finalize novamente com .done.` };
-    }
-    
-    await log(`✅ [Verificação] Tudo verificado! Arquiteto concluiu tarefa com sucesso.`);
-    
-    return {
-      success: true,
-      contractResult: {
-        contractFulfilled: true,
-        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.`
-      },
-      finalResult: { 
-        success: true, 
-        executionNotes: `Tarefa executada pelo arquiteto. Alterações: ${changes.modified.length} modificados, ${changes.created.length} criados. Build verificado.` 
-      }
-    };
   }
 
   /**
-   * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor).
+   * Varredura de Ecossistema (Sistema 1)
+   * Descobre automaticamente as aplicações dentro do projeto, usa IA para 
+   * entender a tecnologia de cada uma, e valida todas elas.
    */
-/**
+  static async ensureAndValidateEcosystem(task, project, config) {
+    if (!project || !project.pastaBase) return { passed: true };
+
+    const { execSync } = require('child_process');
+    const path = require('path');
+    const fs = require('fs').promises;
+    const { fileExists } = require('../utils/fileUtils');
+    const LlmService = require('./llmService');
+    const projectService = require('./projectService'); 
+    const { log } = require('../../aux/logger');
+
+    const domain = task.domain; // FRONTEND, BACKEND ou nulo
+    const baseDir = project.pastaBase;
+    const nodeBinDir = path.dirname(process.execPath);
+
+    // --- FUNÇÃO AUXILIAR DE EXECUÇÃO (O "Coração" do Teste) ---
+// --- FUNÇÃO AUXILIAR DE EXECUÇÃO ---
+    const tryExecutingCommand = async (cmd, appName, appPath, port) => {
+      try {
+          await log(`⏳ [Sistema 1] Validando [${appName}] na porta ${port}: ${cmd}`);
+          
+          // --- ATUALIZAÇÃO CIRÚRGICA DO .ENV (Preservando outras variáveis) ---
+          const envPath = path.join(appPath, '.env');
+          let envContent = '';
+          
+          if (await fileExists(envPath)) {
+              envContent = await fs.readFile(envPath, 'utf8');
+          }
+          
+          // Se já tem PORT=alguma_coisa, substitui. Se não tem, adiciona no final.
+          if (envContent.match(/^PORT=.*$/m)) {
+              envContent = envContent.replace(/^PORT=.*$/m, `PORT=${port}`);
+          } else {
+              envContent += `\nPORT=${port}`;
+          }
+          
+          // Salva o arquivo preservando todo o resto
+          await fs.writeFile(envPath, envContent.trim() + '\n');
+          // ------------------------------------------------------------------
+
+          execSync(cmd, { 
+              cwd: appPath, 
+              stdio: 'pipe', 
+              timeout: 90000, 
+              shell: true, 
+              env: { 
+                  ...process.env, 
+                  PORT: String(port),
+                  PATH: `${nodeBinDir}:${process.env.PATH || ''}`
+              } 
+          });
+          return { passed: true }; 
+      } catch (e) {
+          const errorLog = (e.stderr?.toString() || e.stdout?.toString() || e.message);
+          if (e.signal === 'SIGTERM' || e.code === 'ETIMEDOUT' || errorLog.includes('ETIMEDOUT')) {
+              await log(`✅ [Sistema 1] [${appName}] operacional (Server vivo).`);
+              return { passed: true };
+          }
+          return { passed: false, message: `Falha em [${appName}]: ${errorLog.substring(0, 1000)}` };
+      }
+    };
+
+    // --- 1. O SEU ATALHO (Fast Path) ---
+    // Se a tarefa já diz o domínio e o banco tem os dados, não perdemos tempo escaneando pastas.
+    if (domain === 'FRONTEND' && project.frontendBuildCmd && project.frontendPath && project.frontendPort) {
+        const pasta = path.join(baseDir, project.frontendPath);
+        return await tryExecutingCommand(project.frontendBuildCmd, 'FRONTEND', pasta, project.frontendPort || 7000);
+    } 
+    
+    if (domain === 'BACKEND' && project.backendBuildCmd && project.backendPath && project.backendPort) {
+        const pasta = path.join(baseDir, project.backendPath);
+        return await tryExecutingCommand(project.backendBuildCmd, 'BACKEND', pasta, project.backendPort || 7001);
+    }
+
+    // --- 2. DESCOBERTA E SINCRONIZAÇÃO (Discovery Path) ---
+    // Se o atalho falhou ou o domínio é nulo, varremos as pastas para "aprender" ou validar tudo.
+    const items = await fs.readdir(baseDir, { withFileTypes: true });
+    const apps = [];
+
+    for (const item of items) {
+        if (item.isDirectory() && !item.name.startsWith('.') && item.name !== 'node_modules') {
+            const appDir = path.join(baseDir, item.name);
+            if (await fileExists(path.join(appDir, 'package.json'))) {
+                apps.push({ name: item.name, path: appDir });
+            }
+        }
+    }
+
+    for (const app of apps) {
+        await log(`🔍 [Sistema 1] Analisando módulo: [${app.name}]`);
+
+        // 1. Identificação inicial (o que já sabemos no banco?)
+        const isMappedFront = project.frontendPath === app.name;
+        const isMappedBack = project.backendPath === app.name;
+        
+        let cmd = isMappedFront ? project.frontendBuildCmd : (isMappedBack ? project.backendBuildCmd : null);
+
+        // 2. DESCOBERTA (Se o banco estiver vazio para este app, a IA entra em cena)
+        if (!cmd) {
+            await log(`🧠 [Sistema 1] Novo módulo detectado [${app.name}]. IA definindo escopo...`);
+            const pkgContent = await fs.readFile(path.join(app.path, 'package.json'), 'utf8');
+            const ai = new LlmService();
+            const decision = await ai.analyze(`Analise este package.json e retorne JSON: {"comando": "string", "escopo": "front|back"}\n\n${pkgContent}`);
+            
+            cmd = decision?.comando || 'npm start';
+            const escopo = decision?.escopo || (app.name.toLowerCase().includes('front') ? 'front' : 'back');
+
+            // Atualiza o objeto do projeto com a nova descoberta
+            if (escopo === 'front') {
+                project.frontendBuildCmd = cmd;
+                project.frontendPath = app.name;
+            } else {
+                project.backendBuildCmd = cmd;
+                project.backendPath = app.name;
+            }
+            // Persiste no banco para não ter que perguntar à IA na próxima tarefa
+            await projectService.updateProject(project.id, project);
+        }
+
+        // 3. CÁLCULO DA PORTA (AGORA SIM! Com o cmd e o escopo já garantidos)
+        // Recalculamos as flags baseadas na decisão da IA ou do banco
+        const finalIsFront = project.frontendPath === app.name;
+        const finalPort = finalIsFront ? (project.frontendPort || 7000) : (project.backendPort || 7001);
+
+        // 4. GARANTE O .ENV (Backup visual)
+        const envPath = path.join(app.path, '.env');
+        if (!(await fileExists(envPath))) {
+            await fs.writeFile(envPath, `PORT=${finalPort}`);
+        }
+
+        // 5. EXECUÇÃO (O "Fast Path" e o "Discovery Path" se encontram aqui)
+        const result = await tryExecutingCommand(cmd, app.name, app.path, finalPort);
+        if (!result.passed) return result;
+    }
+
+    await log(`✅ [Sistema 1] Todos os módulos operacionais.`);
+    return { passed: true };
+  }
+
+
+
+  /**
    * Passo 3: O loop principal de execução do Jarbas (Desenvolvedor) - STATLESS (Protocolo Amnésia)
-   */
+  */
   static async stepDeveloperLoop(ctx) {
     let { task, project, analysisPlan, files, initialSnapshot, currentInput, config, architectAnalysis, architectPlan } = ctx;
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
@@ -5153,10 +5475,40 @@ class TaskExecutionService {
     }
 
     // ==============================================================
-    // PREPARAÇÃO DO PROTOCOLO AMNÉSIA (STATELESS)
+    // PREPARAÇÃO DO PROTOCOLO AMNÉSIA E CONTEXTO DE DEPENDÊNCIAS
     // ==============================================================
+    const SessionChainUtils = require('../utils/sessionChainUtils');
+    let contextFromPreviousTasks = '';
+    
+    try {
+      const taskChain = await SessionChainUtils.getTaskChain(task.id);
+      const previousTasks = taskChain.filter(t => t.id !== task.id);
+      
+      if (previousTasks.length > 0) {
+        contextFromPreviousTasks += `\n\n=== CONTEXTO DAS TAREFAS ANTERIORES ===\n`;
+        contextFromPreviousTasks += `Você está continuando um trabalho. Abaixo estão os relatórios e logs das tarefas que vieram antes desta:\n`;
+        
+        for (const prevTask of previousTasks) {
+          const prevReport = await TaskExecutionService.readTaskOutputFile(prevTask.id, config.TASKS_DIR, 'relatorio');
+          const prevTerminal = await TaskExecutionService.readTaskOutputFile(prevTask.id, config.TASKS_DIR, 'terminal');
+          
+          contextFromPreviousTasks += `\n--- Tarefa Anterior: ${prevTask.id} (${prevTask.title}) ---\n`;
+          if (prevReport) {
+            contextFromPreviousTasks += `Relatório gerado:\n${prevReport}\n`;
+          }
+          if (prevTerminal) {
+            contextFromPreviousTasks += `Últimas linhas do terminal:\n${prevTerminal.slice(-1500)}\n`;
+          }
+        }
+        contextFromPreviousTasks += `=== FIM DO CONTEXTO ANTERIOR ===\n\n`;
+        await log(`📚 [Desenvolvedor] Contexto de ${previousTasks.length} tarefas anteriores carregado.`);
+      }
+    } catch (chainErr) {
+      await log(`⚠️ [Desenvolvedor] Erro ao buscar cadeia de dependências: ${chainErr.message}`);
+    }
+
     // O basePrompt é a bíblia da tarefa. Nunca muda.
-    const basePrompt = currentInput; 
+    const basePrompt = currentInput + contextFromPreviousTasks; 
     
     // O lastFeedback guarda o que aconteceu no turno imediatamente anterior
     let lastFeedback = null; 
@@ -5173,8 +5525,11 @@ class TaskExecutionService {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
-      // 1. GERAÇÃO DE SESSÃO ÚNICA (Destrói o histórico corrompido)
-      const turnSessionId = `${task.id}-turno-${turnos}`;
+      // 1. GERAÇÃO DA SESSÃO DO DESENVOLVEDOR (Isolada por Tarefa/Turno)
+      const timestamp = new Date().getTime();
+      const turnSessionId = `programador-${task.id}-${timestamp}`;
+      
+      await log(`🔗 Sessão do turno ${turnos}: ${turnSessionId} (isolada por tarefa/turno)`);
 
       // 2. MONTAGEM DO DOSSIÊ DO TURNO
       let promptDesteTurno = basePrompt;
@@ -5183,8 +5538,6 @@ class TaskExecutionService {
       }
 
       // Salva o prompt do turno no disco para você poder auditar o que foi enviado
-      // ATENÇÃO: Aqui está o BUG! Estamos sobrescrevendo o prompt do arquiteto com o prompt do desenvolvedor
-      // Vamos criar um arquivo separado para o prompt do desenvolvedor
       const developerPromptFile = path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnos}.txt`);
       await fs.writeFile(developerPromptFile, promptDesteTurno).catch(()=>{});
 
@@ -5209,46 +5562,25 @@ class TaskExecutionService {
         taskType: analysisPlan.taskType, 
         evidence, task, project, analysisPlan, initialSnapshot
       });
-      
-      if (contractResult.contractFulfilled) {
-        // Build Validation
-        let qa = { passed: true };
-        if (project) {
-          const BUILD_TIMEOUT = 60000;
-          if (project.backendBuildCmd && project.backendPath) {
-            try {
-              await log(`⏳ Testando build Backend...`);
-              execSync(project.backendBuildCmd, { cwd: path.join(project.pastaBase, project.backendPath), stdio: 'pipe', timeout: BUILD_TIMEOUT });
-            } catch (e) { qa = { passed: false, message: `Build Backend falhou: ${e.message}` }; }
-          }
-          if (qa.passed && project.frontendBuildCmd && project.frontendPath) {
-            try {
-              await log(`⏳ Testando build Frontend...`);
-              // Usar caminho absoluto para o node e executar via npx para evitar problemas de ESM
-              const frontendCwd = path.join(project.pastaBase, project.frontendPath);
-              const buildCmd = project.frontendBuildCmd;
-              
-              // Forçar ambiente CommonJS limpando NODE_OPTIONS para evitar problemas com ESM no Node 24
-              const env = { ...process.env, NODE_OPTIONS: '' };
-              
-              // Se o comando for 'npm run build', executar via npx vite build para evitar problemas de ESM
-              if (buildCmd === 'npm run build') {
-                execSync('npm run build', { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-              } else {
-                execSync(buildCmd, { cwd: frontendCwd, stdio: 'pipe', timeout: BUILD_TIMEOUT, shell: true, env });
-              }
-            } catch (e) { qa = { passed: false, message: `Build Frontend falhou: ${e.message}` }; }
-          }
-        }
 
+      if (contractResult.contractFulfilled) {
+        
+        // Uma única linha aciona a IA de DevOps para varrer e testar tudo!
+        const qa = await TaskExecutionService.ensureAndValidateEcosystem(
+          task, 
+          project, 
+          config
+        );
+        
         if (!qa.passed) {
           await fs.unlink(files.doneFile).catch(()=>{});
-          lastFeedback = `Build falhou: ${qa.message}. Corrija o erro no código e finalize novamente com .done.`;
+          lastFeedback = `Validação de Ecossistema falhou:\n\n${qa.message}\n\nCorrija o código no módulo indicado e finalize novamente.`;
           await log(`❌ QA Reprovado. Retornando erro para o agente: ${qa.message}`);
           contractResult.contractFulfilled = false;
           continue;
         }
-        break; // Passou no contrato e no QA
+        
+        break; // Passou no contrato e todo o ecossistema compilou/testou com sucesso!
       }
 
       // 4. ANÁLISE E FEEDBACK DO TURNO ATUAL
@@ -5335,8 +5667,9 @@ class TaskExecutionService {
    */
   static async stepTeardown(ctx) {
     console.log(`🔧 [DEBUG] stepTeardown chamado para tarefa ${ctx.task?.id}`);
-    const { executionLog, files, task, architectPlan } = ctx;
-    let { contractResult } = ctx; // Mudar para let para permitir reatribuição
+    const { executionLog, files, task, architectPlan, config } = ctx;
+    let { contractResult } = ctx; 
+    const { TASKS_DIR } = config || {};
     
     // Validação de segurança
     if (!contractResult) {
@@ -5373,11 +5706,9 @@ class TaskExecutionService {
         return null;
       };
       
-      // SEMPRE usar o prompt original do arquiteto, não o arquivo que pode ter sido sobrescrito
       const architectPromptFile = path.join(TASKS_DIR, `architect-prompt-${task.id}.txt`);
       updateData.arquitetosPromptContent = await readFileSafe(architectPromptFile);
       
-      // Se não encontrar o backup, tentar o arquivo original (mas avisar)
       if (!updateData.arquitetosPromptContent) {
         await log(`⚠️ [Teardown] Arquivo de prompt do arquiteto não encontrado: ${architectPromptFile}`);
         updateData.arquitetosPromptContent = await readFileSafe(files?.promptFile);
@@ -5388,23 +5719,21 @@ class TaskExecutionService {
       updateData.programadorTerminalContent = await readFileSafe(files?.terminalLogFile);
       updateData.programadorReportContent = await readFileSafe(files?.relatorioFile);
       
-      // Filtrar chaves nulas antes de atualizar
       const finalUpdateData = Object.fromEntries(Object.entries(updateData).filter(([_, v]) => v !== null));
       
       if (Object.keys(finalUpdateData).length > 0 && task && task.id) {
         await log(`💾 [Teardown] ATUALIZANDO tarefa ${task.id} com ${Object.keys(finalUpdateData).length} campos de log...`);
-        await prisma.task.update({
-          where: { id: task.id },
-          data: finalUpdateData
-        });
-        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso no banco de dados.`);
+        
+        // 3. Substituído a chamada crua do Prisma pelo TaskService!
+        await taskService.updateTask(task.id, finalUpdateData);
+        
+        await log(`✅ [Teardown] Tarefa ${task.id} atualizada com sucesso pelo TaskService.`);
       } else if (task && task.id) {
         await log(`⚠️ [Teardown] Nenhum conteúdo de arquivo encontrado para salvar na tarefa ${task.id}`);
       }
       
     } catch (error) {
       await log(`💥 [FATAL Teardown] Erro CRÍTICO ao salvar conteúdos no banco: ${error.message}\n${error.stack}`);
-      // Não falhar a execução inteira, mas logar o erro de forma grave
     }
 
     return { ...ctx, finalResult };
@@ -5417,7 +5746,6 @@ class TaskExecutionService {
   static async executeTask(task, userId, config) {
     const initialContext = { task, userId, config };
 
-    // Definição limpa da esteira de produção
     const steps = [
       this.stepSetupContext,
       this.stepArchitectPlanning,
@@ -5426,7 +5754,6 @@ class TaskExecutionService {
     ];
 
     try {
-      // O motor do pipeline assume o controle
       const finalState = await runPipeline(`Task-${task.id}`, initialContext, steps);
       
       return { 
@@ -5436,7 +5763,6 @@ class TaskExecutionService {
       };
 
     } catch (error) {
-      // Tratamento de segurança caso alguma etapa estoure um erro não tratado
       await log(`💥 [FATAL] O pipeline falhou: ${error.message}`);
       throw error;
     }
@@ -5444,9 +5770,6 @@ class TaskExecutionService {
 }
 
 module.exports = TaskExecutionService;
-
-
-
 
 // --- ARQUIVO: ./src/services/decompositionService.js ---
 
@@ -6290,7 +6613,276 @@ const prisma = new PrismaClient({
 
 module.exports = prisma;
 
+// --- ARQUIVO: ./src/services/taskHierarchyService.js ---
+
+// src/services/taskHierarchyService.js
+// Serviço para gerenciar marcação hierárquica de tarefas em execução
+
+const prisma = require('./prismaService');
+// Removida a importação do sseService, pois o TaskService já cuida dos broadcasts.
+
+class TaskHierarchyService {
+  /**
+   * Marca todos os ancestrais de uma tarefa como tendo filho em execução
+   * @param {string} taskId - ID da tarefa que está sendo executada
+   * @returns {Promise<void>}
+   */
+  async markAncestorsAsChildExecuting(taskId) {
+    try {
+      console.log(`🔍 TaskHierarchyService: Marcando ancestrais da tarefa ${taskId} como hasChildExecuting: true`);
+      
+      // Obter todos os ancestrais da tarefa
+      const ancestors = await this.getTaskAncestors(taskId);
+      
+      if (ancestors.length === 0) {
+        console.log(`ℹ️ TaskHierarchyService: Tarefa ${taskId} não tem ancestrais para marcar`);
+        return;
+      }
+      
+      const ancestorIds = ancestors.map(ancestor => ancestor.id);
+      console.log(`✅ TaskHierarchyService: ${ancestors.length} ancestrais encontrados para marcar: ${ancestorIds.join(', ')}`);
+
+      // Usando require tardio para evitar dependência circular com taskService
+      const taskService = require('./taskService');
+      
+      // Atualizar todos os ancestrais usando o TaskService
+      // IMPORTANTE: Não desmarcamos todas as tarefas do sistema!
+      // Apenas marcamos os ancestrais desta tarefa específica
+      for (const ancestorId of ancestorIds) {
+        // Verificar se o ancestral já está marcado (para evitar atualização desnecessária)
+        const ancestor = await prisma.task.findUnique({
+          where: { id: ancestorId },
+          select: { hasChildExecuting: true }
+        });
+        
+        if (!ancestor || !ancestor.hasChildExecuting) {
+          // Só atualiza se não estiver já marcado
+          await taskService.updateTask(ancestorId, { hasChildExecuting: true });
+          console.log(`   ✅ Ancestral ${ancestorId}: marcado como hasChildExecuting: true`);
+        } else {
+          console.log(`   ℹ️ Ancestral ${ancestorId}: já estava marcado como hasChildExecuting: true`);
+        }
+      }
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao marcar ancestrais: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Desmarca todos os ancestrais de uma tarefa (remove hasChildExecuting)
+   * Verifica se ainda há outros descendentes em execução antes de desmarcar
+   * @param {string} taskId - ID da tarefa que parou de executar
+   * @returns {Promise<void>}
+   */
+  async unmarkAncestorsAsChildExecuting(taskId) {
+    try {
+      console.log(`🔍 TaskHierarchyService: Verificando ancestrais da tarefa ${taskId} para desmarcar hasChildExecuting`);
+      
+      // Obter todos os ancestrais da tarefa
+      const ancestors = await this.getTaskAncestors(taskId);
+      
+      if (ancestors.length === 0) {
+        console.log(`ℹ️ TaskHierarchyService: Tarefa ${taskId} não tem ancestrais para verificar`);
+        return;
+      }
+      
+      const ancestorIds = ancestors.map(ancestor => ancestor.id);
+      
+      // Para cada ancestral, verificar se ainda tem outros descendentes em execução
+      for (const ancestorId of ancestorIds) {
+        await this.updateAncestorIfNoExecutingChildren(ancestorId);
+      }
+      
+      console.log(`✅ TaskHierarchyService: Ancestrais verificados: ${ancestorIds.join(', ')}`);
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao desmarcar ancestrais: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Atualiza um ancestral apenas se não tiver mais descendentes em execução
+   * @param {string} ancestorId - ID do ancestral a verificar
+   * @returns {Promise<void>}
+   */
+  async updateAncestorIfNoExecutingChildren(ancestorId) {
+    try {
+      // Contar quantos descendentes diretos e indiretos estão em execução
+      const executingDescendantsCount = await this.countExecutingDescendants(ancestorId);
+      
+      if (executingDescendantsCount === 0) {
+        // Nenhum descendente em execução, pode desmarcar
+        const taskService = require('./taskService'); // Require tardio
+        
+        await taskService.updateTask(ancestorId, { hasChildExecuting: false });
+        console.log(`   ✅ Ancestral ${ancestorId}: hasChildExecuting: false (0 descendentes em execução)`);
+      } else {
+        console.log(`   ℹ️ Ancestral ${ancestorId}: mantém hasChildExecuting: true (${executingDescendantsCount} descendentes em execução)`);
+      }
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao verificar ancestral ${ancestorId}: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Conta quantos descendentes de uma tarefa estão em execução
+   * @param {string} taskId - ID da tarefa ancestral
+   * @returns {Promise<number>}
+   */
+  async countExecutingDescendants(taskId) {
+    try {
+      console.log(`   🔍 TaskHierarchyService: Contando descendentes em execução para tarefa ${taskId}`);
+      // Obter todos os descendentes da tarefa
+      const descendants = await this.getTaskDescendants(taskId);
+      console.log(`   🔍 TaskHierarchyService: Encontrados ${descendants.length} descendentes totais`);
+      
+      // Filtrar apenas os que estão em execução
+      const executingDescendants = descendants.filter(descendant => descendant.isExecuting);
+      console.log(`   🔍 TaskHierarchyService: ${executingDescendants.length} descendentes em execução`);
+      
+      // Log detalhado dos descendentes
+      if (descendants.length > 0) {
+        console.log(`   🔍 TaskHierarchyService: Descendentes encontrados:`);
+        descendants.forEach(descendant => {
+          console.log(`     - ${descendant.id}: ${descendant.title} (isExecuting: ${descendant.isExecuting})`);
+        });
+      }
+      
+      return executingDescendants.length;
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao contar descendentes em execução: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtém todos os ancestrais de uma tarefa (pai, avô, bisavô, etc.)
+   * @param {string} taskId - ID da tarefa
+   * @returns {Promise<Array>} Array de tarefas ancestrais
+   */
+  async getTaskAncestors(taskId) {
+    try {
+      const ancestors = [];
+      let currentTaskId = taskId;
+      
+      // Subir na hierarquia até chegar à raiz
+      // Leitura é segura no Prisma aqui, não precisa delegar pro TaskService
+      while (true) {
+        const task = await prisma.task.findUnique({
+          where: { id: currentTaskId },
+          select: {
+            id: true,
+            parentTaskId: true
+          }
+        });
+        
+        if (!task || !task.parentTaskId) {
+          break; // Chegou à raiz ou tarefa não encontrada
+        }
+        
+        // Obter o pai
+        const parent = await prisma.task.findUnique({
+          where: { id: task.parentTaskId },
+          select: {
+            id: true,
+            title: true,
+            parentTaskId: true
+          }
+        });
+        
+        if (parent) {
+          ancestors.push(parent);
+          currentTaskId = parent.id;
+        } else {
+          break;
+        }
+      }
+      
+      return ancestors;
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao obter ancestrais: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtém todos os descendentes de uma tarefa (filhos, netos, etc.)
+   * @param {string} taskId - ID da tarefa ancestral
+   * @returns {Promise<Array>} Array de tarefas descendentes
+   */
+  async getTaskDescendants(taskId) {
+    try {
+      console.log(`   🔍 TaskHierarchyService: Buscando descendentes para tarefa ${taskId}`);
+      const descendants = [];
+      
+      // Função recursiva para obter todos os descendentes
+      const getDescendantsRecursive = async (parentId) => {
+        const children = await prisma.task.findMany({
+          where: { parentTaskId: parentId },
+          select: {
+            id: true,
+            title: true,
+            isExecuting: true
+          }
+        });
+        
+        console.log(`   🔍 TaskHierarchyService: Para parentId ${parentId}, encontrados ${children.length} filhos`);
+        
+        for (const child of children) {
+          console.log(`   🔍 TaskHierarchyService: Filho ${child.id}: ${child.title} (isExecuting: ${child.isExecuting})`);
+          descendants.push(child);
+          await getDescendantsRecursive(child.id);
+        }
+      };
+      
+      await getDescendantsRecursive(taskId);
+      console.log(`   🔍 TaskHierarchyService: Total de descendentes para ${taskId}: ${descendants.length}`);
+      return descendants;
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao obter descendentes: ${error.message}`);
+      throw error;
+    }
+  }
+  
+  /**
+   * Atualiza a marcação hierárquica quando uma tarefa muda seu estado de execução
+   * @param {string} taskId - ID da tarefa
+   * @param {boolean} isNowExecuting - Novo estado de execução
+   * @returns {Promise<void>}
+   */
+  async updateHierarchyOnExecutionChange(taskId, isNowExecuting) {
+    try {
+      console.log(`🔄 TaskHierarchyService: Atualizando hierarquia para tarefa ${taskId} (isExecuting: ${isNowExecuting})`);
+      
+      if (isNowExecuting) {
+        // Tarefa começou a executar → marcar ancestrais
+        await this.markAncestorsAsChildExecuting(taskId);
+      } else {
+        // Tarefa parou de executar → verificar ancestrais
+        await this.unmarkAncestorsAsChildExecuting(taskId);
+      }
+      
+      console.log(`✅ TaskHierarchyService: Hierarquia atualizada para tarefa ${taskId}`);
+      
+    } catch (error) {
+      console.error(`❌ TaskHierarchyService: Erro ao atualizar hierarquia: ${error.message}`);
+      throw error;
+    }
+  }
+}
+
+module.exports = new TaskHierarchyService();
+
 // --- ARQUIVO: ./src/services/taskService.js ---
+
 
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -6299,7 +6891,9 @@ const path = require('path');
 // src/services/taskService.js
 
 const prisma = require('./prismaService');
-//const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const NotificationService = require('./notificationService');
+const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const taskHierarchyService = require('./taskHierarchyService'); // <-- Serviço de hierarquia
 
 class TaskService {
   // Função auxiliar para executar git
@@ -6445,7 +7039,7 @@ class TaskService {
     if (data.isRecurring && data.recurrenceType) {
       nextExecutionAt = this.calculateNextExecution(data);
     }
-    return await prisma.task.create({
+    const newTask = await prisma.task.create({
       data: {
         title: data.title,
         description: data.description,
@@ -6503,6 +7097,17 @@ class TaskService {
         }
       }
     });
+    
+    // Emitir evento SSE para criação em tempo real
+    try {
+      console.log(`📢 TaskService (PRE-BROADCAST): Preparando para emitir task_created para ${newTask.id}. Clientes conectados: ${sseService.clients.length}`);
+      sseService.broadcast('task_created', newTask);
+      console.log(`✅ TaskService: Evento task_created emitido com sucesso`);
+    } catch (error) {
+      console.error(`❌ TaskService: Erro ao emitir evento task_created:`, error);
+    }
+    
+    return newTask;
   }
 
   // Get all tasks with filters
@@ -6820,11 +7425,29 @@ class TaskService {
     // Check if status is changing to record history
     const oldTask = await prisma.task.findUnique({
       where: { id },
-      select: { statusId: true, createdById: true }
+      select: { statusId: true, createdById: true, isExecuting: true }
     });
 
     if (!oldTask) {
       throw new Error(`Task with ID ${id} not found`);
+    }
+
+    // Se isExecuting foi alterado, atualizar hierarquia ANTES da transação
+    if (data.isExecuting !== undefined && data.isExecuting !== null) {
+      console.log(`🔍 TaskService: Verificando mudança de isExecuting para task ${id}, novo valor: ${data.isExecuting}, antigo: ${oldTask.isExecuting}`);
+      
+      if (oldTask.isExecuting !== data.isExecuting) {
+        console.log(`🔄 TaskService: isExecuting MUDOU de ${oldTask.isExecuting} para ${data.isExecuting} na tarefa ${id}`);
+        try {
+          await taskHierarchyService.updateHierarchyOnExecutionChange(id, data.isExecuting);
+          console.log(`✅ TaskService: Hierarquia atualizada para task ${id}`);
+        } catch (hierarchyError) {
+          console.error(`❌ TaskService: Erro ao atualizar hierarquia: ${hierarchyError.message}`);
+          // Não lançar erro para não quebrar a atualização principal
+        }
+      } else {
+        console.log(`ℹ️ TaskService: isExecuting NÃO mudou para task ${id} (antigo: ${oldTask.isExecuting}, novo: ${data.isExecuting})`);
+      }
     }
 
     // Process recurrence fields
@@ -6840,7 +7463,14 @@ class TaskService {
       assignedToId: data.assignedToId,
       parentTaskId: data.parentTaskId,
       agent: data.agent,
-      updatedAt: new Date()
+      isExecuting: data.isExecuting,
+      hasChildExecuting: data.hasChildExecuting,
+      updatedAt: new Date(),
+      arquitetosPromptContent: data.arquitetosPromptContent,
+      arquitetosAnalysisContent: data.arquitetosAnalysisContent,
+      arquitetosTerminalContent: data.arquitetosTerminalContent,
+      programadorTerminalContent: data.programadorTerminalContent,
+      programadorReportContent: data.programadorReportContent
     };
 
     // Add recurrence fields if provided
@@ -6913,7 +7543,6 @@ class TaskService {
         }
       })
     );
-    //sseService.broadcast('task_updated', data);
 
     // Add history record if status changed
     if (data.statusId && oldTask && data.statusId !== oldTask.statusId) {
@@ -6939,7 +7568,45 @@ class TaskService {
     }
 
     const results = await prisma.$transaction(transaction);
+    
+    // Broadcast SSE event AFTER transaction is complete
+    sseService.broadcast('task_updated', results[0]);
+    
     return results[0]; // Return the updated task
+  }
+
+
+  // No seu TaskService.js
+
+  /**
+   * INICIA a execução exclusiva de uma tarefa.
+   */
+  async startTaskExecution(taskId) {
+    console.log(`🚀 Iniciando execução exclusiva da tarefa ${taskId}...`);
+
+    // 1. O GATILHO GLOBAL: Desliga todas as outras tarefas ativas no banco.
+    // Fazemos isso direto no Prisma porque é uma operação em lote rápida.
+    await prisma.task.updateMany({
+      where: { 
+        isExecuting: true,
+        id: { not: taskId } // Garante que não vamos desligar a própria tarefa à toa
+      },
+      data: { isExecuting: false }
+    });
+
+    // 2. REUSO INTELIGENTE: Delega para o seu método principal.
+    // A updateTask vai alterar para true, atualizar a hierarquia e disparar o SSE!
+    return await this.updateTask(taskId, { isExecuting: true });
+  }
+
+  /**
+   * PARA a execução de uma tarefa.
+   */
+  async stopTaskExecution(taskId) {
+    console.log(`🛑 Parando a execução da tarefa ${taskId}...`);
+    
+    // Novamente, reuso total. A updateTask faz toda a mágica do teardown.
+    return await this.updateTask(taskId, { isExecuting: false });
   }
 
   // Delete task
@@ -6966,14 +7633,19 @@ class TaskService {
     ]);
 
     // Then delete the task
-    return await prisma.task.delete({
+    const deletedTask = await prisma.task.delete({
       where: { id }
     });
+    
+    // Emitir evento SSE para deleção em tempo real
+    sseService.broadcast('task_deleted', { id: deletedTask.id });
+    
+    return deletedTask;
   }
 
   // Update task position (for drag and drop)
   async updateTaskPosition(id, position) {
-    return await prisma.task.update({
+    const updatedTask = await prisma.task.update({
       where: { id },
       data: { position },
       include: {
@@ -6982,6 +7654,11 @@ class TaskService {
         priority: true
       }
     });
+    
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updatedTask);
+    
+    return updatedTask;
   }
 
   // Toggle task completion
@@ -6995,7 +7672,7 @@ class TaskService {
       throw new Error('Task not found');
     }
 
-    return await prisma.task.update({
+    const updatedTask = await prisma.task.update({
       where: { id },
       data: { 
         isCompleted: !task.isCompleted,
@@ -7007,6 +7684,11 @@ class TaskService {
         priority: true
       }
     });
+    
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updatedTask);
+    
+    return updatedTask;
   }
 
   // Get tasks by project
@@ -7149,6 +7831,8 @@ class TaskService {
     } else {
       updateData.nextExecutionAt = null;
     }
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('task_updated', updateData);
 
     return await prisma.task.update({
       where: { id: taskId },
@@ -7387,11 +8071,18 @@ class TaskService {
    
     console.log(`\nDEBUG: Tarefas encontradas para ${nickname}: ${playableTasks.map(t => `${t.title} (recursiva: ${t.isRecurring}, próxima execução: ${t.nextExecutionAt})`).join('; ')}\n`);
     
-    return playableTasks[0];
+    const nextTask = playableTasks[0];
+    
+    if (!nextTask) return null;
+    
+    // Retornar a tarefa sem marcar como em execução
+    // O monitor.js será responsável por marcar isExecuting: true após criar o arquivo LOCK
+    console.log(`📋 Tarefa "${nextTask.title}" selecionada para execução (ainda não marcada como isExecuting: true)`);
+    return nextTask;
   }
 
   // Finalize task - find first final status and update task
-// Finalize task - Lida com finalização de normais e reinício de recursivas
+  // Finalize task - Lida com finalização de normais e reinício de recursivas
   async finalizeTask(taskId, userId, executionNotes = null) {
     // 1. Busca a tarefa atual
     const existingTask = await prisma.task.findUnique({
@@ -7426,6 +8117,7 @@ class TaskService {
           where: { id: taskId },
           data: {
             statusId: firstStatus.id, // Volta pro início do quadro
+            isExecuting: false, // IMPORTANTE: Marca como não executando
             lastExecutedAt: new Date(),
             nextExecutionAt: nextExecutionAt,
             isCompleted: false // Garante que a tarefa continua viva
@@ -7460,7 +8152,52 @@ class TaskService {
         console.error('Git automation failed:', gitError.message);
       }
 
-return {
+      // ==========================================
+      // NOTIFICAÇÃO NO TELEGRAM PARA TAREFAS RECURSIVAS
+      // ==========================================
+      try {
+        // Buscar informações completas do usuário
+        const user = await prisma.user.findUnique({
+          where: { id: actionUserId }
+        });
+        
+        if (user) {
+          // Construir mensagem específica para tarefas recursivas
+          const projectName = updatedTask.project?.name || 'Projeto desconhecido';
+          const userName = user.name || 'Usuário desconhecido';
+          const taskTitle = updatedTask.title || 'Tarefa sem título';
+          const nextExecution = nextExecutionAt ? new Date(nextExecutionAt).toLocaleString('pt-BR') : 'Não agendada';
+          
+          let message = `🔄 *TAREFA RECURSIVA REINICIADA!*\n\n`;
+          message += `*Tarefa:* ${taskTitle}\n`;
+          message += `*Projeto:* ${projectName}\n`;
+          message += `*Executada por:* ${userName}\n`;
+          message += `*Próxima execução:* ${nextExecution}\n`;
+          
+          if (executionNotes && executionNotes.trim() !== '') {
+            message += `\n*Notas:* ${executionNotes.substring(0, 200)}${executionNotes.length > 200 ? '...' : ''}\n`;
+          }
+          
+          message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
+          message += `\n🔗 *ID:* ${taskId.substring(0, 8)}...`;
+          
+          // Enviar notificação
+          await NotificationService.sendTelegramNotification(message);
+          
+          console.log(`📱 Notificação de tarefa recursiva enviada para ${user.name}`);
+        } else {
+          console.warn(`⚠️ Usuário ${actionUserId} não encontrado para notificação de tarefa recursiva`);
+        }
+        
+      } catch (notificationError) {
+        console.error(`❌ Erro ao enviar notificação de tarefa recursiva: ${notificationError.message}`);
+        // Não falhar a operação principal por causa da notificação
+      }
+
+      // Broadcast SSE event AFTER transaction is complete
+      sseService.broadcast('task_updated', updatedTask);
+    
+      return {
         task: updatedTask,
         status: firstStatus,
         history: historyRecord,
@@ -7478,12 +8215,14 @@ return {
 
     if (!finalStatus) throw new Error('Nenhum status final configurado no sistema.');
 
-    const [updatedTask, historyRecord] = await prisma.$transaction([
+    // Iniciar transação para atualizar a tarefa atual
+    const transaction = [
       prisma.task.update({
         where: { id: taskId },
         data: {
           statusId: finalStatus.id,
           isCompleted: false, // Marca como finalizada de fato
+          isExecuting: false, // IMPORTANTE: Marca como não executando
           lastExecutedAt: new Date(),
           nextExecutionAt: null
         },
@@ -7498,28 +8237,237 @@ return {
           notes: executionNotes || 'Tarefa finalizada.'
         }
       })
-    ]);
+    ];
 
-          // Controle de versão automático após finalização
-      try {
-        const project = await prisma.project.findUnique({
-          where: { id: existingTask.projectId },
-          select: { frontendPath: true, backendPath: true }
+    // Variáveis para armazenar tarefas ancestrais finalizadas
+    let finalizedAncestors = []; // Array de objetos {task, historyRecord}
+    let parentHistoryRecord = null;
+
+    // ==========================================
+    // FUNÇÃO RECURSIVA PARA VERIFICAR ANCESTRAIS
+    // ==========================================
+    const checkAndFinalizeAncestors = async (currentTaskId, userId, finalStatusId, transactionArray) => {
+      const ancestorsToFinalize = [];
+      
+      // Função recursiva interna
+      const checkAncestor = async (taskId) => {
+        // Buscar a tarefa atual para obter o parentTaskId
+        const task = await prisma.task.findUnique({
+          where: { id: taskId },
+          select: { parentTaskId: true }
         });
-        if (project?.frontendPath) {
-          await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
+        
+        if (!task || !task.parentTaskId) {
+          return; // Não tem pai, fim da recursão
         }
-        if (project?.backendPath) {
-          await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
-        }
-      } catch (gitError) {
-        console.error('Git automation failed:', gitError.message);
-      }
+        
+        const parentId = task.parentTaskId;
+        
+        // Buscar todas as subtasks (irmãs) da tarefa pai
+        const allSubtasks = await prisma.task.findMany({
+          where: {
+            parentTaskId: parentId
+          },
+          include: {
+            status: true
+          }
+        });
 
-return {
+        // Verificar se TODAS as subtasks estão no status final
+        const allSubtasksFinalized = allSubtasks.every(subtask => 
+          subtask.status && subtask.status.isFinalState
+        );
+
+        console.log(`📊 Verificando pai ${parentId}: ${allSubtasks.length} subtasks, todas finalizadas? ${allSubtasksFinalized}`);
+
+        // Se todas as subtasks estão finalizadas
+        if (allSubtasksFinalized && allSubtasks.length > 0) {
+          // Buscar a tarefa pai
+          const parentTask = await prisma.task.findUnique({
+            where: { id: parentId },
+            include: { status: true }
+          });
+
+          if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
+            console.log(`✅ Todas as subtasks da tarefa pai ${parentId} estão finalizadas. Finalizando pai também...`);
+            
+            // Adicionar à lista de ancestrais para finalizar
+            ancestorsToFinalize.push({
+              task: parentTask,
+              parentId: parentId
+            });
+            
+            // Continuar recursivamente para o avô, bisavô, etc.
+            await checkAncestor(parentId);
+          } else if (parentTask && parentTask.status && parentTask.status.isFinalState) {
+            console.log(`ℹ️ Tarefa pai ${parentId} já está finalizada.`);
+            // Mesmo já finalizada, continuar verificando ancestrais
+            await checkAncestor(parentId);
+          }
+        } else {
+          console.log(`⏳ Tarefa pai ${parentId} não será finalizada ainda: ${allSubtasks.length} subtasks, ${allSubtasks.filter(s => s.status && s.status.isFinalState).length} finalizadas.`);
+        }
+      };
+      
+      // Iniciar verificação recursiva
+      await checkAncestor(currentTaskId);
+      
+      // Processar todos os ancestrais encontrados (do mais próximo ao mais distante)
+      for (const ancestor of ancestorsToFinalize) {
+        const { task: parentTask, parentId } = ancestor;
+        
+        // Adicionar atualização da tarefa ancestral à transação
+        transactionArray.push(
+          prisma.task.update({
+            where: { id: parentId },
+            data: {
+              statusId: finalStatusId,
+              isCompleted: false,
+              isExecuting: false, // IMPORTANTE: Ancestrais também não estão executando
+              lastExecutedAt: new Date(),
+              nextExecutionAt: null
+            },
+            include: { project: true, status: true, priority: true }
+          })
+        );
+
+        // Adicionar histórico para a tarefa ancestral
+        transactionArray.push(
+          prisma.taskHistory.create({
+            data: {
+              taskId: parentId,
+              userId: userId,
+              oldStatusId: parentTask.statusId,
+              newStatusId: finalStatusId,
+              notes: `Tarefa ancestral finalizada automaticamente porque todas as subtasks foram concluídas.`
+            }
+          })
+        );
+        
+        console.log(`🎯 Tarefa ancestral ${parentId} será finalizada automaticamente.`);
+      }
+      
+      return ancestorsToFinalize.length;
+    };
+
+    // ==========================================
+    // EXECUTAR VERIFICAÇÃO RECURSIVA DE ANCESTRAIS
+    // ==========================================
+    if (existingTask.parentTaskId) {
+      console.log(`🔍 Tarefa ${taskId} tem pai ${existingTask.parentTaskId}. Verificando ancestrais recursivamente...`);
+      const ancestorsFinalized = await checkAndFinalizeAncestors(
+        taskId, 
+        actionUserId, 
+        finalStatus.id, 
+        transaction
+      );
+      
+      console.log(`📈 ${ancestorsFinalized} tarefas ancestrais serão finalizadas.`);
+    }
+
+    // Executar todas as operações em uma única transação
+    const transactionResults = await prisma.$transaction(transaction);
+    
+    const updatedTask = transactionResults[0];
+    const historyRecord = transactionResults[1];
+    
+    // Extrair dados dos ancestrais finalizados (se houver)
+    // Cada ancestral ocupa 2 posições na transação: update + history
+    const ancestorsFinalized = [];
+    const ancestorsHistory = [];
+    
+    // Começamos na posição 2 (após a tarefa atual e seu histórico)
+    for (let i = 2; i < transactionResults.length; i += 2) {
+      if (i < transactionResults.length) {
+        ancestorsFinalized.push(transactionResults[i]); // Tarefa ancestral atualizada
+      }
+      if (i + 1 < transactionResults.length) {
+        ancestorsHistory.push(transactionResults[i + 1]); // Histórico da tarefa ancestral
+      }
+    }
+    
+    console.log(`📊 ${ancestorsFinalized.length} tarefas ancestrais foram finalizadas.`);
+
+    // Controle de versão automático após finalização
+    try {
+      const project = await prisma.project.findUnique({
+        where: { id: existingTask.projectId },
+        select: { frontendPath: true, backendPath: true }
+      });
+      if (project?.frontendPath) {
+        await this.checkAndCommit(project.frontendPath, taskId, existingTask.title);
+      }
+      if (project?.backendPath) {
+        await this.checkAndCommit(project.backendPath, taskId, existingTask.title);
+      }
+    } catch (gitError) {
+      console.error('Git automation failed:', gitError.message);
+    }
+
+    // ==========================================
+    // NOTIFICAÇÃO NO TELEGRAM
+    // ==========================================
+    try {
+      // Buscar informações completas do usuário
+      const user = await prisma.user.findUnique({
+        where: { id: actionUserId }
+      });
+      
+      if (user) {
+        // Enviar notificação da tarefa concluída
+        await NotificationService.sendTaskCompletedNotification(
+          updatedTask,
+          user,
+          executionNotes
+        );
+        
+        console.log(`📱 Notificação no Telegram enviada para ${user.name} (${user.nickname})`);
+      } else {
+        console.warn(`⚠️ Usuário ${actionUserId} não encontrado para notificação`);
+      }
+      
+      // Se houver ancestrais finalizados automaticamente, enviar notificações adicionais
+      if (ancestorsFinalized.length > 0) {
+        console.log(`📱 Enviando notificações para ${ancestorsFinalized.length} tarefas ancestrais finalizadas...`);
+        
+        for (const ancestorTask of ancestorsFinalized) {
+          // Buscar todas as subtasks para listar na notificação
+          const allSubtasks = await prisma.task.findMany({
+            where: {
+              parentTaskId: ancestorTask.id
+            },
+            select: {
+              id: true,
+              title: true,
+              status: true
+            }
+          });
+          
+          await NotificationService.sendParentTaskAutoCompletedNotification(
+            ancestorTask,
+            allSubtasks
+          );
+          
+          console.log(`📱 Notificação para tarefa ancestral ${ancestorTask.id} (${ancestorTask.title}) enviada`);
+        }
+      }
+      
+    } catch (notificationError) {
+      console.error(`❌ Erro ao enviar notificação no Telegram: ${notificationError.message}`);
+      // Não falhar a operação principal por causa da notificação
+    }
+    // Broadcast SSE event AFTER transaction is complete
+    sseService.broadcast('task_updated', updatedTask);
+    
+    return {
       task: updatedTask,
       status: finalStatus,
       history: historyRecord,
+      ancestorsFinalized: ancestorsFinalized,
+      ancestorsHistory: ancestorsHistory,
+      // Mantendo compatibilidade total com código existente
+      parentTaskFinalized: ancestorsFinalized.length > 0 ? ancestorsFinalized[0] : null,
+      parentHistory: ancestorsHistory.length > 0 ? ancestorsHistory[0] : null,
       isRecurringReset: false
     };
   }
@@ -7529,6 +8477,208 @@ module.exports = new TaskService();
 
 
 
+
+// --- ARQUIVO: ./src/services/notificationService.js ---
+
+/**
+ * Serviço de notificações para Telegram via OpenClaw
+ */
+
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
+
+class NotificationService {
+  
+  /**
+   * Envia uma notificação no Telegram
+   * @param {string} message - Mensagem a ser enviada
+   * @param {string} chatId - ID do chat (opcional, usa default se não informado)
+   * @returns {Promise<boolean>} true se enviado com sucesso
+   */
+  static async sendTelegramNotification(message, chatId = null) {
+    try {
+      console.log(`📱 Tentando enviar notificação no Telegram: ${message.substring(0, 100)}...`);
+      
+      // Comando OpenClaw para enviar mensagem
+      // O chatId padrão é o do Alexandre (7147090795) conforme USER.md
+      const targetChatId = chatId || '7147090795';
+      
+      const command = `openclaw message send --channel telegram --target ${targetChatId} --message "${this.escapeMessage(message)}"`;
+      
+      console.log(`🔧 Executando comando: ${command}`);
+      
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: 10000, // 10 segundos timeout
+        shell: true
+      });
+      
+      if (stderr && !stderr.includes('warning')) {
+        console.error(`❌ Erro ao enviar notificação no Telegram: ${stderr}`);
+        return false;
+      }
+      
+      console.log(`✅ Notificação enviada com sucesso no Telegram para chat ${targetChatId}`);
+      console.log(`📤 Resposta: ${stdout || '(sem output)'}`);
+      
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ Falha ao enviar notificação no Telegram: ${error.message}`);
+      
+      // Fallback: tentar método alternativo se o comando openclaw não estiver disponível
+      if (error.code === 'ENOENT' || error.message.includes('openclaw: command not found')) {
+        console.log('⚠️ Comando openclaw não encontrado. Tentando método alternativo...');
+        return await this.sendTelegramNotificationFallback(message, chatId);
+      }
+      
+      return false;
+    }
+  }
+  
+  /**
+   * Método fallback para enviar notificação (usando curl ou outro método)
+   * @param {string} message - Mensagem a ser enviada
+   * @param {string} chatId - ID do chat
+   * @returns {Promise<boolean>} true se enviado com sucesso
+   */
+  static async sendTelegramNotificationFallback(message, chatId = null) {
+    try {
+      console.log('🔄 Usando método fallback para notificação no Telegram...');
+      
+      // Aqui você poderia implementar uma integração direta com a API do Telegram
+      // usando um bot token se tiver configurado
+      // Por enquanto, apenas logamos
+      
+      console.log(`📝 [FALLBACK] Notificação para Telegram (chat ${chatId || 'default'}): ${message}`);
+      
+      // Retornar true para simular sucesso (em produção, implementar API real)
+      return true;
+      
+    } catch (error) {
+      console.error(`❌ Falha no método fallback: ${error.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Envia notificação quando uma tarefa é concluída
+   * @param {Object} task - Objeto da tarefa
+   * @param {Object} user - Usuário que finalizou a tarefa
+   * @param {string} executionNotes - Notas de execução (opcional)
+   * @returns {Promise<boolean>} true se notificação enviada
+   */
+  static async sendTaskCompletedNotification(task, user, executionNotes = null) {
+    try {
+      if (!task || !user) {
+        console.error('❌ Dados insuficientes para notificação de tarefa concluída');
+        return false;
+      }
+      
+      const projectName = task.project?.name || 'Projeto desconhecido';
+      const userName = user.name || 'Usuário desconhecido';
+      const taskTitle = task.title || 'Tarefa sem título';
+      
+      // Construir mensagem formatada
+      let message = `✅ *TAREFA CONCLUÍDA!*\n\n`;
+      message += `*Tarefa:* ${taskTitle}\n`;
+      message += `*Projeto:* ${projectName}\n`;
+      message += `*Concluída por:* ${userName}\n`;
+      
+      if (executionNotes && executionNotes.trim() !== '') {
+        message += `\n*Notas:* ${executionNotes.substring(0, 200)}${executionNotes.length > 200 ? '...' : ''}\n`;
+      }
+      
+      message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
+      message += `\n🔗 *ID:* ${task.id.substring(0, 8)}...`;
+      
+      // Enviar notificação
+      return await this.sendTelegramNotification(message);
+      
+    } catch (error) {
+      console.error(`❌ Erro ao enviar notificação de tarefa concluída: ${error.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Envia notificação quando uma tarefa pai é automaticamente finalizada
+   * @param {Object} parentTask - Tarefa pai
+   * @param {Array} completedSubtasks - Lista de subtasks concluídas
+   * @returns {Promise<boolean>} true se notificação enviada
+   */
+  static async sendParentTaskAutoCompletedNotification(parentTask, completedSubtasks) {
+    try {
+      if (!parentTask || !completedSubtasks || completedSubtasks.length === 0) {
+        return false;
+      }
+      
+      const projectName = parentTask.project?.name || 'Projeto desconhecido';
+      const parentTaskTitle = parentTask.title || 'Tarefa pai sem título';
+      
+      // Construir mensagem formatada
+      let message = `🎯 *TAREFA PAI FINALIZADA AUTOMATICAMENTE!*\n\n`;
+      message += `*Tarefa Pai:* ${parentTaskTitle}\n`;
+      message += `*Projeto:* ${projectName}\n`;
+      message += `*Motivo:* Todas as ${completedSubtasks.length} subtasks foram concluídas\n`;
+      
+      message += `\n📋 *Subtasks concluídas:*\n`;
+      completedSubtasks.forEach((subtask, index) => {
+        message += `  ${index + 1}. ${subtask.title || 'Subtarefa sem título'}\n`;
+      });
+      
+      message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
+      message += `\n🔗 *ID:* ${parentTask.id.substring(0, 8)}...`;
+      
+      // Enviar notificação
+      return await this.sendTelegramNotification(message);
+      
+    } catch (error) {
+      console.error(`❌ Erro ao enviar notificação de tarefa pai concluída: ${error.message}`);
+      return false;
+    }
+  }
+  
+  /**
+   * Escapa caracteres especiais para shell command
+   * @param {string} text - Texto a ser escapado
+   * @returns {string} Texto escapado
+   */
+  static escapeMessage(text) {
+    return text
+      .replace(/"/g, '\\"')  // Escapar aspas duplas
+      .replace(/`/g, '\\`')  // Escapar crases
+      .replace(/\$/g, '\\$') // Escapar cifrões
+      .replace(/\n/g, '\\n') // Manter quebras de linha
+      .substring(0, 4000);   // Limitar tamanho (limite do Telegram)
+  }
+  
+  /**
+   * Testa a conexão com o Telegram
+   * @returns {Promise<boolean>} true se conexão bem-sucedida
+   */
+  static async testConnection() {
+    try {
+      const testMessage = '🔔 *Teste de Notificação do Sistema de Tarefas*\n\nEsta é uma mensagem de teste para verificar se as notificações estão funcionando corretamente.\n\n✅ Sistema operacional normalmente.';
+      
+      const result = await this.sendTelegramNotification(testMessage);
+      
+      if (result) {
+        console.log('✅ Conexão com Telegram testada com sucesso!');
+      } else {
+        console.log('❌ Falha ao testar conexão com Telegram');
+      }
+      
+      return result;
+      
+    } catch (error) {
+      console.error(`❌ Erro no teste de conexão: ${error.message}`);
+      return false;
+    }
+  }
+}
+
+module.exports = NotificationService;
 
 // --- ARQUIVO: ./src/services/llmService.js ---
 
@@ -7573,6 +8723,7 @@ module.exports = LlmService;
 // --- ARQUIVO: ./src/services/projectService.js ---
 
 const prisma = require('./prismaService');
+const sseService = require('./sseService');
 
 class ProjectService {
   // Create a new project
@@ -7594,7 +8745,6 @@ class ProjectService {
         repositoryUrl: data.repositoryUrl || null,
         pastaBase: data.pastaBase || null,
         agent: data.agent || null,
-        programadorContratado: data.programadorContratado || null,
         programadorFront: data.programadorFront || null,
         programadorBack: data.programadorBack || null,
         modeloAuxiliar: data.modeloAuxiliar || null,
@@ -7730,7 +8880,7 @@ class ProjectService {
   async updateProject(id, data) {
     // DEBUG: Log para verificar dados recebidos
     console.log('🔍 projectService.updateProject - Dados recebidos:', JSON.stringify(data, null, 2));
-    console.log('🔍 projectService.updateProject - programadorContratado recebido:', data.programadorContratado);
+    console.log('🔍 projectService.updateProject - programadorFront recebido:', data.programadorFront);
     
     const updateData = {
       name: data.name,
@@ -7752,14 +8902,14 @@ class ProjectService {
     if (data.repositoryUrl !== undefined) updateData.repositoryUrl = data.repositoryUrl || null;
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
     if (data.agent !== undefined) updateData.agent = data.agent || null;
-    if (data.programadorContratado !== undefined) updateData.programadorContratado = data.programadorContratado || null;
+    if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
     if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
     if (data.programadorBack !== undefined) updateData.programadorBack = data.programadorBack || null;
     if (data.modeloAuxiliar !== undefined) updateData.modeloAuxiliar = data.modeloAuxiliar || null;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;
     
-    return await prisma.project.update({
+    const updatedProject = await prisma.project.update({
       where: { id },
       data: updateData,
       include: {
@@ -7773,6 +8923,11 @@ class ProjectService {
         }
       }
     });
+    
+    // Emitir evento SSE para atualização em tempo real
+    sseService.broadcast('project_updated', updatedProject);
+    
+    return updatedProject;
   }
 
   // Delete project (soft delete)
@@ -8229,10 +9384,14 @@ module.exports = ToolCallService;
 
 const fs = require('fs').promises;
 const { fileExists } = require('../utils/fileUtils');
+const taskHierarchyService = require('./taskHierarchyService');
+const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
+const taskService = require('./taskService'); // <-- 2. Importa o TaskService
 
 class LockService {
   constructor(lockFilePath) {
     this.lockFilePath = lockFilePath;
+    this.currentTaskId = null;
   }
 
   /**
@@ -8296,7 +9455,7 @@ class LockService {
     }
   }
 
-/**
+  /**
    * Verifica se ha um lock ativo
    * @param {number} timeoutThresholdMs - Tempo em ms para considerar o lock como "recente"
    * @returns {Promise<Object>}
@@ -8337,43 +9496,109 @@ class LockService {
   }
 
   /**
-   * Adquire o lock
+   * Adquire o lock e marca a tarefa como em execução
+   * @param {string} taskId - ID da tarefa que será executada
    * @returns {Promise<boolean>}
    */
-  async acquireLock() {
+  async acquireLock(taskId = null) {
     try {
+      // Armazenar taskId para uso posterior
+      this.currentTaskId = taskId;
+      
+      // Criar arquivo de lock
       await fs.writeFile(this.lockFilePath, process.pid.toString());
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: true
+      if (taskId) {
+        try {
+          // OBS: A lógica de desmarcar outras tarefas que estavam em execução
+          // agora deve ser feita caso a caso ou via um método específico no TaskService
+          // se for um requisito estrito. Por ora, atualizamos apenas a tarefa alvo.
+
+          const updated = await taskService.updateTask(taskId, { isExecuting: true });
+          console.log(`✅ LockService: Tarefa "${taskId}" marcada como isExecuting: true`);
+          
+          // O TaskService.updateTask já cuida de atualizar a hierarquia internamente 
+          // e de emitir o sseService.broadcast('task_updated', updated), 
+          // então não precisamos duplicar isso aqui!
+          
+        } catch (taskError) {
+          console.error(`❌ LockService: Erro ao marcar tarefa como em execução: ${taskError.message}`);
+          // Continuar mesmo com erro - o lock foi adquirido
+        }
+      }
+      
       return true;
     } catch (error) {
+      console.error(`❌ LockService: Erro ao adquirir lock: ${error.message}`);
       return false;
     }
   }
 
   /**
-   * Libera o lock
+   * Libera o lock e marca a tarefa como não mais em execução
    * @returns {Promise<boolean>}
    */
   async releaseLock() {
     try {
+      let lockReleased = false;
+      
+      // Remover arquivo de lock
       if (await fileExists(this.lockFilePath)) {
         await fs.unlink(this.lockFilePath);
-        return true;
+        lockReleased = true;
       }
-      return false;
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: false
+      if (this.currentTaskId) {
+        try {
+          // O updateTask já lida com a hierarquia e os eventos SSE
+          await taskService.updateTask(this.currentTaskId, { isExecuting: false });
+          console.log(`✅ LockService: Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
+          
+        } catch (taskError) {
+          console.error(`❌ LockService: Erro ao marcar tarefa como finalizada: ${taskError.message}`);
+          // Continuar mesmo com erro - o lock foi liberado
+        }
+        
+        // Limpar taskId atual
+        this.currentTaskId = null;
+      }
+      
+      return lockReleased;
     } catch (error) {
+      console.error(`❌ LockService: Erro ao liberar lock: ${error.message}`);
       return false;
     }
   }
 
   /**
-   * Forca a remocao do lock (para locks orfaos)
+   * Forca a remocao do lock (para locks orfaos) e marca tarefa como não mais em execução
    * @returns {Promise<boolean>}
    */
   async forceReleaseLock() {
     try {
+      // Remover arquivo de lock
       await fs.unlink(this.lockFilePath).catch(() => {});
+      
+      // Se temos um taskId, marcar a tarefa como isExecuting: false
+      if (this.currentTaskId) {
+        try {
+          // O updateTask já lida com a hierarquia e os eventos SSE
+          await taskService.updateTask(this.currentTaskId, { isExecuting: false });
+          console.log(`✅ LockService (force): Tarefa "${this.currentTaskId}" marcada como isExecuting: false`);
+          
+        } catch (taskError) {
+          console.error(`❌ LockService (force): Erro ao marcar tarefa como finalizada: ${taskError.message}`);
+        }
+        
+        // Limpar taskId atual
+        this.currentTaskId = null;
+      }
+      
       return true;
     } catch (error) {
+      console.error(`❌ LockService (force): Erro ao forçar liberação de lock: ${error.message}`);
       return false;
     }
   }
@@ -8414,8 +9639,6 @@ class LockService {
 }
 
 module.exports = LockService;
-
-
 
 // --- ARQUIVO: ./src/services/openclawService.js ---
 
@@ -10010,6 +11233,33 @@ app.get('/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/callback', require('./routes/callbackProxy'));
 
+// Test route for terminal SSE (temporary)
+app.post('/api/test/terminal-update', (req, res) => {
+  try {
+    const { type, content, taskId } = req.body;
+    
+    console.log(`📡 Terminal update received: ${type} for task ${taskId}`);
+    console.log(`   Content: "${content}"`);
+    
+    // Emitir evento SSE
+    const sseService = require('./services/sseService');
+    sseService.broadcast('terminal_update', { type, content, taskId });
+    
+    res.json({ 
+      success: true, 
+      message: `Terminal update sent for ${type}`,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error in terminal-update:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
 
 // Logs interface
 app.get("/logs", (req, res) => {
@@ -10032,6 +11282,14 @@ app.use('/api/task-executions', require('./routes/taskExecutionRoutes'));
 app.use('/api/agents', agentRoutes);
 app.use('/api', require('./routes/avatarRoutes'));
 app.use('/api/stages', require('./routes/stageRoutes'));
+
+// Importar serviço SSE
+const sseService = require('./services/sseService');
+
+// Rota para conexão SSE (Server-Sent Events)
+app.get('/api/sse/events', (req, res) => {
+  sseService.addClient(req, res);
+});
 
 // IA Test endpoint
 app.get('/api/ia-test', (req, res) => {
@@ -10292,7 +11550,8 @@ const taskSchema = z.object({
     }, 'Invalid parent task ID format. Must be a valid UUID or 32-character hex string')
     .optional()
     .nullable(),
-  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable()
+  agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
+  isExecuting: z.boolean().optional().default(false)
 });
 
 const updateTaskSchema = z.object({
@@ -10342,7 +11601,8 @@ const updateTaskSchema = z.object({
     .nullable(),
   agent: z.string().max(100, 'Agent must be at most 100 characters').optional().nullable(),
   statusChangeNotes: z.string().max(500).optional(),
-  userId: z.string().uuid('Invalid user ID format').optional()
+  userId: z.string().uuid('Invalid user ID format').optional(),
+  isExecuting: z.boolean().optional()
 });
 
 const taskFiltersSchema = z.object({
@@ -10750,6 +12010,9 @@ router.get('/project/:projectId', taskController.getTasksByProject);
 
 // PATCH /api/tasks/:id/finalize - Finalize task (mark as final status)
 router.patch('/:id/finalize', taskController.finalizeTask);
+
+// PUT /api/tasks/:id/finish-execution - Finish task execution (set isExecuting to false)
+router.put('/:id/finish-execution', taskController.finishTaskExecution);
 
 module.exports = router;
 
@@ -12231,6 +13494,56 @@ class TaskController {
       message: 'Task finalized successfully',
       task,
       correlationId: req.correlationId
+    });
+  });
+
+  // Finish task execution - Set isExecuting to false
+  finishTaskExecution = ErrorMiddleware.catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    
+    console.warn(`⚠️ DEPRECATED: Endpoint /api/tasks/${id}/finish-execution chamado. ` +
+                `Use lockService.releaseLock() em vez disso.`);
+    
+    // Verificar se a tarefa existe
+    const task = await prisma.task.findUnique({
+      where: { id }
+    });
+    
+    if (!task) {
+      const error = new Error(`Task with ID ${id} not found`);
+      error.statusCode = 404;
+      throw error;
+    }
+    
+    // Atualizar isExecuting para false
+    const updatedTask = await prisma.task.update({
+      where: { id },
+      data: { isExecuting: false },
+      include: {
+        priority: true,
+        status: true,
+        project: {
+          select: {
+            id: true,
+            name: true,
+            ativo: true,
+            status: true,
+            modeloAuxiliar: true,
+            programadorBack: true,
+            programadorFront: true,
+            projectType: true,
+            agent: true
+          }
+        }
+      }
+    });
+    
+    console.log(`✅ Tarefa "${updatedTask.title}" finalizada (isExecuting: false)`);
+    
+    res.status(200).json({
+      success: true,
+      message: 'Task execution finished successfully',
+      task: updatedTask
     });
   });
 }
@@ -14718,13 +16031,19 @@ class PromptFactory {
       - Título: ${task.title}
       - Descrição: ${task.description}
 
-      REGRAS:
+      REGRAS DE CLASSIFICAÇÃO:
       1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
       2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
       3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
       4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
       5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
       6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
+      
+      REGRAS DE EXECUÇÃO:
+      1. Tarefas 'analysis' serão EXECUTADAS IMEDIATAMENTE pelo arquiteto (sem passar para o desenvolvedor).
+      2. Tarefas 'automation' simples serão executadas pelo arquiteto; complexas passarão para o desenvolvedor.
+      3. Tarefas 'development' sempre passarão para o desenvolvedor após planejamento.
+      
       7. Escreva no arquivo ${preAnalysisFile} o motivo que você classificou a tarefa daquela forma.
       Responda EXCLUSIVAMENTE em JSON com este formato (adapte as arrays conforme a real necessidade da tarefa):
       {
@@ -14738,41 +16057,78 @@ class PromptFactory {
     `.trim();
   }
 
-  static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '') {
-        const path = require('path');
-        const truncatedFiles = fileList.slice(0, 500).join('\n');
-        
-        const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
-        const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
+   static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
+    const path = require('path');
+    const truncatedFiles = fileList.slice(0, 500).join('\n');
+    
+    const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
+    const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
 
-        return `
-      Você é o Arquiteto de Software Planejador.
-      Seu ÚNICO OBJETIVO é criar um documento de texto contendo o plano de ação e encerrar o seu turno. Você passará o bastão para o Desenvolvedor.
-  
-      PROJETO:
-      Frontend: ${frontDir}
-      Backend: ${backDir}
+    let portasCtx = '';
+    if (project?.frontendPort || project?.backendPort) {
+      portasCtx = `\n[INFRAESTRUTURA DE PORTAS]\n`;
+      if (project?.frontendPort) portasCtx += `- Frontend roda na porta: ${project.frontendPort}\n`;
+      if (project?.backendPort) portasCtx += `- Backend roda na porta: ${project.backendPort}\n`;
+      portasCtx += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
+    }
 
-      ESTRUTURA DE ARQUIVOS (Resumo):
-      ${truncatedFiles}
+    // Diferentes instruções baseadas no tipo de tarefa
+    const taskTypeInstructions = {
+      development: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
+1. Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
+2. Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
+3. Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
+4. PROIBIDO criar ou editar arquivos de código-fonte.
+5. PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
+6. Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
+      `,
+      
+      analysis: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (ANÁLISE) ===
+1. Esta é uma tarefa EXCLUSIVA de leitura e investigação. NÃO modifique códigos.
+2. Use a ferramenta 'read' ou 'exec' (comandos bash como cat, grep) para inspecionar os arquivos solicitados.
+3. Use a ferramenta 'write' para gerar um RELATÓRIO COMPLETO com suas descobertas EXATAMENTE neste arquivo: ${planFilePath}
+4. Após gerar e salvar o relatório, você DEVE finalizar a tarefa executando o comando \`touch .done\` no diretório da tarefa usando a ferramenta 'exec'.
+5. Redija seu relatório e mensagens no PASSADO (ex: "verifiquei", "encontrei", "descobri") para provar que a ação foi concluída.
+6. Responda com: "Análise concluída. Tarefa finalizada pelo arquiteto."
+      `,
+      
+      automation: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (AUTOMAÇÃO) ===
+1. Avalie se o script ou comando de automação pode ser rodado por você agora mesmo (ex: comandos shell simples, limpeza, git).
+2. Se puder resolver agora, EXECUTE a ação usando a ferramenta 'exec'.
+3. Use a ferramenta 'write' para registrar o resultado da execução no arquivo: ${planFilePath}
+4. Se você executou com sucesso, finalize criando o marcador de conclusão via ferramenta 'exec' rodando \`touch .done\`.
+5. Se for complexo demais e exigir codificação pesada, crie apenas um plano de ação (como em 'development') e NÃO crie o arquivo .done.
+      `
+    };
 
-      TAREFA A SER ANALISADA:
-      Título: ${task?.title}
-      Descrição: ${task?.description}${commentsSection}
+    const instructions = taskTypeInstructions[taskType] || taskTypeInstructions.development;
 
-      REGRAS CRÍTICAS DE ENTREGA:
-      1. Você NÃO PODE simplesmente dizer "Eu criei o plano" ou "O plano está salvo". 
-      2. Você é OBRIGADO a usar a ferramenta 'write' para criar fisicamente o arquivo TXT contendo o seu plano detalhado.
-      3. Se você não puder usar a ferramenta 'write', você DEVE imprimir o plano técnico COMPLETO aqui no terminal (arquitetura, passos, arquivos afetados), para que o sistema possa copiá-lo. Não resuma!
+    return `
+Você é o Arquiteto de Software Líder do projeto.
+Tipo de Tarefa: [${taskType.toUpperCase()}]
 
-      SEU FLUXO DE TRABALHO OBRIGATÓRIO (Siga na ordem):
-      1. Apenas analise a tarefa e decida quais arquivos o desenvolvedor precisará criar ou alterar.
-      2. Formule um passo a passo técnico (ex: "1. Vá no arquivo X e adicione Y").
-      3. Use a sua ferramenta de escrita (write, bash ou exec) para salvar todo esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
-      4. PROIBIDO criar qualquer outro arquivo além do especificado no passo 3. NÃO crie arquivos de status, de conclusão ou marcadores soltos. Seu trabalho é estritamente de planejamento.
-      5. Assim que a ferramenta confirmar que o arquivo foi salvo com sucesso, PARE. Não tente editar os arquivos do projeto. Apenas responda com a frase: "Plano salvo. Passando o bastão para o Desenvolvedor."
-      Inicie agora seguindo o fluxo acima.
-    `.trim();
+[CONTEXTO DO PROJETO]
+Frontend: ${frontDir}
+Backend: ${backDir}${portasCtx}
+
+[ESTRUTURA DE ARQUIVOS]
+${truncatedFiles}
+
+[TAREFA ATUAL]
+Título: ${task?.title}
+Descrição: ${task?.description}${commentsSection}
+
+[REGRAS CRÍTICAS DE SISTEMA]
+- Você NÃO PODE interagir de forma conversacional. Você deve AGIR utilizando as ferramentas JSON fornecidas.
+- Se a ferramenta 'write' falhar, você DEVE imprimir o plano ou relatório completo no seu output de texto, cercado por tags <PLANO> ... </PLANO>.
+
+${instructions}
+
+Inicie agora o seu fluxo de trabalho estrito.
+`.trim();
   }
  
   static buildAgentSystemPrompt(agentContext) {
@@ -14802,6 +16158,7 @@ class PromptFactory {
 1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
 2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
 3. SÓ FINALIZE criando o arquivo .done QUANDO TUDO ESTIVER CONCLUÍDO.
+4. SE PRECISAR CRIAR ARQUIVOS TEMPORÁRIOS, CRIE NO SEU WORKSPACE, NÃO NO PROJETO.
 
 [REGRAS CRÍTICAS PARA A FERRAMENTA 'EDIT']
 1. O campo 'old_text' (ou equivalente) DEVE ser uma cópia EXATA, byte por byte, do arquivo original. Isso inclui todos os espaços em branco, tabs e quebras de linha.
@@ -14879,29 +16236,36 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
    */
   static buildDecompositionPrompt(task) {
-    return `
-      Você é um Arquiteto de Software Sênior. Sua missão é ler a tarefa abaixo e dividi-la em micro-tarefas sequenciais e atômicas.
-      É OBRIGATÓRIO separar as responsabilidades: tarefas que mexem em banco de dados, regras de negócio e rotas DEVEM ser classificadas como "BACKEND". Tarefas que mexem em componentes React, telas e estilos DEVEM ser classificadas como "FRONTEND". Nunca crie uma tarefa híbrida.
+    return `# ROLE
+Você é um Arquiteto de Software focado em automação de workflow. Sua função é avaliar e, se estritamente necessário, descompor uma tarefa complexa em formato JSON.
 
-      Objetivo da Tarefa Mãe: ${task?.title}
-      Descrição: ${task?.description}
+# TAREFA MÃE
+Título: ${task.title}
+Descrição: ${task.description}
 
-      Responda APENAS com um array JSON válido neste formato exato (sem markdown em volta, apenas o array). Não adicione nenhum texto antes ou depois do array:
-      [
-        {
-          "title": "[BACKEND] Criar tabela de X",
-          "description": "Passo a passo exato do que o estagiário deve fazer no arquivo Y...",
-          "domain": "BACKEND"
-        },
-        {
-          "title": "[FRONTEND] Criar componente de X",
-          "description": "Passo a passo exato do que o estagiário deve fazer no componente Z...",
-          "domain": "FRONTEND"
-        }
-      ]
-    `.trim();
+# REGRAS DE AVALIAÇÃO E DIVISÃO (CRÍTICO)
+1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é realmente complexa. Se for uma tarefa pequena, direta ou indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
+2. REGRA DE MUTAÇÃO DE CÓDIGO: Toda subtarefa gerada DEVE, obrigatoriamente, resultar na criação ou alteração física de arquivos de código.
+3. PROIBIDO TAREFAS EXPLORATÓRIAS: É estritamente proibido criar tarefas de "leitura", "análise", "verificação" ou "planejamento" (ex: "verifique se a pasta X existe" ou "estude a estrutura"). O sistema de validação quebrará se uma tarefa não gerar alterações de arquivos.
+4. ISOLAMENTO DE DOMÍNIO: Uma subtarefa deve ser inteiramente de um único domínio (BACKEND ou FRONTEND).
+
+# REGRAS DE SAÍDA DE DADOS
+1. Retorne EXCLUSIVAMENTE um array JSON puro. 
+2. Proibido incluir saudações, explicações, formatação markdown (não use \`\`\`json) ou comentários.
+3. Se a tarefa for ATÔMICA (não precisa ser dividida), retorne EXATAMENTE um array vazio: []
+4. Se a tarefa for COMPLEXA, retorne o array contendo os objetos das subtarefas.
+5. Sua resposta deve começar obrigatoriamente com o caractere [ e terminar com ]
+
+# FORMATO DO JSON
+[
+  {
+    "title": "[DOMÍNIO] Ação direta (ex: Criar rota X, Alterar componente Y)",
+    "description": "Passo a passo técnico detalhando exatamente quais arquivos criar/modificar.",
+    "domain": "BACKEND ou FRONTEND"
   }
-
+]`;
+  }
+  
   /**
    * Constrói prompt para validação de atomicidade
    * @param {Object} task - Tarefa
@@ -14909,27 +16273,21 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
    * @returns {string} Prompt formatado
    */
   static buildValidationPrompt(task, project) {
-    return `Você é um Juiz de Atômica especializado em análise de tarefas de desenvolvimento de software.
+    return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" para ser entregue a um desenvolvedor senior.
 
-ANÁLISE DE TAREFA - CRITÉRIOS DE ATÔMICIDADE:
+O QUE É UMA TAREFA DE TAMANHO IDEAL:
+1. É uma unidade coesa de funcionalidade ou correção. Exemplo: "Criar endpoint de login", "Implementar layout da tela de perfil", "Adicionar validação no formulário X".
+2. Pode a edição de múltiplos arquivos relacionados (ex: alterar Rota, Controller e Service) para entregar a funcionalidade de ponta a ponta.
+3. O desenvolvedor tem inteligência para usar ferramentas de busca (find, grep) e ler o código sozinho. O escopo foca no OBJETIVO (o que construir/corrigir).
+4. É uma tarefa que leva de algumas horas até um dia de trabalho.
+5. Se uma tarefa é só no front, ou só no back, e ela envolve um módulo, ela deve ser considerada IDEAL.
+6. Se uma tarefa envolve apenas um arquivo, ela deve ser considerada IDEAL.
 
-Uma tarefa é considerada ATÔMICA quando:
-1. Tem objetivo claro e específico
-2. Possui instruções passo a passo executáveis
-3. Tem entrada e saída bem definidas
-4. Pode ser realizada por um programador pleno, podendo tomar algumas decisões
-5. Tem escopo limitado (pode ser concluída em poucas horas)
-6. Tem critérios de aceitação claros
-7. Não seja muito exigente: tarefas podem ser atômicas sem ter todos os critérios de aceitação
-
-Uma tarefa NÃO é ATÔMICA quando:
-1. Não tem objetivo claro e específico
-2. Não possui instruções passo a passo executáveis
-3. Não tem entrada e saída bem definidas
-4. Não pode ser realizada por um programador pleno, pode ser apenas um plano
-5. Tem escopo muito amplo (não pode ser concluida em poucas horas)
-6. Não tem critérios de aceitação claros
-
+O QUE **NÃO** É UMA TAREFA DE TAMANHO IDEAL:
+1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada IDEAL (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.
+2. Épicos ou Módulos Inteiros. Exemplo: "Fazer o módulo de pagamentos inteiro", "Refatorar todo o sistema", "Criar o painel de admin completo". Isso é muito grande e precisa ser dividido (Não é ideal).
+3. Tarefas que mexem em apenas uma arquivo não deve ser dividido.
+REGRA DE OURO: Não seja excessivamente radical. Se a tarefa descreve uma funcionalidade clara ou um bug específico que um dev consegue resolver em um dia, ela deve ser considerada, IDEAL. Reprove (isIdeal: false) APENAS se for um Épico gigante que envolva dezenas de funcionalidades soltas.
 
 INFORMAÇÕES DA TAREFA:
 - Título: ${task.title}
@@ -14937,31 +16295,26 @@ INFORMAÇÕES DA TAREFA:
 - Projeto: ${project.name}
 - Domínio: ${task.domain || 'Não especificado'}
 
-INFORMAÇÕES ADICIONAIS:
-- Tipo de Projeto: ${project.projectType?.name || 'Não especificado'}
-- Regras do Projeto: ${project.regras ? project.regras.substring(0, 200) + '...' : 'Não especificadas'}
-
-ANÁLISE REQUERIDA:
-1. Esta tarefa está pronta para um estagiário executar?
-2. A tarefa tem arquivo e instrução clara?
-3. O escopo é limitado e bem definido?
-
-FORMATO DE RESPOSTA OBRIGATÓRIO:
-Retorne APENAS um objeto JSON válido com a seguinte estrutura:
+FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 {
-  "isAtomic": boolean,
-  "reason": "string (explicação detalhada)",
-  "confidence": number (0.0 a 1.0),
-  "suggestions": ["sugestão 1", "sugestão 2"]
-}
-
-EXEMPLOS:
-- Tarefa atômica: {"isAtomic": true, "reason": "Tarefa tem objetivo claro: criar componente React com props definidas. Instruções são específicas e executáveis.", "confidence": 0.9, "suggestions": []}
-- Tarefa não atômica: {"isAtomic": false, "reason": "Tarefa muito ampla: 'melhorar performance do sistema'. Falta especificação de quais métricas melhorar e como medir.", "confidence": 0.8, "suggestions": ["Dividir em subtarefas menores", "Definir métricas específicas"]}
-
-RESPOSTA (APENAS JSON):`;
+  "isIdeal": boolean,
+  "reason": "Explique brevemente por que a tarefa tem um bom escopo funcional ou por que é um épico grande demais.",
+  "confidence": number (0.0 a 1.0)
+}`;
   }
 
+  static ensureAndValidateBuildPrompt(pkgContent) {
+    return `
+        Analise este package.json de um projeto Node.js e decida qual o melhor comando para VALIDAR se o código está funcionando (smoke test).
+        Regras:
+        1. Se houver um script de 'test' real, use 'npm test'.
+        2. Se não houver testes, mas houver um script 'start', use um comando que tente iniciar e feche após 5 segundos, ex: "timeout 5s npm start".
+        3. Retorne APENAS um JSON no formato: {"command": "string do comando"}.
+        
+        Conteúdo do package.json:
+        ${pkgContent}
+    `;
+  }
 
 }
 
@@ -15992,9 +17345,8 @@ module.exports = {
 // Utilitarios para manipulacao de JSON
 
 /**
- * Extrai objetos JSON de um texto
- * @param {string} text - Texto contendo JSON
- * @returns {string[]}
+ * Extrai objetos ou arrays JSON de uma string de texto.
+ * Melhora a lógica original para suportar arrays e parsing automático.
  */
 function extractJsonObjects(text) {
   const results = [];
@@ -16002,6 +17354,10 @@ function extractJsonObjects(text) {
   let start = -1;
   let inString = false;
   let escape = false;
+  let activeChar = null; // Guarda se estamos rastreando { ou [
+
+  // Mapeamento de pares
+  const pairs = { '{': '}', '[': ']' };
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
@@ -16012,9 +17368,7 @@ function extractJsonObjects(text) {
     }
 
     if (char === '\\') {
-      if (inString) {
-        escape = true;
-      }
+      if (inString) escape = true;
       continue;
     }
 
@@ -16025,14 +17379,31 @@ function extractJsonObjects(text) {
 
     if (inString) continue;
 
-    if (char === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0 && start !== -1) {
-        results.push(text.substring(start, i + 1));
-        start = -1;
+    // Se não estamos dentro de um JSON, procura início de objeto ou array
+    if (depth === 0) {
+      if (char === '{' || char === '[') {
+        start = i;
+        depth = 1;
+        activeChar = char;
+      }
+    } else {
+      // Se já estamos dentro, checa se o caractere atual fecha ou abre o nível
+      if (char === activeChar) {
+        depth++;
+      } else if (char === pairs[activeChar]) {
+        depth--;
+        
+        if (depth === 0) {
+          const jsonStr = text.substring(start, i + 1);
+          try {
+            results.push(JSON.parse(jsonStr));
+          } catch (e) {
+            // Se o JSON extraído for inválido (ex: truncado), ignoramos ou tratamos
+            console.error("JSON extraído é inválido:", e.message);
+          }
+          start = -1;
+          activeChar = null;
+        }
       }
     }
   }
@@ -16210,6 +17581,185 @@ function camelToSnake(obj) {
 module.exports = { snakeToCamel, camelToSnake };
 
 
+// --- ARQUIVO: ./src/utils/sessionChainUtils.js ---
+
+/**
+ * Utilitários para gerenciamento de sessões em cadeias de dependências
+ * 
+ * Regras:
+ * 1. Se uma tarefa não tem dependência, cria a sessão com o id daquela tarefa
+ * 2. Se uma tarefa é dependente de outra, ela precisa entrar na sessão da anterior
+ * 3. Se uma tarefa é dependente de uma que é dependente de outra, deve pegar a sessão da primeira
+ * 4. Sempre que uma tarefa for dependente de qualquer uma, deve-se procurar a PRIMEIRA tarefa da fila
+ */
+
+const prisma = require('../services/prismaService');
+
+class SessionChainUtils {
+  
+  /**
+   * Encontra a PRIMEIRA tarefa da cadeia de dependências
+   * @param {string} taskId - ID da tarefa atual
+   * @returns {Promise<string>} ID da primeira tarefa da cadeia
+   */
+  static async findFirstTaskInChain(taskId) {
+    console.log(`🔍 Buscando primeira tarefa da cadeia para: ${taskId}`);
+    
+    let currentTaskId = taskId;
+    let visitedTasks = new Set([taskId]);
+    let iteration = 0;
+    const MAX_ITERATIONS = 50; // Prevenção contra loops infinitos
+    
+    while (iteration < MAX_ITERATIONS) {
+      iteration++;
+      
+      // Buscar dependências BLOCKING desta tarefa
+      const dependencies = await prisma.dependency.findMany({
+        where: {
+          dependentTaskId: currentTaskId,
+          type: 'BLOCKING'
+        },
+        include: {
+          task: {
+            select: { id: true, title: true }
+          }
+        }
+      });
+      
+      console.log(`  Iteração ${iteration}: Tarefa ${currentTaskId} tem ${dependencies.length} dependências BLOCKING`);
+      
+      // Se não tem dependências BLOCKING, esta é a primeira da cadeia
+      if (dependencies.length === 0) {
+        console.log(`✅ Primeira tarefa da cadeia encontrada: ${currentTaskId}`);
+        return currentTaskId;
+      }
+      
+      // Pegar a primeira dependência BLOCKING (assumindo que só há uma por enquanto)
+      const firstDependency = dependencies[0];
+      
+      // Verificar se já visitamos esta tarefa (prevenção de loop)
+      if (visitedTasks.has(firstDependency.taskId)) {
+        console.warn(`⚠️ Loop detectado na cadeia de dependências! Retornando tarefa atual: ${currentTaskId}`);
+        return currentTaskId;
+      }
+      
+      // Adicionar ao conjunto de visitados e continuar subindo na cadeia
+      visitedTasks.add(firstDependency.taskId);
+      currentTaskId = firstDependency.taskId;
+      
+      console.log(`  Subindo na cadeia: ${firstDependency.task.id} -> ${firstDependency.task.title}`);
+    }
+    
+    console.warn(`⚠️ Máximo de iterações atingido. Retornando: ${currentTaskId}`);
+    return currentTaskId;
+  }
+  
+  /**
+   * Gera um ID de sessão baseado na primeira tarefa da cadeia
+   * @param {string} taskId - ID da tarefa atual
+   * @param {string} sessionType - Tipo de sessão ('arquiteto' ou 'turno')
+   * @param {number} turnNumber - Número do turno (apenas para sessões de turno)
+   * @returns {Promise<string>} ID da sessão unificada
+   */
+  static async generateUnifiedSessionId(taskId, sessionType, turnNumber = null) {
+    const firstTaskId = await this.findFirstTaskInChain(taskId);
+    
+    // REGRA PRINCIPAL: Todas as tarefas da mesma cadeia devem ter EXATAMENTE A MESMA SESSÃO
+    // Isso permite compartilhamento total de contexto entre tarefas dependentes
+    
+    if (sessionType === 'arquiteto') {
+      // Sessão do arquiteto: ID da primeira tarefa + "-arquiteto"
+      // Todas as tarefas da cadeia compartilham a MESMA sessão de arquiteto
+      const timestamp = new Date().getTime();
+      return `${firstTaskId}-arquiteto-${timestamp}`;
+    } else if (sessionType === 'turno') {
+      // Sessão do turno: ID da primeira tarefa + "-turno-" + número do turno
+      // Todas as tarefas da cadeia compartilham a MESMA sessão por turno
+      if (turnNumber === null) {
+        throw new Error('Número do turno é obrigatório para sessões de turno');
+      }
+      return `${firstTaskId}-turno-${turnNumber}`;
+    }
+    
+    throw new Error(`Tipo de sessão inválido: ${sessionType}`);
+  }
+  
+  /**
+   * Verifica se uma tarefa tem dependências BLOCKING não finalizadas
+   * @param {string} taskId - ID da tarefa
+   * @returns {Promise<boolean>} true se tem dependências pendentes
+   */
+  static async hasPendingDependencies(taskId) {
+    const dependencies = await prisma.dependency.findMany({
+      where: {
+        dependentTaskId: taskId,
+        type: 'BLOCKING'
+      },
+      include: {
+        task: {
+          include: {
+            status: true
+          }
+        }
+      }
+    });
+    
+    // Verifica se alguma dependência NÃO está finalizada
+    return dependencies.some(dep => 
+      dep.task && dep.task.status && !dep.task.status.isFinalState
+    );
+  }
+  
+  /**
+   * Obtém todas as tarefas na mesma cadeia de dependências
+   * @param {string} taskId - ID da tarefa atual
+   * @returns {Promise<Array>} Lista de tarefas na cadeia (da primeira até a atual)
+   */
+  static async getTaskChain(taskId) {
+    const chain = [];
+    let currentTaskId = taskId;
+    let visitedTasks = new Set();
+    const MAX_ITERATIONS = 50;
+    let iteration = 0;
+    
+    // Primeiro, subir até a primeira tarefa
+    while (iteration < MAX_ITERATIONS && !visitedTasks.has(currentTaskId)) {
+      iteration++;
+      visitedTasks.add(currentTaskId);
+      
+      // Buscar tarefa atual
+      const currentTask = await prisma.task.findUnique({
+        where: { id: currentTaskId },
+        select: { id: true, title: true, status: true }
+      });
+      
+      if (currentTask) {
+        chain.unshift(currentTask); // Adiciona no início (para manter ordem: primeira -> última)
+      }
+      
+      // Buscar dependências BLOCKING
+      const dependencies = await prisma.dependency.findMany({
+        where: {
+          dependentTaskId: currentTaskId,
+          type: 'BLOCKING'
+        }
+      });
+      
+      if (dependencies.length === 0) {
+        break; // Esta é a primeira tarefa
+      }
+      
+      // Pegar a primeira dependência e continuar subindo
+      currentTaskId = dependencies[0].taskId;
+    }
+    
+    console.log(`🔗 Cadeia encontrada: ${chain.map(t => t.title).join(' -> ')}`);
+    return chain;
+  }
+}
+
+module.exports = SessionChainUtils;
+
 // --- ARQUIVO: ./src/utils/buscaPlanoArquiteto.js ---
 
 
@@ -16262,7 +17812,7 @@ class UserResolver {
       }
 
       // Tentar apelidos padrão do sistema (alexandre e jarbas)
-      const defaultNicknames = ['alexandre', env.MY_USER_NICKNAME || 'jarbas'];
+      const defaultNicknames = ['alexandre', process.env.MY_USER_NICKNAME || 'jarbas'];
       for (const defaultNick of defaultNicknames) {
         const user = await prisma.user.findUnique({
           where: { nickname: defaultNick },

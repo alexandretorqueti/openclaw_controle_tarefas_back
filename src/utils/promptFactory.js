@@ -172,6 +172,7 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
       1. O arquiteto JÁ EXECUTOU a tarefa? (implementou código, alterou arquivos)
       2. O arquiteto apenas GEROU UM PLANO? (descreveu passos, mas não executou)
       3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
+      4. O arquiteto AFIRMA QUE A TAREFA JÁ FOI EXECUTADA ANTERIORMENTE? (resposta com "hadExecuted": true)
 
       CONTEXTO:
       - Tarefa: ${task.title}
@@ -194,7 +195,8 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
         "confidence": 0-100,
         "executionDetails": "Descrição do que foi executado, se aplicável",
         "planDetails": "Descrição do plano gerado, se aplicável",
-        "analysisFailed": true/false
+        "analysisFailed": true/false,
+        "hadExecuted": true/false // A tarefa já estava pronta?
       }
 
       CRITÉRIOS CLAROS E EXCLUSIVOS:
@@ -230,15 +232,17 @@ Título: ${task.title}
 Descrição: ${task.description}
 
 # REGRAS DE AVALIAÇÃO E DIVISÃO (CRÍTICO)
-1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é realmente complexa. Se for uma tarefa pequena, direta ou indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
+1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é muito complexa. Se for uma tarefa razoavelmente simples, direta ou até indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
 2. REGRA DE MUTAÇÃO DE CÓDIGO: Toda subtarefa gerada DEVE, obrigatoriamente, resultar na criação ou alteração física de arquivos de código.
 3. PROIBIDO TAREFAS EXPLORATÓRIAS: É estritamente proibido criar tarefas de "leitura", "análise", "verificação" ou "planejamento" (ex: "verifique se a pasta X existe" ou "estude a estrutura"). O sistema de validação quebrará se uma tarefa não gerar alterações de arquivos.
 4. ISOLAMENTO DE DOMÍNIO: Uma subtarefa deve ser inteiramente de um único domínio (BACKEND ou FRONTEND).
+5. NUNCA DIVIDA A TAREFA EM APENAS 1 TAREFA. SE FOR FAZER ISSO, NÃO DIVIDA.
+6. EVITE DIVIDIR A TAREFA SE PUDER.
 
 # REGRAS DE SAÍDA DE DADOS
 1. Retorne EXCLUSIVAMENTE um array JSON puro. 
 2. Proibido incluir saudações, explicações, formatação markdown (não use \`\`\`json) ou comentários.
-3. Se a tarefa for ATÔMICA (não precisa ser dividida), retorne EXATAMENTE um array vazio: []
+3. Se a tarefa for IDEAL (não precisa ser dividida), retorne EXATAMENTE um array vazio: []
 4. Se a tarefa for COMPLEXA, retorne o array contendo os objetos das subtarefas.
 5. Sua resposta deve começar obrigatoriamente com o caractere [ e terminar com ]
 
