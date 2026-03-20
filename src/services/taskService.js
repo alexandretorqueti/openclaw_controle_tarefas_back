@@ -691,6 +691,16 @@ class TaskService {
 
     const results = await prisma.$transaction(transaction);
     
+    // IMPORTANTE: Atualizar o estado isChildExecuting dos ancestrais, já que as tarefas terminaram a execução
+    try {
+      await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, false);
+      for (const ancestor of ancestorsFinalized) {
+        await taskHierarchyService.updateHierarchyOnExecutionChange(ancestor.id, false);
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar hierarquia no finalizeTask:', err.message);
+    }
+    
     // Broadcast SSE event AFTER transaction is complete
     sseService.broadcast('task_updated', results[0]);
     
@@ -707,14 +717,19 @@ class TaskService {
     console.log(`🚀 Iniciando execução exclusiva da tarefa ${taskId}...`);
 
     // 1. O GATILHO GLOBAL: Desliga todas as outras tarefas ativas no banco.
-    // Fazemos isso direto no Prisma porque é uma operação em lote rápida.
-    await prisma.task.updateMany({
+    // Buscamos as tarefas ativas e chamamos stopTaskExecution para garantir
+    // que a hierarquia seja atualizada e os eventos SSE sejam disparados.
+    const activeTasks = await prisma.task.findMany({
       where: { 
         isExecuting: true,
         id: { not: taskId } // Garante que não vamos desligar a própria tarefa à toa
       },
-      data: { isExecuting: false }
+      select: { id: true }
     });
+    
+    for (const activeTask of activeTasks) {
+      await this.stopTaskExecution(activeTask.id);
+    }
 
     // 2. REUSO INTELIGENTE: Delega para o seu método principal.
     // A updateTask vai alterar para true, atualizar a hierarquia e disparar o SSE!
@@ -733,6 +748,15 @@ class TaskService {
 
   // Delete task
   async deleteTask(id) {
+    const taskToDelete = await prisma.task.findUnique({ where: { id } });
+    if (taskToDelete && taskToDelete.isExecuting) {
+      try {
+        await taskHierarchyService.updateHierarchyOnExecutionChange(id, false);
+      } catch (err) {
+        console.error('Erro ao atualizar hierarquia antes de deletar:', err.message);
+      }
+    }
+    
     // First delete dependencies, comments, attachments, history
     await prisma.$transaction([
       prisma.dependency.deleteMany({
@@ -1316,8 +1340,25 @@ class TaskService {
         // Não falhar a operação principal por causa da notificação
       }
 
-      // Broadcast SSE event AFTER transaction is complete
-      sseService.broadcast('task_updated', updatedTask);
+      // IMPORTANTE: Atualizar o estado isChildExecuting dos ancestrais, já que as tarefas terminaram a execução
+    try {
+      await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, false);
+      for (const ancestor of ancestorsFinalized) {
+        await taskHierarchyService.updateHierarchyOnExecutionChange(ancestor.id, false);
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar hierarquia no finalizeTask:', err.message);
+    }
+    
+    // Broadcast SSE event AFTER transaction is complete
+    sseService.broadcast('task_updated', updatedTask);
+    
+    // IMPORTANTE: Emitir SSE para todos os ancestrais que também foram atualizados/finalizados!
+    if (typeof ancestorsFinalized !== 'undefined' && Array.isArray(ancestorsFinalized)) {
+      for (const ancestor of ancestorsFinalized) {
+        sseService.broadcast('task_updated', ancestor);
+      }
+    }
     
       return {
         task: updatedTask,
@@ -1343,7 +1384,7 @@ class TaskService {
         where: { id: taskId },
         data: {
           statusId: finalStatus.id,
-          isCompleted: false, // Marca como finalizada de fato
+          isCompleted: false, // IA nunca completa a tarefa de fato, apenas o usuário
           isExecuting: false, // IMPORTANTE: Marca como não executando
           lastExecutedAt: new Date(),
           nextExecutionAt: null
@@ -1396,8 +1437,7 @@ class TaskService {
         });
 
         // Verificar se TODAS as subtasks estão no status final
-        const allSubtasksFinalized = allSubtasks.every(subtask => 
-          subtask.status && subtask.status.isFinalState
+        const allSubtasksFinalized = allSubtasks.every(subtask => subtask.id === taskId || (subtask.status && subtask.status.isFinalState)
         );
 
         console.log(`📊 Verificando pai ${parentId}: ${allSubtasks.length} subtasks, todas finalizadas? ${allSubtasksFinalized}`);
@@ -1578,8 +1618,25 @@ class TaskService {
       console.error(`❌ Erro ao enviar notificação no Telegram: ${notificationError.message}`);
       // Não falhar a operação principal por causa da notificação
     }
+    // IMPORTANTE: Atualizar o estado isChildExecuting dos ancestrais, já que as tarefas terminaram a execução
+    try {
+      await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, false);
+      for (const ancestor of ancestorsFinalized) {
+        await taskHierarchyService.updateHierarchyOnExecutionChange(ancestor.id, false);
+      }
+    } catch (err) {
+      console.error('Erro ao atualizar hierarquia no finalizeTask:', err.message);
+    }
+    
     // Broadcast SSE event AFTER transaction is complete
     sseService.broadcast('task_updated', updatedTask);
+    
+    // IMPORTANTE: Emitir SSE para todos os ancestrais que também foram atualizados/finalizados!
+    if (typeof ancestorsFinalized !== 'undefined' && Array.isArray(ancestorsFinalized)) {
+      for (const ancestor of ancestorsFinalized) {
+        sseService.broadcast('task_updated', ancestor);
+      }
+    }
     
     return {
       task: updatedTask,
