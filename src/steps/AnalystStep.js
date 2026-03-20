@@ -1,34 +1,27 @@
 // src/steps/AnalystStep.js
 /**
  * Step responsável por analisar e decompor tarefas complexas usando OpenClaw.
- * Implementa o padrão Pipeline Step com injeção completa de dependências para testabilidade.
+ * Implementa o padrão Pipeline Step com injeção via container para testabilidade.
  */
+
+const container = require('@/bootstrap');
 
 class AnalystStep {
   /**
-   * @param {Object} dependencies - Dependências injetadas
-   * @param {Object} dependencies.openClawService - Serviço OpenClaw
-   * @param {Object} dependencies.promptFactory - Factory de prompts
-   * @param {Object} dependencies.sessionChainUtils - Utilitário de sessões
-   * @param {Object} dependencies.jsonUtils - Utilitário JSON
-   * @param {Object} dependencies.taskService - Serviço de tarefas
-   * @param {Object} dependencies.decompositionService - Serviço de decomposição
-   * @param {Object} dependencies.commentService - Serviço de comentários
-   * @param {Function} dependencies.log - Função de logging
-   * @param {Object} dependencies.config - Configurações { TASKS_DIR, TASK_TIMEOUT_MS }
-   * @param {Object} dependencies.fileSystem - Sistema de arquivos (fs.promises compatível)
+   * Construtor que obtém todas as dependências do container.
+   * Para testes, o container deve ser previamente configurado com mocks.
    */
-  constructor(dependencies) {
-    this.openClawService = dependencies.openClawService;
-    this.promptFactory = dependencies.promptFactory;
-    this.sessionChainUtils = dependencies.sessionChainUtils;
-    this.jsonUtils = dependencies.jsonUtils;
-    this.taskService = dependencies.taskService;
-    this.decompositionService = dependencies.decompositionService;
-    this.commentService = dependencies.commentService;
-    this.log = dependencies.log;
-    this.config = dependencies.config;
-    this.fileSystem = dependencies.fileSystem;
+  constructor() {
+    this.openClawService = container.resolve('openClawService');
+    this.promptFactory = container.resolve('promptFactory');
+    this.sessionChainUtils = container.resolve('sessionChainUtils');
+    this.jsonUtils = container.resolve('jsonUtils');
+    this.taskService = container.resolve('taskService');
+    this.decompositionService = container.resolve('decompositionService');
+    this.commentService = container.resolve('commentService');
+    this.log = container.resolve('log');
+    this.config = container.resolve('config');
+    this.fileSystem = container.resolve('fileSystem');
     
     // Dependências built-in (não injetadas por padrão, mas podem ser mockadas)
     this.path = require('path');

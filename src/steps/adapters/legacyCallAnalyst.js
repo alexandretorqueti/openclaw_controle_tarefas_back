@@ -1,55 +1,22 @@
 // src/steps/adapters/legacyCallAnalyst.js
 /**
  * Adaptador para manter compatibilidade com a função callAnalyst original.
- * Cria uma função com a mesma assinatura usando o AnalystStep com injeção de dependências.
+ * Usa o container para obter todas as dependências.
  */
 
-const path = require('path');
-const fs = require('fs').promises;
+const container = require('@/bootstrap');
 
 /**
- * Factory que cria a função callAnalyst compatível
- * @param {Object} services - Serviços injetados
- * @param {Object} services.openClawService 
- * @param {Object} services.promptFactory
- * @param {Object} services.sessionChainUtils
- * @param {Object} services.jsonUtils
- * @param {Object} services.taskService
- * @param {Object} services.decompositionService
- * @param {Object} services.commentService
- * @param {Function} services.log - Função de logging
- * @param {Object} config - Configurações { TASKS_DIR, TASK_TIMEOUT_TS }
+ * Cria a função callAnalyst compatível usando o container
  * @param {string} userId - ID do usuário para comentários
  * @returns {Function} Função callAnalyst(task)
  */
-function createLegacyCallAnalyst(services, config, userId) {
-  const {
-    openClawService,
-    promptFactory,
-    sessionChainUtils,
-    jsonUtils,
-    taskService,
-    decompositionService,
-    commentService,
-    log
-  } = services;
-  
+function createLegacyCallAnalyst(userId) {
   // Importar AnalystStep (evita circular dependency)
   const AnalystStep = require('../AnalystStep');
   
-  // Criar instância do step com todas as dependências
-  const analystStep = new AnalystStep({
-    openClawService,
-    promptFactory,
-    sessionChainUtils,
-    jsonUtils,
-    taskService,
-    decompositionService,
-    commentService,
-    log,
-    config,
-    fileSystem: fs  // Usar fs.promises real
-  });
+  // Criar instância do step (o construtor já obtém tudo do container)
+  const analystStep = new AnalystStep();
   
   /**
    * Função compatível com a callAnalyst original
@@ -78,6 +45,7 @@ function createLegacyCallAnalyst(services, config, userId) {
         };
       }
     } catch (error) {
+      const log = container.resolve('log');
       log(`💥 Erro não tratado em callAnalyst: ${error.message}`);
       return {
         success: false,

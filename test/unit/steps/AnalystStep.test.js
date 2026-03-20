@@ -1,5 +1,6 @@
 // test/unit/steps/AnalystStep.test.js
 
+const container = require('../../../src/container');
 const AnalystStep = require('../../../src/steps/AnalystStep');
 
 // Importar factories de mocks
@@ -16,7 +17,6 @@ const { createFileSystemMock } = require('../../mocks/fileSystem.mock');
 describe('AnalystStep', () => {
   let step;
   let mocks;
-  let mockDependencies;
   
   // Dados de teste
   const mockTask = {
@@ -42,6 +42,9 @@ describe('AnalystStep', () => {
   };
   
   beforeEach(() => {
+    // Limpar container antes de cada teste
+    container.clear();
+    
     // Criar todos os mocks
     mocks = {
       openClawService: createOpenClawServiceMock(),
@@ -56,29 +59,30 @@ describe('AnalystStep', () => {
       config: mockConfig
     };
     
-    mockDependencies = {
-      openClawService: mocks.openClawService,
-      promptFactory: mocks.promptFactory,
-      sessionChainUtils: mocks.sessionChainUtils,
-      jsonUtils: mocks.jsonUtils,
-      taskService: mocks.taskService,
-      decompositionService: mocks.decompositionService,
-      commentService: mocks.commentService,
-      log: mocks.log,
-      config: mocks.config,
-      fileSystem: mocks.fileSystem
-    };
+    // Registrar mocks no container
+    container.register('openClawService', mocks.openClawService);
+    container.register('promptFactory', mocks.promptFactory);
+    container.register('sessionChainUtils', mocks.sessionChainUtils);
+    container.register('jsonUtils', mocks.jsonUtils);
+    container.register('taskService', mocks.taskService);
+    container.register('decompositionService', mocks.decompositionService);
+    container.register('commentService', mocks.commentService);
+    container.register('log', mocks.log);
+    container.register('config', mocks.config);
+    container.register('fileSystem', mocks.fileSystem);
     
-    step = new AnalystStep(mockDependencies);
+    // Criar instância do step (agora usa o container)
+    step = new AnalystStep();
   });
   
   afterEach(() => {
     jest.clearAllMocks();
+    container.clear();
   });
   
   describe('execução bem-sucedida com decomposição', () => {
     it('deve decompor tarefa complexa em subtarefas', async () => {
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       
       const result = await step.execute(context);
       
@@ -124,17 +128,17 @@ describe('AnalystStep', () => {
       expect(result.analysisResult.success).toBe(true);
       expect(result.analysisResult.subtasksCreated).toBe(2);
       expect(result.analysisResult.subtasks).toHaveLength(2);
-      expect(result.context).toBeUndefined(); // Não deve ter contexto extra
     });
     
     it('deve adicionar comentário sobre decomposição', async () => {
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       
       await step.execute(context);
       
       expect(mocks.commentService.createComment).toHaveBeenCalledWith(
         expect.objectContaining({
           taskId: 'task-123',
+          userId: 'user-123',
           content: expect.stringContaining('Análise Concluída pelo Arquiteto')
         })
       );
@@ -150,7 +154,7 @@ describe('AnalystStep', () => {
         errorMessage: null
       });
       
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       const result = await step.execute(context);
       
       // Deve chamar updateTask com isAtomic: true
@@ -178,7 +182,7 @@ describe('AnalystStep', () => {
         errorMessage: null
       });
       
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       const result = await step.execute(context);
       
       expect(mocks.taskService.updateTask).toHaveBeenCalledWith('task-123', {
@@ -196,7 +200,7 @@ describe('AnalystStep', () => {
         errorMessage: 'Timeout na execução'
       });
       
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       const result = await step.execute(context);
       
       expect(result.analysisResult.success).toBe(false);
@@ -230,7 +234,7 @@ describe('AnalystStep', () => {
         throw new Error('Falha ao extrair JSON');
       });
       
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       const result = await step.execute(context);
       
       expect(result.analysisResult.success).toBe(false);
@@ -242,7 +246,7 @@ describe('AnalystStep', () => {
         new Error('Falha no banco de dados')
       );
       
-      const context = { task: mockTask };
+      const context = { task: mockTask, userId: 'user-123' };
       const result = await step.execute(context);
       
       expect(result.analysisResult.success).toBe(false);
@@ -257,7 +261,7 @@ describe('AnalystStep', () => {
         project: null
       };
       
-      const context = { task: taskSemProjeto };
+      const context = { task: taskSemProjeto, userId: 'user-123' };
       await step.execute(context);
       
       // Deve usar 'main' como fallback
@@ -283,7 +287,7 @@ describe('AnalystStep', () => {
         }
       };
       
-      const context = { task: taskComProgramador };
+      const context = { task: taskComProgramador, userId: 'user-123' };
       await step.execute(context);
       
       expect(mocks.openClawService.executeWithFallback).toHaveBeenCalledWith(

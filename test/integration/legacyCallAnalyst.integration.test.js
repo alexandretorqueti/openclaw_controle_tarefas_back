@@ -1,9 +1,10 @@
 // test/integration/legacyCallAnalyst.integration.test.js
 /**
  * Teste de integração que demonstra a compatibilidade do novo AnalystStep
- * com a função callAnalyst original.
+ * com a função callAnalyst original usando container.
  */
 
+const container = require('../../src/container');
 const { createLegacyCallAnalyst } = require('../../src/steps/adapters/legacyCallAnalyst');
 
 // Mocks (usando factories já criadas)
@@ -15,6 +16,7 @@ const { createTaskServiceMock } = require('../mocks/taskService.mock');
 const { createDecompositionServiceMock } = require('../mocks/decompositionService.mock');
 const { createCommentServiceMock } = require('../mocks/commentService.mock');
 const { createLoggerMock } = require('../mocks/logger.mock');
+const { createFileSystemMock } = require('../mocks/fileSystem.mock');
 
 describe('Integração: legacyCallAnalyst', () => {
   let callAnalyst;
@@ -40,6 +42,9 @@ describe('Integração: legacyCallAnalyst', () => {
   };
   
   beforeEach(() => {
+    // Limpar container
+    container.clear();
+    
     // Criar mocks
     mocks = {
       openClawService: createOpenClawServiceMock(),
@@ -49,7 +54,8 @@ describe('Integração: legacyCallAnalyst', () => {
       taskService: createTaskServiceMock(),
       decompositionService: createDecompositionServiceMock(),
       commentService: createCommentServiceMock(),
-      log: createLoggerMock()
+      log: createLoggerMock(),
+      fileSystem: createFileSystemMock()
     };
     
     mockConfig = {
@@ -77,12 +83,25 @@ describe('Integração: legacyCallAnalyst', () => {
       errorMessage: null
     });
     
-    // Criar função callAnalyst usando o adapter
-    callAnalyst = createLegacyCallAnalyst(mocks, mockConfig, mockUserId);
+    // Registrar mocks no container
+    container.register('openClawService', mocks.openClawService);
+    container.register('promptFactory', mocks.promptFactory);
+    container.register('sessionChainUtils', mocks.sessionChainUtils);
+    container.register('jsonUtils', mocks.jsonUtils);
+    container.register('taskService', mocks.taskService);
+    container.register('decompositionService', mocks.decompositionService);
+    container.register('commentService', mocks.commentService);
+    container.register('log', mocks.log);
+    container.register('config', mockConfig);
+    container.register('fileSystem', mocks.fileSystem);
+    
+    // Criar função callAnalyst usando o adapter (agora só precisa do userId)
+    callAnalyst = createLegacyCallAnalyst(mockUserId);
   });
   
   afterEach(() => {
     jest.clearAllMocks();
+    container.clear();
   });
   
   it('deve retornar formato compatível com sucesso', async () => {

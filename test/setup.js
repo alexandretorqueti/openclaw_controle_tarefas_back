@@ -14,7 +14,11 @@ global.console = {
   error: jest.fn()
 };
 
-// Limpar todos os mocks após cada teste
+// Importar container para limpar após cada teste
+const container = require('../src/container');
+
+// Limpar todos os mocks e container após cada teste
 afterEach(() => {
   jest.clearAllMocks();
+  container.clear();
 });
