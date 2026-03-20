@@ -14,9 +14,15 @@ const JsonUtils = require('./utils/jsonUtils');
 const TaskService = require('./services/taskService');
 const DecompositionService = require('./services/decompositionService');
 const CommentService = require('./services/commentService');
+const LockService = require('./services/lockService');
+const MonitorStateService = require('./services/monitorStateService');
+const TaskFileService = require('./services/taskFileService');
+const FileUtils = require('./utils/fileUtils');
 const { log } = require('../aux/logger'); // caminho relativo ao bootstrap
 const config = require('../aux/config');
 const fs = require('fs').promises;
+const axios = require('axios');
+const path = require('path');
 
 // Registra as dependências
 container.register('openClawService', OpenClawService);
@@ -29,5 +35,14 @@ container.register('commentService', CommentService);
 container.register('log', log);
 container.register('config', config);
 container.register('fileSystem', fs);
+container.register('axios', axios);
+container.register('path', path);
+container.register('fileUtils', FileUtils);
+
+// Serviços que precisam ser instanciados com configuração
+// Registramos as classes para que possam ser instanciadas quando necessário
+container.register('LockServiceClass', LockService);
+container.register('MonitorStateServiceClass', MonitorStateService);
+container.register('TaskFileServiceClass', TaskFileService);
 
 module.exports = container;
