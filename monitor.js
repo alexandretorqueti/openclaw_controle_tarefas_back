@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Inicializa o container de injeção de dependências
+require('./src/bootstrap');
+
 // monitor.js (Arquitetura Modularizada)
 // Orquestrador de tarefas refatorado com servicos especializados
 const  { log } = require('./aux/logger');
@@ -26,29 +29,8 @@ let UserIdJarbas = null;
  * @returns {Promise<Object|null>} Tarefa ou null se não houver
  */
 async function getNextEligibleTask(nickname) {
-  // Importando a configuração localmente caso não esteja no topo do arquivo
-  const { API_URL } = require('./aux/config'); 
-
-  try {
-    
-    const response = await axios.get(`${API_URL}/api/users/nickname/${nickname}/next-task`);
-
-    // Se a API retornar uma tarefa válida, nós a devolvemos
-    if (response.data && response.data?.task.id) {
-      return response.data.task;
-    }
-
-    return null;
-  } catch (error) {
-    // Se a API retornar 404 (Not Found) ou 204 (No Content), significa que a fila está vazia.
-    // Isso é um comportamento esperado, então não precisamos logar como um erro crítico.
-    if (error.response && (error.response.status === 404 || error.response.status === 204)) {
-      return null;
-    }
-
-    // await log(`❌ Erro ao buscar tarefa elegível na API: ${error.message}`);
-    return null;
-  }
+  const { getNextTask } = require('./src/steps/adapters/legacyGetNextTask');
+  return await getNextTask(nickname, require('./aux/config').API_URL);
 }
 
 /**
@@ -57,92 +39,8 @@ async function getNextEligibleTask(nickname) {
  * @returns {Promise<Object>} Resultado da decomposição
  */
 async function callAnalyst(task) {
-  const OpenClawService = require('./src/services/openclawService');
-  const PromptFactory = require('./src/utils/promptFactory'); // <-- Importando sua Factory
-  const path = require('path');
-  const fs = require('fs').promises;
-  const { TASKS_DIR, TASK_TIMEOUT_MS } = require('./aux/config');
-
-  try {
-    await log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
-
-    // Importar utilitário de sessões em cadeia
-    const SessionChainUtils = require('./src/utils/sessionChainUtils');
-    
-    // Usar sessão unificada baseada na cadeia de dependências
-    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
-    
-    await log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
-    const architectLogFile = path.join(TASKS_DIR, `architect-${task.id}.log`);
-
-    const primaryAgent = task.project?.agent ||  task.project?.programadorBack || 'main';
-    const fallbackAgent = task.project?.programadorFront || 'main';
-
-    // Usando o seu PromptFactory de forma limpa
-    const architectInput = PromptFactory.buildDecompositionPrompt(task);
-
-    const architectResult = await OpenClawService.executeWithFallback(
-      architectSessionId,
-      architectInput,
-      primaryAgent,
-      fallbackAgent,
-      task.project?.modeloAuxiliar || null,
-      TASKS_DIR,
-      architectLogFile,
-      task.project?.pastaBase,
-      TASK_TIMEOUT_MS
-    );
-
-    if (!architectResult.success) {
-      throw new Error(`Falha na execução do OpenClaw: ${architectResult.errorMessage}`);
-    }
-
-    // Extrai o JSON do rawOutput
-    let subtasksPlan = [];
-    try {
-      const jsonMatch = architectResult.rawOutput.match(/\[[\s\S]*?\]/);
-      if (!jsonMatch) throw new Error("Nenhum array JSON encontrado na saída do agente.");
-      
-      
-      subtasksPlan = JSON.parse(architectResult.rawOutput);
-    } catch (parseError) {
-      try {
-        // Tenta de novo com a função extractJson
-        subtasksPlan = extractJsonObjects(architectResult.rawOutput);  
-      } catch (extractError) {
-        throw new Error(`Falha ao extrair o JSON da saída do OpenClaw: ${extractError.message}`);
-      }
-    }
-
-    if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0 || subtasksPlan.length === 1) {
-      // Marcar essa tarefa como atômica e seguir para o fluxo normal.
-      await taskService.updateTask(task.id, { isAtomic: true });
-      return { success: true, subtasksCreated: 0 };
-    }
-
-    const mappedSubtasks = subtasksPlan.map(st => ({
-      title: st.title,
-      description: st.description,
-      domain: st.domain, 
-      projectId: task.projectId,
-      statusId: task.statusId,
-      priorityId: task.priorityId,
-      userId: task.assignedToId, 
-      agent: task.agent
-    }));
-    
-    const decompositionResult = await decompositionService.decompose(task.id, mappedSubtasks);
-    
-    await addComment(task.id, `🔍 **Análise Concluída pelo Arquiteto**\nA funcionalidade foi dividida em ${mappedSubtasks.length} micro-tarefas sequenciais.`);
-    await log(`✅ Tarefa ${task.id} decomposta pelo OpenClaw em ${mappedSubtasks.length} subtarefas.`);
-    
-    return { success: true, subtasksCreated: mappedSubtasks.length };
-    
-  } catch (error) {
-    await log(`💥 Erro ao chamar Arquiteto para tarefa ${task.id}: ${error.message}`);
-    await addComment(task.id, `❌ **Erro na Análise**\nFalha ao decompor tarefa: ${error.message}`);
-    return { success: false, error: error.message };
-  }
+  const { callAnalyst: legacyCallAnalyst } = require('./src/steps/adapters/legacyCallAnalyst');
+  return await legacyCallAnalyst(task);
 }
 
 /**
@@ -151,15 +49,8 @@ async function callAnalyst(task) {
  * @param {string} content - Conteúdo do comentário
  */
 async function addComment(taskId, content) {
-  try {
-    await commentService.createComment({
-      taskId,
-      userId: UserIdJarbas,
-      content
-    });
-  } catch (error) {
-    await log(`⚠️ Erro ao adicionar comentário: ${error.message}`);
-  }
+  const { addComment: legacyAddComment } = require('./src/steps/adapters/legacyAddComment');
+  return await legacyAddComment(taskId, content, UserIdJarbas);
 }
 
 async function main() {
@@ -193,134 +84,24 @@ async function main() {
    * @param {number} pid - PID do processo associado ao lock
    */
   async function handleTaskTimeoutCheck(pid) {
-    const activeTasks = await stateService.getActiveTasks();
-    const taskIds = Object.keys(activeTasks);
-    
-    if (taskIds.length === 0) return;
-
-    const now = Date.now();
-    const taskId = taskIds[0];
-    const task = activeTasks[taskId];
-    const elapsed = now - task.startTime;
-    
-    const GRACE_PERIOD_MS = 60000; // 1 minuto de carência após o timeout
-
-    await log(`⏱️ Tarefa ${taskId} em execucao por ${segundosToMinutos_Segundos(elapsed / 1000)}.`);
-
-    // REQUISITO 1 & 3: Só mata se passar de 1 minuto depois do timeout
-    if (elapsed > TASK_TIMEOUT_MS + GRACE_PERIOD_MS) {
-      await log(`💀 CEIFADOR: Tarefa ${taskId} excedeu o limite crítico (Timeout + 1m).`);
-      await log(`⚰️ Encerrando processo ${pid}, desbloqueando sistema e movendo arquivos para ERROR.`);
-
-      [cite_start]// Mata o processo e remove o arquivo de lock [cite: 4953, 4958]
-      await lockService.killAndRelease(pid);
-      
-      [cite_start]// Move arquivos para a pasta de erro [cite: 5698]
-      await TaskFileService.moveTaskFiles(taskId, TASKS_DIR, ERROR_DIR);
-      
-      [cite_start]// Limpa o estado interno [cite: 5687]
-      await stateService.cleanupTask(taskId);
-      
-      await log(`🧹 Sistema recuperado. O próximo ciclo poderá assumir a fila.`);
-    } 
-    else if (elapsed > TASK_TIMEOUT_MS) {
-      await log(`⚠️ ALERTA: Tarefa ${taskId} excedeu o tempo limite original. Aguardando carência de 1 minuto antes de intervir.`);
-    }
+    const { handleTaskTimeoutCheck: legacyHandleTaskTimeoutCheck } = require('./src/steps/adapters/legacyTaskTimeoutCheck');
+    return await legacyHandleTaskTimeoutCheck(pid, { TASK_TIMEOUT_MS, TASKS_DIR, ERROR_DIR });
   }
 
   /**
    * Trata falha na execucao de uma tarefa
    */
   async function handleTaskFailure(task, error) {
-    await log(`⚠️ ALERTA: Falha na execucao da tarefa ${task.id}: ${error.message}`);
-    
-    const { fileExists } = require('./src/utils/fileUtils');
-    const terminalLogPath = path.join(TASKS_DIR, `terminal-${task.id}.log`);
-    let terminalOutput = "";
-    
-    if (await fileExists(terminalLogPath)) {
-      const fs = require('fs').promises;
-      terminalOutput = await fs.readFile(terminalLogPath, 'utf8');
-    }
-
-    // Adiciona comentario sobre a falha se tivermos o ID do usuario
-    if (MY_USER_ID) {
-      try {
-        await axios.post(`${API_URL}/api/comments`, {
-          taskId: task.id,
-          userId: MY_USER_ID,
-          content: `⚠️ **FALHA DE EXECUCAO LOCAL**\nErro: ${error.message}\n\nSaida do Terminal:\n${terminalOutput.substring(0, 1000)}`
-        });
-      } catch (e) {
-        await log(`❌ Erro ao postar comentario de falha: ${e.message}`);
-      }
-    }
-    
-    // Tenta reatribuir para o desenvolvedor
-    try {
-      const usersRes = await axios.get(`${API_URL}/api/users`);
-      const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
-      
-      if (dev) {
-        await log(`👤 Reatribuindo tarefa ${task.id} para o usuario alexandre.`);
-        await axios.put(`${API_URL}/api/tasks/${task.id}`, { assignedToId: dev.id });
-      } else {
-        await log(`⚠️ Usuario 'alexandre' nao encontrado na API`);
-      }
-    } catch (assignError) {
-      await log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
-    }
-    
-    // Em caso de erro, tentar desmarcar a tarefa como em execução
-    try {
-      // Usar lockService.releaseLock() em vez da rota depreciada
-      await lockService.releaseLock();
-      await log(`🔓 Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
-    } catch (cleanupError) {
-      await log(`❌ Erro ao limpar estado de execução: ${cleanupError.message}`);
-      // Fallback: tentar a rota depreciada
-      try {
-        await axios.put(`${API_URL}/api/tasks/${task.id}/finish-execution`);
-        await log(`⚠️ Usando fallback para finish-execution`);
-      } catch (fallbackError) {
-        await log(`❌ Fallback também falhou: ${fallbackError.message}`);
-      }
-    }
-    
-    await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, ERROR_DIR);
-    await stateService.cleanupTask(task.id);
+    const { handleTaskFailure: legacyHandleTaskFailure } = require('./src/steps/adapters/legacyTaskFailure');
+    return await legacyHandleTaskFailure(task, error, MY_USER_ID, { API_URL, TASKS_DIR, ERROR_DIR });
   }
 
   /**
    * Trata sucesso na execucao de uma tarefa
    */
   async function handleTaskSuccess(task, executionResult) {
-    await log(`✅ Tarefa ${task.id} executada com sucesso!`);
-    
-    // Atualiza status da tarefa
-    if (MY_USER_ID) {
-      try {
-        await axios.patch(`${API_URL}/api/tasks/${task.id}/finalize`, {
-          userId: MY_USER_ID,
-          executionNotes: executionResult.executionNotes
-        });
-      } catch (e) {
-        await log(`❌ Erro ao finalizar a tarefa na API: ${e.message}`);
-      }
-    } else {
-      await log(`⚠️ Nao foi possivel finalizar tarefa na API pois MY_USER_ID é nulo.`);
-    }
-
-    await TaskFileService.moveTaskFiles(task.id, TASKS_DIR, PROCESSED_DIR);
-    await stateService.cleanupTask(task.id);
-    
-    // IMPORTANTE: Liberar o lock para marcar isExecuting: false
-    try {
-      await lockService.releaseLock();
-      await log(`🔓 Lock liberado para tarefa ${task.id} (isExecuting: false)`);
-    } catch (lockError) {
-      await log(`⚠️ Erro ao liberar lock: ${lockError.message}`);
-    }
+    const { handleTaskSuccess: legacyHandleTaskSuccess } = require('./src/steps/adapters/legacyTaskSuccess');
+    return await legacyHandleTaskSuccess(task, executionResult, MY_USER_ID, { API_URL, TASKS_DIR, PROCESSED_DIR });
   }
 
   /**
@@ -468,7 +249,8 @@ async function main() {
         };
         
         // Executar tarefa
-        const executionResult = await TaskExecutionService.executeTask(task, MY_USER_ID, config);
+        const { executeTask: legacyExecuteTask } = require('./src/steps/adapters/legacyExecuteTask');
+        const executionResult = await legacyExecuteTask(task, MY_USER_ID, config);
         
         // Processar resultado
         if (executionResult.success) {

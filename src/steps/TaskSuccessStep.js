@@ -4,7 +4,7 @@
  * Inclui logging, finalização na API, movimentação de arquivos e liberação de lock.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class TaskSuccessStep {
   /**

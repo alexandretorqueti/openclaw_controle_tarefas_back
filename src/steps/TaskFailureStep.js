@@ -4,7 +4,7 @@
  * Inclui logging, comentários, reatribuição, limpeza de locks e movimentação de arquivos.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class TaskFailureStep {
   /**

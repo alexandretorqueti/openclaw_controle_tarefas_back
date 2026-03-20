@@ -5,7 +5,7 @@
  * Inclui validação inteligente de evidências e decisão de fluxo.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class ArchitectPlanningStep {
   /**

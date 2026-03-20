@@ -4,7 +4,7 @@
  * Faz requisição à API e trata casos de fila vazia ou erros.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class GetNextTaskStep {
   /**

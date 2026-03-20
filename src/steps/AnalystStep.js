@@ -4,7 +4,7 @@
  * Implementa o padrão Pipeline Step com injeção via container para testabilidade.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class AnalystStep {
   /**

@@ -4,7 +4,7 @@
  * Inclui análise de escopo, preparação de arquivos, geração de prompts e snapshot inicial.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class SetupContextStep {
   /**

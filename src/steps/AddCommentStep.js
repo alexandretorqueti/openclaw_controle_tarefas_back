@@ -4,7 +4,7 @@
  * Usa o container para obter todas as dependências necessárias.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class AddCommentStep {
   /**

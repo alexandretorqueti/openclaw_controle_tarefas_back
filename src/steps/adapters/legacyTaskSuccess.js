@@ -4,7 +4,7 @@
  * Usa o container para obter todas as dependências.
  */
 
-const container = require('@/bootstrap');
+const container = require('../../container');
 
 /**
  * Cria a função handleTaskSuccess compatível usando o container

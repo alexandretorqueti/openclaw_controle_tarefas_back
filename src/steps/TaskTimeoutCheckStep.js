@@ -4,7 +4,7 @@
  * Mata processos que excederam o limite crítico e limpa o sistema.
  */
 
-const container = require('@/bootstrap');
+const container = require('../container');
 
 class TaskTimeoutCheckStep {
   /**

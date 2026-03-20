@@ -28,6 +28,8 @@ const EvidenceService = require('./services/evidenceService');
 const AgentService = require('./services/agentService');
 const ProjectService = require('./services/projectService');
 const LlmService = require('./services/llmService');
+const TaskExecutionService = require('./services/taskExecutionService');
+const TaskExecutionOrchestrator = require('./steps/TaskExecutionOrchestrator');
 const { log } = require('../aux/logger'); // caminho relativo ao bootstrap
 const config = require('../aux/config');
 const fs = require('fs').promises;
@@ -58,6 +60,7 @@ container.register('evidenceService', EvidenceService);
 container.register('agentService', AgentService);
 container.register('projectService', ProjectService);
 container.register('llmService', LlmService);
+container.register('taskExecutionService', TaskExecutionService);
 
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
