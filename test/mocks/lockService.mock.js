@@ -19,6 +19,7 @@ function createLockServiceMock(customizations = {}) {
       this.releaseLock.mockResolvedValue(true);
       this.forceReleaseLock.mockResolvedValue(true);
       this.acquireLock.mockResolvedValue(true);
+      this.killAndRelease.mockResolvedValue(true);
       this.checkLock.mockResolvedValue({
         locked: false,
         ageRecent: false,

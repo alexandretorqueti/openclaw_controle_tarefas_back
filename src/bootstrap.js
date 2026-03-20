@@ -18,6 +18,7 @@ const LockService = require('./services/lockService');
 const MonitorStateService = require('./services/monitorStateService');
 const TaskFileService = require('./services/taskFileService');
 const FileUtils = require('./utils/fileUtils');
+const TimeUtils = require('./utils/timeUtils');
 const { log } = require('../aux/logger'); // caminho relativo ao bootstrap
 const config = require('../aux/config');
 const fs = require('fs').promises;
@@ -38,6 +39,7 @@ container.register('fileSystem', fs);
 container.register('axios', axios);
 container.register('path', path);
 container.register('fileUtils', FileUtils);
+container.register('timeUtils', TimeUtils);
 
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
