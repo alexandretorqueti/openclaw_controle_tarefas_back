@@ -22,6 +22,12 @@ const TimeUtils = require('./utils/timeUtils');
 const PrismaService = require('./services/prismaService');
 const TaskAnalysisService = require('./services/taskAnalysisService');
 const WorkspaceSnapshotService = require('./services/workspaceSnapshotService');
+const SmartFileFinder = require('./utils/smartFileFinder');
+const ContractVerificationService = require('./services/contractVerificationService');
+const EvidenceService = require('./services/evidenceService');
+const AgentService = require('./services/agentService');
+const ProjectService = require('./services/projectService');
+const LlmService = require('./services/llmService');
 const { log } = require('../aux/logger'); // caminho relativo ao bootstrap
 const config = require('../aux/config');
 const fs = require('fs').promises;
@@ -46,6 +52,12 @@ container.register('timeUtils', TimeUtils);
 container.register('prisma', PrismaService);
 container.register('taskAnalysisService', TaskAnalysisService);
 container.register('workspaceSnapshotService', WorkspaceSnapshotService);
+container.register('smartFileFinder', SmartFileFinder);
+container.register('contractVerificationService', ContractVerificationService);
+container.register('evidenceService', EvidenceService);
+container.register('agentService', AgentService);
+container.register('projectService', ProjectService);
+container.register('llmService', LlmService);
 
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
