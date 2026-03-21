@@ -692,13 +692,11 @@ class TaskService {
     const results = await prisma.$transaction(transaction);
     
     // IMPORTANTE: Atualizar o estado isChildExecuting dos ancestrais, já que as tarefas terminaram a execução
+    // No método updateTask, não temos ancestorsFinalized definido, apenas atualizamos a hierarquia da tarefa atual
     try {
-      await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, false);
-      for (const ancestor of ancestorsFinalized) {
-        await taskHierarchyService.updateHierarchyOnExecutionChange(ancestor.id, false);
-      }
+      await taskHierarchyService.updateHierarchyOnExecutionChange(id, false);
     } catch (err) {
-      console.error('Erro ao atualizar hierarquia no finalizeTask:', err.message);
+      console.error('Erro ao atualizar hierarquia no updateTask:', err.message);
     }
     
     // Broadcast SSE event AFTER transaction is complete
@@ -1343,9 +1341,8 @@ class TaskService {
       // IMPORTANTE: Atualizar o estado isChildExecuting dos ancestrais, já que as tarefas terminaram a execução
     try {
       await taskHierarchyService.updateHierarchyOnExecutionChange(taskId, false);
-      for (const ancestor of ancestorsFinalized) {
-        await taskHierarchyService.updateHierarchyOnExecutionChange(ancestor.id, false);
-      }
+      // No fluxo de tarefa recursiva, não há ancestorsFinalized definido
+      // Apenas atualiza a hierarquia da tarefa atual
     } catch (err) {
       console.error('Erro ao atualizar hierarquia no finalizeTask:', err.message);
     }
@@ -1353,12 +1350,7 @@ class TaskService {
     // Broadcast SSE event AFTER transaction is complete
     sseService.broadcast('task_updated', updatedTask);
     
-    // IMPORTANTE: Emitir SSE para todos os ancestrais que também foram atualizados/finalizados!
-    if (typeof ancestorsFinalized !== 'undefined' && Array.isArray(ancestorsFinalized)) {
-      for (const ancestor of ancestorsFinalized) {
-        sseService.broadcast('task_updated', ancestor);
-      }
-    }
+    // No fluxo de tarefa recursiva, não há ancestorsFinalized para emitir SSE
     
       return {
         task: updatedTask,
@@ -1524,7 +1516,7 @@ class TaskService {
         transaction
       );
       
-      console.log(`📈 ${ancestorsFinalized} tarefas ancestrais serão finalizadas.`);
+      console.log(`📈 ${ancestorsFinalized.length} tarefas ancestrais serão finalizadas.`);
     }
 
     // Executar todas as operações em uma única transação

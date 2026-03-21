@@ -146,17 +146,17 @@ class ValidationService {
    */
   parseLlmResponse(llmResponse, task) {
     try {
-      // Se a resposta for null (erro no LlmService)
       if (!llmResponse) {
         throw new Error('Resposta do LLM é null');
       }
-      // Se llmResponse for string, tentar converter para JSON
+      
       if (typeof llmResponse === 'string') {
         llmResponse = JSON.parse(llmResponse);
       }
-      // Validar estrutura do resultado
+      
+      // Valida o isIdeal (Corrigi a string de erro para bater com a propriedade)
       if (typeof llmResponse.isIdeal !== 'boolean') {
-        throw new Error('Campo isAtomic não é booleano');
+        throw new Error('Campo isIdeal não é booleano no JSON retornado');
       }
       
       if (!llmResponse.reason || typeof llmResponse.reason !== 'string') {
@@ -170,9 +170,18 @@ class ValidationService {
       if (!Array.isArray(llmResponse.suggestions)) {
         llmResponse.suggestions = [];
       }
+
+      // --- A MÁGICA DO DOMÍNIO ACONTECE AQUI ---
+      let extractedDomain = null;
+      if (llmResponse.inferredDomain && llmResponse.inferredDomain !== 'UNKNOWN') {
+        // Garantimos que vem limpo, removendo espaços e forçando maiúsculo
+        extractedDomain = llmResponse.inferredDomain.trim().toUpperCase(); 
+      }
+      // -----------------------------------------
       
       return {
-        isAtomic: llmResponse.isIdeal,
+        isAtomic: llmResponse.isIdeal,  // Tradução de "Ideal" para "Atomic"
+        domain: extractedDomain,        // Passamos o domínio inferido para a frente!
         reason: llmResponse.reason,
         confidence: llmResponse.confidence,
         suggestions: llmResponse.suggestions,
@@ -183,8 +192,6 @@ class ValidationService {
       
     } catch (error) {
       this.logger.logError(`Erro ao processar resposta LLM: ${error.message}. Resposta: ${JSON.stringify(llmResponse)}`);
-      
-      // retorna Erro
       throw new Error(`Erro ao processar resposta LLM: ${error.message}`);
     }
   }

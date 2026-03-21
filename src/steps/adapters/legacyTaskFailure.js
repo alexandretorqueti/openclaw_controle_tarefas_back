@@ -39,4 +39,23 @@ function createLegacyTaskFailure(defaultUserId = null, defaultApiUrl = null) {
   };
 }
 
-module.exports = { createLegacyTaskFailure };
+/**
+ * Função de compatibilidade direta para uso no monitor.js
+ * Aceita a assinatura: handleTaskFailure(task, error, userId, config)
+ * Ignora config, usa userId se fornecido, caso contrário usa padrão do container
+ */
+async function handleTaskFailure(task, error, userId = null, config = {}) {
+  try {
+    const step = new (require('../TaskFailureStep'))();
+    await step.execute({
+      task,
+      error,
+      userId: userId || null,
+      apiUrl: config.API_URL || null
+    });
+  } catch (stepError) {
+    // Erro já foi logado pelo step
+  }
+}
+
+module.exports = { createLegacyTaskFailure, handleTaskFailure };

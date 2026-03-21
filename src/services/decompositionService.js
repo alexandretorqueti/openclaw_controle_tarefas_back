@@ -1,5 +1,6 @@
 const prisma = require('./prismaService');
 const { Logger, LOG_LEVELS } = require('../utils/logger');
+const sseService = require('./sseService');
 const logger = Logger;
 /**
  * Serviço de decomposição de tarefas
@@ -105,6 +106,42 @@ class DecompositionService {
           dependenciesCreated: subtasksArray.length - 1
         };
       });
+
+      // Emitir eventos SSE para atualização em tempo real
+      try {
+        // Emitir task_created para cada subtarefa criada
+        for (const subtask of result.subtasks) {
+          sseService.broadcast('task_created', subtask);
+        }
+        
+        // Buscar a tarefa pai com subtarefas incluídas para emitir task_updated
+        const parentTaskWithSubtasks = await prisma.task.findUnique({
+          where: { id: parentTaskId },
+          include: {
+            project: {
+              select: { id: true, name: true }
+            },
+            status: true,
+            priority: true,
+            createdBy: {
+              select: { id: true, name: true, email: true, avatarUrl: true }
+            },
+            assignedTo: {
+              select: { id: true, name: true, email: true, avatarUrl: true }
+            },
+            subtasks: {
+              select: { id: true, title: true, isCompleted: true }
+            }
+          }
+        });
+        
+        if (parentTaskWithSubtasks) {
+          sseService.broadcast('task_updated', parentTaskWithSubtasks);
+        }
+      } catch (sseError) {
+        logger.logError(`Erro ao emitir eventos SSE para decomposição da tarefa ${parentTaskId}:`, sseError);
+        // Não falhar a decomposição por causa do SSE
+      }
 
       logger.logInfo(`Decomposição concluída: ${result.subtasksCreated} subtarefas criadas para tarefa ${parentTaskId}`);
       return result;

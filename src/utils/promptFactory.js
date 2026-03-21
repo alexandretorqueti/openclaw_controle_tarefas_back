@@ -272,11 +272,12 @@ O QUE É UMA TAREFA DE TAMANHO IDEAL:
 4. É uma tarefa que leva de algumas horas até um dia de trabalho.
 5. Se uma tarefa é só no front, ou só no back, e ela envolve um módulo, ela deve ser considerada IDEAL.
 6. Se uma tarefa envolve apenas um arquivo, ela deve ser considerada IDEAL.
+7. Tarefas que mexem em apenas uma arquivo não deve ser dividido.
 
 O QUE **NÃO** É UMA TAREFA DE TAMANHO IDEAL:
 1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada IDEAL (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.
 2. Épicos ou Módulos Inteiros. Exemplo: "Fazer o módulo de pagamentos inteiro", "Refatorar todo o sistema", "Criar o painel de admin completo". Isso é muito grande e precisa ser dividido (Não é ideal).
-3. Tarefas que mexem em apenas uma arquivo não deve ser dividido.
+3. Tarefas que mencionam várias telas ou vários menus. Exemplo: "Rever o layout de todas as telas". Isso é muito grande e precisa ser dividido (NÃO é ideal).
 REGRA DE OURO: Não seja excessivamente radical. Se a tarefa descreve uma funcionalidade clara ou um bug específico que um dev consegue resolver em um dia, ela deve ser considerada, IDEAL. Reprove (isIdeal: false) APENAS se for um Épico gigante que envolva dezenas de funcionalidades soltas.
 
 INFORMAÇÕES DA TAREFA:
@@ -289,8 +290,12 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 {
   "isIdeal": boolean,
   "reason": "Explique brevemente por que a tarefa tem um bom escopo funcional ou por que é um épico grande demais.",
-  "confidence": number (0.0 a 1.0)
-}`;
+  "confidence": number,
+  "inferredDomain": "FRONTEND | BACKEND | UNKNOWN" 
+}
+
+REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se a tarefa pertence ao FRONTEND ou BACKEND baseado na descrição. Se não for possível deduzir, retorne "UNKNOWN". Se já vier preenchido, apenas repita-o.
+`;
   }
 
   static ensureAndValidateBuildPrompt(pkgContent) {

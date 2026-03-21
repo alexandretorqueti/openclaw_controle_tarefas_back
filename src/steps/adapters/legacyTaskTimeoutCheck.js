@@ -35,4 +35,21 @@ function createLegacyTaskTimeoutCheck(defaultTaskTimeoutMs = null) {
   };
 }
 
-module.exports = { createLegacyTaskTimeoutCheck };
+/**
+ * Função de compatibilidade direta para uso no monitor.js
+ * Aceita a assinatura: handleTaskTimeoutCheck(pid, config)
+ * Ignora config, usa timeout do config se fornecido
+ */
+async function handleTaskTimeoutCheck(pid, config = {}) {
+  try {
+    const step = new (require('../TaskTimeoutCheckStep'))();
+    await step.execute({
+      pid,
+      taskTimeoutMs: config.TASK_TIMEOUT_MS || null
+    });
+  } catch (stepError) {
+    // Erro já foi logado pelo step
+  }
+}
+
+module.exports = { createLegacyTaskTimeoutCheck, handleTaskTimeoutCheck };

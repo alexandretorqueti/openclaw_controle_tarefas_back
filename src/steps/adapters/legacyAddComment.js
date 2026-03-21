@@ -39,4 +39,22 @@ function createLegacyAddComment(defaultUserId = null) {
   };
 }
 
-module.exports = { createLegacyAddComment };
+/**
+ * Função de compatibilidade direta para uso no monitor.js
+ * Aceita a assinatura: addComment(taskId, content, userId)
+ * Usa userId se fornecido, caso contrário usa padrão do container
+ */
+async function addComment(taskId, content, userId = null) {
+  try {
+    const step = new (require('../AddCommentStep'))();
+    await step.execute({
+      taskId,
+      content,
+      userId: userId || null
+    });
+  } catch (error) {
+    // Erro já logado pelo step
+  }
+}
+
+module.exports = { createLegacyAddComment, addComment };

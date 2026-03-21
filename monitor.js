@@ -188,82 +188,94 @@ async function main() {
         await log(`⚠️ Não foi possível encontrar o status "${STATUS.IN_PROGRESS}" para atualizar a tarefa ${task.id}`);
       }
 
-      // 3. LÓGICA DE ROTEAMENTO (NOVO)
-      let routingResult = null;
+      // 3. LÓGICA DE ROTEAMENTO (REVISADA: Atomicidade First + Inferência de Domínio)
       
-      if (!task.domain) {
-        // CASO 1: Sem domínio → Analista
-        await log(`🔍 Tarefa sem domínio. Chamando Analista...`);
-        routingResult = await callAnalyst(task);
-        
-      } else if (!task.isAtomic) {
-        // CASO 2: Com domínio mas não atômica → Validador
-        await log(`⚖️ Tarefa não atômica. Validando...`);
-        
+      // PASSO 1: A Super-Validação (Se falta atomicidade OU falta domínio)
+      if (task.isAtomic !== true || !task.domain) {
+        await log(`⚖️ Verificando complexidade e/ou inferindo domínio da tarefa...`);
         try {
-          // Validar com modelo auxiliar
+          // A validação agora retorna { isAtomic: boolean, domain: 'FRONTEND' | 'BACKEND' | null }
           const validation = await validationService.validateWithAuxModel(task, task.project);
           
-          // Atualizar atomicidade no banco
-          await taskService.updateTask(task.id, { isAtomic: validation.isAtomic });
-          if (!validation.isAtomic) {
-            // Manda pro Analista
-            routingResult = await callAnalyst(task);
-          } else {
-            await log(`✅ Tarefa ${task.id} validada como atômica. Prosseguindo para execução...`);
-            // Tarefa agora é atômica, cair no caso 3
-            task.isAtomic = true;
+          task.isAtomic = validation.isAtomic;
+          
+          // Só preenche o domínio se a tarefa não tinha um e a IA conseguiu inferir
+          if (!task.domain && validation.domain) {
+            task.domain = validation.domain;
+            await log(`🎯 Domínio inferido pela IA: ${task.domain}`);
           }
+
+          // Atualiza o banco com as duas informações de uma vez só
+          await taskService.updateTask(task.id, { 
+            isAtomic: task.isAtomic,
+            domain: task.domain
+          });
+          
+          await log(`✅ Validação concluída: Atômica? ${task.isAtomic} | Domínio: ${task.domain || 'N/A'}`);
+          
         } catch (validationError) {
-          await log(`💥 Erro na validação: ${validationError.message}`);
-          routingResult = { success: false, error: validationError.message };
+          await log(`💥 Erro na super-validação: ${validationError.message}`);
+          await handleTaskFailure(task, validationError);
+          return; // Aborta a execução desta tarefa e parte para a próxima da fila
         }
       }
+
+      // PASSO 2: Roteamento baseado na Complexidade (É gigante?)
+      if (!task.isAtomic) {
+        await log(`🔍 Tarefa complexa. Chamando Analista para decomposição...`);
+        const routingResult = await callAnalyst(task);
+        
+        if (routingResult.success && routingResult.subtasksCreated && routingResult.subtasksCreated > 0) {
+          return; // 🛑 ABORTA AQUI. A tarefa mãe cumpriu seu papel e finalizou.
+        }
+      }
+
+      // PASSO 3: Validação final de segurança da fila
+      if (!task.domain) {
+        await log(`❌ Tarefa atômica, mas sem domínio definido (IA não conseguiu inferir).`);
+        await handleTaskFailure(task, new Error(`A tarefa é atômica, mas a IA não conseguiu inferir se é FRONTEND ou BACKEND.`));
+        return; // Aborta
+      }
+
+      // PASSO 4: Caminho Feliz -> Executar com Programador (Gargalo fechado!)
+      await log(`🚀 Tarefa atômica e com domínio. Pronta para o Desenvolvedor...`);
       
-      // CASO 3: Tarefa atômica (ou foi validada como atômica) → Executar com Programador
-      if (task.domain && task.isAtomic && (!routingResult || routingResult.success)) {
-        await log(`🚀 Tarefa atômica. Executando...`);
-        
-        // Determinar agente baseado no domínio (CORREÇÃO: usar === em vez de =)
-        let agent;
-        if (task.domain === 'BACKEND') {
-          agent = task.project.programadorBack;
-        } else if (task.domain === 'FRONTEND') {
-          agent = task.project.programadorFront;
-        } else {
-          throw new Error(`Domínio inválido: ${task.domain}`);
-        }
-        
-        // Fallback se não houver programador configurado
-        if (!agent) {
-          agent = task.domain === 'BACKEND' ? 'default-backend-agent' : 'default-frontend-agent';
-          await log(`⚠️ Usando agente padrão para ${task.domain}: ${agent}`);
-        }
-        
-        await log(`👨‍💻 Executando tarefa ${task.id} com ${agent} (${task.domain})`);
-        
-        // Configuração para execução
-        const config = {
-          TASKS_DIR,
-          TASK_TIMEOUT_MS,
-          MY_USER_ID,
-          agent // Novo parâmetro passado para o serviço
-        };
-        
-        // Executar tarefa
-        const { executeTask: legacyExecuteTask } = require('./src/steps/adapters/legacyExecuteTask');
-        const executionResult = await legacyExecuteTask(task, MY_USER_ID, config);
-        
-        // Processar resultado
-        if (executionResult.success) {
-          await handleTaskSuccess(task, executionResult);
-        } else {
-          await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
-        }
-      } else if (routingResult && !routingResult.success) {
-        // Tratar erro no roteamento
-        await log(`❌ Erro no roteamento: ${routingResult.error}`);
-        await handleTaskFailure(task, new Error(`Roteamento falhou: ${routingResult.error}`));
+      // Determinar agente baseado no domínio
+      let agent;
+      if (task.domain === 'BACKEND') {
+        agent = task.project.programadorBack;
+      } else if (task.domain === 'FRONTEND') {
+        agent = task.project.programadorFront;
+      } else {
+        await handleTaskFailure(task, new Error(`Domínio inválido retornado: ${task.domain}`));
+        return; // Aborta
+      }
+      
+      // Fallback se não houver programador configurado no banco
+      if (!agent) {
+        agent = task.domain === 'BACKEND' ? 'default-backend-agent' : 'default-frontend-agent';
+        await log(`⚠️ Usando agente padrão para ${task.domain}: ${agent}`);
+      }
+      
+      await log(`👨‍💻 Executando tarefa ${task.id} com ${agent} (${task.domain})`);
+      
+      // Configuração para execução
+      const config = {
+        TASKS_DIR,
+        TASK_TIMEOUT_MS,
+        MY_USER_ID,
+        agent // Novo parâmetro passado para o serviço
+      };
+      
+      // Executar tarefa
+      const { executeTask: legacyExecuteTask } = require('./src/steps/adapters/legacyExecuteTask');
+      const executionResult = await legacyExecuteTask(task, MY_USER_ID, config);
+      
+      // Processar resultado
+      if (executionResult.success) {
+        await handleTaskSuccess(task, executionResult);
+      } else {
+        await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
       }
 
     } catch (error) {

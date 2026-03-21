@@ -4,7 +4,7 @@
  * Implementa o padrão Pipeline Step com injeção via container para testabilidade.
  */
 
-const container = require('../container');
+const container = require('../bootstrap');
 
 class AnalystStep {
   /**
@@ -82,6 +82,11 @@ class AnalystStep {
         } catch (extractError) {
           throw new Error(`Falha ao extrair o JSON da saída do OpenClaw: ${extractError.message}`);
         }
+      }
+
+      // Verifica se subtasksPlan é um array de objetos ou outro array.
+      if (Array.isArray(subtasksPlan) && subtasksPlan.length > 0 && Array.isArray(subtasksPlan[0])) {
+        subtasksPlan = subtasksPlan[0];
       }
 
       if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0 || subtasksPlan.length === 1) {
