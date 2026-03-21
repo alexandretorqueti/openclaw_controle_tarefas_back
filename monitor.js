@@ -16,7 +16,6 @@ const decompositionService = require('./src/services/decompositionService');
 const commentService = require('./src/services/commentService');
 const { extractJsonObjects } = require('./src/utils/jsonUtils');
 const taskService = require('./src/services/taskService');
-const { agent } = require('supertest');
 
 let UserIdJarbas = null;
 /**

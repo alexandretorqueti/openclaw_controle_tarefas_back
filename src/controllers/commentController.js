@@ -76,6 +76,18 @@ class CommentController {
         correlationId: req.correlationId
       });
     } catch (error) {
+      // Tratar erros específicos de "not found" para retornar 404
+      if (error.message && error.message.includes('not found')) {
+        // Entidade não encontrada - retornar 404
+        return res.status(404).json({
+          success: false,
+          error: error.message,
+          message: 'Resource not found',
+          correlationId: req.correlationId
+        });
+      }
+      
+      // Outros erros - passar para o error middleware
       next(error);
     }
   });
@@ -194,4 +206,3 @@ class CommentController {
 }
 
 module.exports = new CommentController();
-
