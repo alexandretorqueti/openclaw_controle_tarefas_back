@@ -252,6 +252,9 @@ class TaskService {
       } else {
         where.parentTaskId = filters.parentTaskId;
       }
+    } else {
+      // Se parentTaskId não for passado, assumimos que queremos as tarefas raiz do projeto
+      where.parentTaskId = null;
     }
 
     // Default to excluding completed tasks unless explicitly requested
@@ -851,6 +854,7 @@ class TaskService {
         where.parentTaskId = filters.parentTaskId;
       }
     } else {
+      // Se parentTaskId não for passado, assumimos que queremos as tarefas raiz do projeto
       where.parentTaskId = null;
     }
 
@@ -1416,12 +1420,12 @@ class TaskService {
           return; // Não tem pai, fim da recursão
         }
         
-        const parentId = task.parentTaskId;
+        const parentTaskId = task.parentTaskId;
         
         // Buscar todas as subtasks (irmãs) da tarefa pai
         const allSubtasks = await prisma.task.findMany({
           where: {
-            parentTaskId: parentId
+            parentTaskId: parentTaskId
           },
           include: {
             status: true
@@ -1432,34 +1436,34 @@ class TaskService {
         const allSubtasksFinalized = allSubtasks.every(subtask => subtask.id === taskId || (subtask.status && subtask.status.isFinalState)
         );
 
-        console.log(`📊 Verificando pai ${parentId}: ${allSubtasks.length} subtasks, todas finalizadas? ${allSubtasksFinalized}`);
+        console.log(`📊 Verificando pai ${parentTaskId}: ${allSubtasks.length} subtasks, todas finalizadas? ${allSubtasksFinalized}`);
 
         // Se todas as subtasks estão finalizadas
         if (allSubtasksFinalized && allSubtasks.length > 0) {
           // Buscar a tarefa pai
           const parentTask = await prisma.task.findUnique({
-            where: { id: parentId },
+            where: { id: parentTaskId },
             include: { status: true }
           });
 
           if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
-            console.log(`✅ Todas as subtasks da tarefa pai ${parentId} estão finalizadas. Finalizando pai também...`);
+            console.log(`✅ Todas as subtasks da tarefa pai ${parentTaskId} estão finalizadas. Finalizando pai também...`);
             
             // Adicionar à lista de ancestrais para finalizar
             ancestorsToFinalize.push({
               task: parentTask,
-              parentId: parentId
+              parentTaskId: parentTaskId
             });
             
             // Continuar recursivamente para o avô, bisavô, etc.
-            await checkAncestor(parentId);
+            await checkAncestor(parentTaskId);
           } else if (parentTask && parentTask.status && parentTask.status.isFinalState) {
-            console.log(`ℹ️ Tarefa pai ${parentId} já está finalizada.`);
+            console.log(`ℹ️ Tarefa pai ${parentTaskId} já está finalizada.`);
             // Mesmo já finalizada, continuar verificando ancestrais
-            await checkAncestor(parentId);
+            await checkAncestor(parentTaskId);
           }
         } else {
-          console.log(`⏳ Tarefa pai ${parentId} não será finalizada ainda: ${allSubtasks.length} subtasks, ${allSubtasks.filter(s => s.status && s.status.isFinalState).length} finalizadas.`);
+          console.log(`⏳ Tarefa pai ${parentTaskId} não será finalizada ainda: ${allSubtasks.length} subtasks, ${allSubtasks.filter(s => s.status && s.status.isFinalState).length} finalizadas.`);
         }
       };
       
@@ -1468,12 +1472,12 @@ class TaskService {
       
       // Processar todos os ancestrais encontrados (do mais próximo ao mais distante)
       for (const ancestor of ancestorsToFinalize) {
-        const { task: parentTask, parentId } = ancestor;
+        const { task: parentTask, parentTaskId } = ancestor;
         
         // Adicionar atualização da tarefa ancestral à transação
         transactionArray.push(
           prisma.task.update({
-            where: { id: parentId },
+            where: { id: parentTaskId },
             data: {
               statusId: finalStatusId,
               isCompleted: false,
@@ -1489,7 +1493,7 @@ class TaskService {
         transactionArray.push(
           prisma.taskHistory.create({
             data: {
-              taskId: parentId,
+              taskId: parentTaskId,
               userId: userId,
               oldStatusId: parentTask.statusId,
               newStatusId: finalStatusId,
@@ -1498,7 +1502,7 @@ class TaskService {
           })
         );
         
-        console.log(`🎯 Tarefa ancestral ${parentId} será finalizada automaticamente.`);
+        console.log(`🎯 Tarefa ancestral ${parentTaskId} será finalizada automaticamente.`);
       }
       
       return ancestorsToFinalize.length;
