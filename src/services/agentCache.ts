@@ -1,25 +1,24 @@
-// Migrado para TypeScript - Fase: Services
-// Arquivo: agentCache.js
-
 /**
  * Serviço de cache para agentes
  * Cache com validade de 1 hora e atualização em tempo real para operações CRUD
  */
 
 class AgentCache {
+  private cache: any = null;
+  private cacheTimestamp: number | null = null;
+  private readonly cacheTTL: number = 60 * 60 * 1000; // 1 hora em milissegundos
+  private isRefreshing: boolean = false;
+  private refreshQueue: Array<(data: any) => void> = [];
+
   constructor() {
-    (this as any).cache = null;
-    (this as any).cacheTimestamp = null;
-    (this as any).cacheTTL = 60 * 60 * 1000; // 1 hora em milissegundos
-    (this as any).isRefreshing = false;
-    (this as any).refreshQueue = [];
+    // Inicialização do constructor TypeScript
   }
 
   /**
    * Verifica se o cache é válido
    * @returns {boolean} True se o cache existe e não expirou
    */
-  isValid() {
+  isValid(): boolean {
     if (!this.cache || !this.cacheTimestamp) {
       return false;
     }
@@ -32,7 +31,7 @@ class AgentCache {
    * @param {Function} fetchFunction - Função para buscar agentes se o cache estiver inválido
    * @returns {Promise<Array>} Lista de agentes
    */
-  async getAgents(fetchFunction): Promise<any> {
+  async getAgents(fetchFunction: (() => Promise<any>)): Promise<any> {
     // Se o cache é válido, retorna do cache
     if (this.isValid()) {
       return [...this.cache]; // Retorna cópia para evitar mutação
@@ -46,12 +45,12 @@ class AgentCache {
     }
 
     // Atualiza o cache
-    (this as any).isRefreshing = true;
+    this.isRefreshing = true;
     try {
       const agents = await fetchFunction();
-      (this as any).cache = agents;
-      (this as any).cacheTimestamp = Date.now();
-      (this as any).isRefreshing = false;
+      this.cache = agents;
+      this.cacheTimestamp = Date.now();
+      this.isRefreshing = false;
       
       // Resolve todas as promises na fila
       while (this.refreshQueue.length > 0) {
@@ -61,7 +60,7 @@ class AgentCache {
       
       return [...agents]; // Retorna cópia
     } catch (error) {
-      (this as any).isRefreshing = false;
+      this.isRefreshing = false;
       // Limpa a fila com erro
       while (this.refreshQueue.length > 0) {
         const resolve = this.refreshQueue.shift();
@@ -75,33 +74,40 @@ class AgentCache {
    * Atualiza o cache com novos dados
    * @param {Array} agents - Nova lista de agentes
    */
-  updateCache(agents) {
-    (this as any).cache = agents;
-    (this as any).cacheTimestamp = Date.now();
+  updateCache(agents: any): void {
+    this.cache = agents;
+    this.cacheTimestamp = Date.now();
   }
 
   /**
    * Invalida o cache
    */
-  invalidate() {
-    (this as any).cache = null;
-    (this as any).cacheTimestamp = null;
+  invalidate(): void {
+    this.cache = null;
+    this.cacheTimestamp = null;
   }
 
   /**
    * Limpa completamente o cache (para testes)
    */
-  clear() {
-    (this as any).cache = null;
-    (this as any).cacheTimestamp = null;
-    (this as any).refreshQueue = [];
+  clear(): void {
+    this.cache = null;
+    this.cacheTimestamp = null;
+    this.refreshQueue = [];
   }
 
   /**
    * Obtém estatísticas do cache
    * @returns {Object} Estatísticas do cache
    */
-  getStats() {
+  getStats(): {
+    hasCache: boolean;
+    cacheSize: number;
+    cacheAge: number | null;
+    cacheTTL: number;
+    isRefreshing: boolean;
+    queueSize: number
+  } {
     return {
       hasCache: !!this.cache,
       cacheSize: this.cache ? this.cache.length : 0,
@@ -114,3 +120,4 @@ class AgentCache {
 }
 
 export default new AgentCache();
+export { AgentCache };

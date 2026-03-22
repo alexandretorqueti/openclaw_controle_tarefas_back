@@ -1,33 +1,32 @@
 /**
- * Container de dependências simples (Service Locator).
+ * Service locator básico para o projeto
  */
-class Container {
-  private registry: Map<string, any>;
 
-  constructor() {
-    (this as any).registry = new Map();
-  }
+class ServiceLocator {
+  private static instance: ServiceLocator;
+  private services: Map<string, any> = new Map();
 
-  /** Registra uma dependência pelo nome */
-  register(name: string, value: any): void {
-    this.registry.set(name, value);
-  }
+  private constructor() {}
 
-  /** Resolve (retorna) a dependência registrada */
-  resolve(name: string): any {
-    if (!this.registry.has(name)) {
-      throw new Error(`Dependência não registrada no container: ${name}`);
+  public static getInstance(): ServiceLocator {
+    if (!ServiceLocator.instance) {
+      ServiceLocator.instance = new ServiceLocator();
     }
-    return this.registry.get(name);
+    return ServiceLocator.instance;
   }
 
-  /** Limpa todas as dependências (útil nos testes) */
-  clear(): void {
-    this.registry.clear();
+  public register<T>(name: string, service: T): void {
+    this.services.set(name, service);
+  }
+
+  public get<T>(name: string): T | null {
+    return (this.services.get(name) as T) || null;
+  }
+
+  public has(name: string): boolean {
+    return this.services.has(name);
   }
 }
 
-// Exporta um singleton para ser usado em todo o código
-const container = new Container();
-export default container;
-export { Container };
+export default ServiceLocator.getInstance();
+export { ServiceLocator };
