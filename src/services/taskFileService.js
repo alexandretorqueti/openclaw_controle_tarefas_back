@@ -9,12 +9,19 @@ const TaskAnalysisService = require('./taskAnalysisService');
 
 class TaskFileService {
   /**
+   * Construtor
+   */
+  constructor() {
+    // Pode ser expandido no futuro se necessário
+  }
+
+  /**
    * Gera os caminhos dos arquivos de uma tarefa
    * @param {string} taskId - ID da tarefa
    * @param {string} tasksDir - Diretorio de tarefas
    * @returns {Object}
    */
-  static getTaskFilePaths(taskId, tasksDir) {
+  getTaskFilePaths(taskId, tasksDir) {
     return {
       promptFile: path.join(tasksDir, `prompt-${taskId}.txt`),
       relatorioFile: path.join(tasksDir, `relatorio-${taskId}.txt`),
@@ -30,7 +37,7 @@ class TaskFileService {
    * @param {string} destinationDir - Diretorio de destino
    * @returns {Promise<void>}
    */
-  static async moveTaskFiles(taskId, sourceDir, destinationDir) {
+  async moveTaskFiles(taskId, sourceDir, destinationDir) {
     try {
       // Garantir que o diretorio de destino existe
       await fs.mkdir(destinationDir, { recursive: true });
@@ -70,7 +77,7 @@ class TaskFileService {
    * @param {Object} analysisPlan - Plano de analise (opcional)
    * @returns {Promise<Object>}
    */
-  static async prepareTaskFiles(task, tasksDir, project = null, analysisPlan = null) {
+  async prepareTaskFiles(task, tasksDir, project = null, analysisPlan = null) {
     const taskId = task.id;
     const paths = this.getTaskFilePaths(taskId, tasksDir);
 
@@ -97,7 +104,7 @@ class TaskFileService {
    * @param {Object} paths - Caminhos dos arquivos
    * @returns {string}
    */
-  static generatePromptContent(task, project, analysisPlan, paths) {
+  generatePromptContent(task, project, analysisPlan, paths) {
     const personaPrompt = 'Voce e o Agente Tecnico Jarbas.';
     const dirBase = project?.pastaBase || 'Diretorio atual';
     const dirFront = project?.frontendPath || 'Nao definido';
@@ -177,7 +184,7 @@ ${engineRules}`;
    * @param {Object} files - Objeto com caminhos dos arquivos
    * @returns {Promise<void>}
    */
-  static async cleanupFiles(files) {
+  async cleanupFiles(files) {
     if (!files || !files.promptFile) return;
 
     try {
