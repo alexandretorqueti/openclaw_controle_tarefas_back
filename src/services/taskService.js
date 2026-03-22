@@ -1242,7 +1242,36 @@ class TaskService {
     }
 
     // Fallback para o userId caso não venha na requisição (ideal pegar do token de auth)
-    const actionUserId = userId || existingTask.assignedToId || existingTask.createdById;
+    let actionUserId = userId || existingTask.assignedToId || existingTask.createdById;
+    
+    // VALIDAÇÃO CRÍTICA: Verificar se o userId existe na tabela users
+    if (actionUserId) {
+      try {
+        const userExists = await prisma.user.findUnique({
+          where: { id: actionUserId },
+          select: { id: true }
+        });
+        
+        if (!userExists) {
+          console.warn(`⚠️ User ID ${actionUserId} não encontrado na tabela users. Buscando usuário fallback...`);
+          // Buscar qualquer usuário válido como fallback
+          const fallbackUser = await prisma.user.findFirst({
+            select: { id: true }
+          });
+          
+          if (fallbackUser) {
+            actionUserId = fallbackUser.id;
+            console.log(`🔄 Usando usuário fallback: ${actionUserId}`);
+          } else {
+            console.error('❌ Nenhum usuário encontrado no sistema! Não será possível criar histórico.');
+            actionUserId = null;
+          }
+        }
+      } catch (userCheckError) {
+        console.error(`❌ Erro ao verificar usuário ${actionUserId}:`, userCheckError.message);
+        actionUserId = null;
+      }
+    }
 
     // ==========================================
     // FLUXO A: TAREFA RECURSIVA (O RESET)
@@ -1259,8 +1288,8 @@ class TaskService {
       const taskDataForCalc = { ...existingTask, lastExecutedAt: new Date() };
       const nextExecutionAt = this.calculateNextExecution(taskDataForCalc);
 
-      // Executa a atualização e o registro de histórico na mesma transação
-      const [updatedTask, historyRecord] = await prisma.$transaction([
+      // Preparar transação - sempre atualiza a tarefa
+      const transaction = [
         prisma.task.update({
           where: { id: taskId },
           data: {
@@ -1271,18 +1300,31 @@ class TaskService {
             isCompleted: false // Garante que a tarefa continua viva
           },
           include: { project: true, status: true, priority: true }
-        }),
-        prisma.taskHistory.create({
-          data: {
-            taskId: taskId,
-            userId: actionUserId,
-            oldStatusId: existingTask.statusId,
-            newStatusId: firstStatus.id,
-            // Aqui entra o pulo do gato: o campo text que você pediu!
-            notes: executionNotes || 'Execução de rotina concluída. Tarefa reiniciada.'
-          }
         })
-      ]);
+      ];
+      
+      // Adicionar histórico APENAS se temos um userId válido
+      let historyRecord = null;
+      if (actionUserId) {
+        transaction.push(
+          prisma.taskHistory.create({
+            data: {
+              taskId: taskId,
+              userId: actionUserId,
+              oldStatusId: existingTask.statusId,
+              newStatusId: firstStatus.id,
+              notes: executionNotes || 'Execução de rotina concluída. Tarefa reiniciada.'
+            }
+          })
+        );
+      } else {
+        console.warn(`⚠️ Não criando histórico para tarefa recursiva ${taskId} pois não há userId válido.`);
+      }
+      
+      // Executar transação
+      const transactionResults = await prisma.$transaction(transaction);
+      const updatedTask = transactionResults[0];
+      historyRecord = actionUserId ? transactionResults[1] : null;
 
             // Controle de versão automático após finalização
       try {
@@ -1386,17 +1428,25 @@ class TaskService {
           nextExecutionAt: null
         },
         include: { project: true, status: true, priority: true }
-      }),
-      prisma.taskHistory.create({
-        data: {
-          taskId: taskId,
-          userId: actionUserId,
-          oldStatusId: existingTask.statusId,
-          newStatusId: finalStatus.id,
-          notes: executionNotes || 'Tarefa finalizada.'
-        }
       })
     ];
+    
+    // Adicionar histórico APENAS se temos um userId válido
+    if (actionUserId) {
+      transaction.push(
+        prisma.taskHistory.create({
+          data: {
+            taskId: taskId,
+            userId: actionUserId,
+            oldStatusId: existingTask.statusId,
+            newStatusId: finalStatus.id,
+            notes: executionNotes || 'Tarefa finalizada.'
+          }
+        })
+      );
+    } else {
+      console.warn(`⚠️ Não criando histórico para tarefa ${taskId} pois não há userId válido.`);
+    }
 
     // Variáveis para armazenar tarefas ancestrais finalizadas
     let finalizedAncestors = []; // Array de objetos {task, historyRecord}
@@ -1489,18 +1539,22 @@ class TaskService {
           })
         );
 
-        // Adicionar histórico para a tarefa ancestral
-        transactionArray.push(
-          prisma.taskHistory.create({
-            data: {
-              taskId: parentTaskId,
-              userId: userId,
-              oldStatusId: parentTask.statusId,
-              newStatusId: finalStatusId,
-              notes: `Tarefa ancestral finalizada automaticamente porque todas as subtasks foram concluídas.`
-            }
-          })
-        );
+        // Adicionar histórico para a tarefa ancestral APENAS se temos userId
+        if (userId) {
+          transactionArray.push(
+            prisma.taskHistory.create({
+              data: {
+                taskId: parentTaskId,
+                userId: userId,
+                oldStatusId: parentTask.statusId,
+                newStatusId: finalStatusId,
+                notes: `Tarefa ancestral finalizada automaticamente porque todas as subtasks foram concluídas.`
+              }
+            })
+          );
+        } else {
+          console.warn(`⚠️ Não criando histórico para tarefa ancestral ${parentTaskId} pois userId é nulo.`);
+        }
         
         console.log(`🎯 Tarefa ancestral ${parentTaskId} será finalizada automaticamente.`);
       }
@@ -1527,15 +1581,21 @@ class TaskService {
     const transactionResults = await prisma.$transaction(transaction);
     
     const updatedTask = transactionResults[0];
-    const historyRecord = transactionResults[1];
+    // O histórico está na posição 1 apenas se foi criado (actionUserId não nulo)
+    // Se não há histórico, transactionResults tem apenas 1 elemento
+    const historyRecord = transactionResults.length > 1 ? transactionResults[1] : null;
     
     // Extrair dados dos ancestrais finalizados (se houver)
     // Cada ancestral ocupa 2 posições na transação: update + history
     const ancestorsFinalized = [];
     const ancestorsHistory = [];
     
-    // Começamos na posição 2 (após a tarefa atual e seu histórico)
-    for (let i = 2; i < transactionResults.length; i += 2) {
+    // Determinar posição inicial: 
+    // - Se temos histórico para a tarefa atual: começa na posição 2 (tarefa[0], histórico[1])
+    // - Se NÃO temos histórico: começa na posição 1 (apenas tarefa[0])
+    const startIndex = historyRecord ? 2 : 1;
+    
+    for (let i = startIndex; i < transactionResults.length; i += 2) {
       if (i < transactionResults.length) {
         ancestorsFinalized.push(transactionResults[i]); // Tarefa ancestral atualizada
       }

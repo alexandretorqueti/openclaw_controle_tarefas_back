@@ -19,7 +19,7 @@ function createProjectServiceMock(customizations = {}) {
     frontendPath: 'frontend',
     backendPath: 'backend',
     frontendPort: 3000,
-    backendPort: 3001
+    backendPort: 4001
   });
   
   mock.updateProject.mockResolvedValue(true);
@@ -30,7 +30,7 @@ function createProjectServiceMock(customizations = {}) {
     },
     ports: {
       frontend: 3000,
-      backend: 3001
+      backend: 4001
     }
   });
   

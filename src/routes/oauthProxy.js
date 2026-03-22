@@ -6,11 +6,11 @@ router.get('/proxy/google', (req, res) => {
   const origin = req.query.origin || req.headers.origin || 'http://localhost:3000';
   
   // Determine backend host based on origin
-  let backendHost = 'localhost:3001';
+  let backendHost = 'localhost:4001';
   if (origin.includes('192.168.1.70')) {
-    backendHost = '192.168.1.70:3001';
+    backendHost = '192.168.1.70:4001';
   } else if (origin.includes('tarefas.local')) {
-    backendHost = 'api.tarefas.local:3001';
+    backendHost = 'api.tarefas.local:4001';
   }
   
   // Construct the correct OAuth URL

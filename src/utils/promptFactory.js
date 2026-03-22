@@ -62,12 +62,14 @@ class PromptFactory {
     const taskTypeInstructions = {
       development: `
 === SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
-1. Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
-2. Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
-3. Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
-4. PROIBIDO criar ou editar arquivos de código-fonte.
-5. PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
-6. Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
+* Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
+* Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
+* Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${planFilePath}
+* NÃO DÊ MAIS DE UMA OPÇÃO AO DESENVOLVEDOR. SE HOUVER MAIS DE UM CAMINHO ESCOLHA O MELHOR.
+* NÃO PEÇA AO DESENVOLVEDOR PARA REALIZAR TESTES. OS TESTES SERÃO FEITOS EM OUTRA ETAPA.
+* PROIBIDO criar ou editar arquivos de código-fonte.
+* PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
+* Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
       `,
       
       analysis: `
