@@ -248,3 +248,18 @@ app.listen(PORT, () => {
     console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
   }
 });
+
+const path = require('path');
+
+// ... suas rotas de API (ex: app.get('/api/tasks', ...)) ...
+
+// Servir arquivos estáticos
+app.use(express.static(path.join(__dirname, 'build')));
+
+// O CÓDIGO DE FALLBACK VAI AQUI:
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
+app.listen(8090, () => console.log('Rodando...'));
+
