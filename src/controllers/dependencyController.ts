@@ -4,7 +4,7 @@
 // src/controllers/dependencyController.js
 
 import prisma from '../services/prismaService';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 
 class DependencyController {
   // Create a new dependency
@@ -86,7 +86,8 @@ class DependencyController {
 
   // Delete a dependency
   deleteDependency = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { taskId, dependentTaskId } = req.params;
+    const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
+    const dependentTaskId = Array.isArray(req.params.dependentTaskId) ? req.params.dependentTaskId[0] : req.params.dependentTaskId;
 
     // Find and delete dependency
     const dependency = await prisma.dependency.findFirst({
@@ -114,30 +115,36 @@ class DependencyController {
     });
   });
 
-  // Get dependencies for a task
-  getTaskDependencies = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { taskId } = req.params;
+// Get dependencies for a task
+getTaskDependencies = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  const taskId = Array.isArray(req.params.taskId)
+    ? req.params.taskId[0]
+    : req.params.taskId;
 
-    const dependencies = await prisma.dependency.findMany({
-      where: {
-        taskId
-      },
-      include: {
-        dependentTask: {
-          include: {
-            status: true,
-            priority: true,
-            assignedTo: true
-          }
+  if (!taskId) {
+    const error = new Error('taskId is required');
+    (error as any).statusCode = 400;
+    throw error;
+  }
+
+  const dependencies = await prisma.dependency.findMany({
+    where: { taskId },
+    include: {
+      dependentTask: {
+        include: {
+          status: true,
+          priority: true,
+          assignedTo: true
         }
       }
-    });
-
-    res.status(200).json({
-      status: 'success',
-      data: dependencies
-    });
+    }
   });
+
+  res.status(200).json({
+    status: 'success',
+    data: dependencies
+  });
+});
 }
 
 export default new DependencyController();

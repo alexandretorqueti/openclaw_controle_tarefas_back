@@ -12,9 +12,9 @@ class TaskSuccessStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.axios = container.resolve('axios');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = container.get('axios');
     
     // Usar instâncias fornecidas ou criar do container
     this.lockService = options.lockService || this._createLockService();
@@ -27,7 +27,7 @@ class TaskSuccessStep {
    * @private
    */
   _createLockService() {
-    const LockServiceClass = container.resolve('LockServiceClass');
+    const LockServiceClass = container.get('LockServiceClass');
     const { LOCK_FILE } = this.config;
     return new LockServiceClass(LOCK_FILE);
   }
@@ -37,7 +37,7 @@ class TaskSuccessStep {
    * @private
    */
   _createStateService() {
-    const MonitorStateServiceClass = container.resolve('MonitorStateServiceClass');
+    const MonitorStateServiceClass = container.get('MonitorStateServiceClass');
     const { TASKS_DIR } = this.config;
     return new MonitorStateServiceClass(TASKS_DIR);
   }
@@ -47,7 +47,7 @@ class TaskSuccessStep {
    * @private
    */
   _createTaskFileService() {
-    const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+    const TaskFileServiceClass = container.get('TaskFileServiceClass');
     return new TaskFileServiceClass();
   }
 

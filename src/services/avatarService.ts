@@ -56,7 +56,7 @@ class AvatarService {
       const avatarRecord = await prisma.agentAvatar.upsert({
         where: { agentId },
         update: {
-          __filename: uniqueFilename,
+          filename: uniqueFilename,
           mimeType: file.mimetype,
           path: relativePath,
           size: file.size,
@@ -64,7 +64,7 @@ class AvatarService {
         },
         create: {
           agentId,
-          __filename: uniqueFilename,
+          filename: uniqueFilename,
           mimeType: file.mimetype,
           path: relativePath,
           size: file.size
@@ -190,7 +190,7 @@ class AvatarService {
         where: { agentId }
       });
       
-      if (!avatar || avatar.__filename !== __filename) {
+      if (!avatar || avatar.filename !== __filename) {
         throw new Error('Avatar não encontrado ou não pertence ao agente');
       }
       
@@ -201,7 +201,7 @@ class AvatarService {
         buffer: fileBuffer,
         mimeType: avatar.mimeType,
         size: avatar.size,
-        __filename: avatar.__filename
+        __filename: avatar.filename
       };
       
     } catch (error) {

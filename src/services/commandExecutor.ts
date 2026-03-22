@@ -8,6 +8,20 @@ import * as path from 'path';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 
+interface ExecutionResultData {
+  output?: string;
+  error?: string | null;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  filesRead?: string[];
+  filesWritten?: string[];
+  modifiedFiles?: string[];
+  touchedFiles?: string[];
+  commandsExecuted?: string[];
+  executionDiagnostics?: any;
+}
+
 class CommandExecutor {
   /**
    * Executa a ferramenta baseada no JSON extraído do output da IA
@@ -55,7 +69,7 @@ class CommandExecutor {
     }
   }
 
-  static buildResult(success, data = {}) {
+  static buildResult(success: boolean, data: ExecutionResultData = {}) {
     return {
       success: !!success,
       output: data.output || '',
@@ -573,7 +587,7 @@ function extractRedirectionTargets(command = '', cwd = process.cwd()) {
   return uniquePaths(targets);
 }
 
-async function fingerprintFile(filePath: any): any {
+async function fingerprintFile(filePath: any): Promise<any> {
   try {
     const stat = await fs.promises.stat(filePath);
 
@@ -645,7 +659,7 @@ function fingerprintFileSync(filePath: any): any {
   }
 }
 
-async function collectFingerprints(files = []): any {
+async function collectFingerprints(files = []): Promise<any> {
   const result = {};
 
   for (const file of uniquePaths(files)) {
@@ -680,7 +694,7 @@ function diffFingerprints(before = {}, after = {}): any {
   return uniquePaths(changed);
 }
 
-function runShellCommand(command: any, options = {}): any {
+function runShellCommand(command: any, options: any = {}): any {
   return new Promise((resolve) => {
     exec(
       command,

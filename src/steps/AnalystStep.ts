@@ -1,43 +1,45 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: AnalystStep.js
-
-// src/steps/AnalystStep.js
+// src/steps/AnalystStep.ts
 /**
  * Step responsável por analisar e decompor tarefas complexas usando OpenClaw.
  * Implementa o padrão Pipeline Step com injeção via container para testabilidade.
  */
 
 import container from '../container';
+import * as path from 'path'; // Substituído o require() por import nativo do TS
 
 class AnalystStep {
+  // 1. Declaração explícita de todas as dependências do container
+  private openClawService: any;
+  private promptFactory: any;
+  private sessionChainUtils: any;
+  private jsonUtils: any;
+  private taskService: any;
+  private decompositionService: any;
+  private commentService: any;
+  private log: any;
+  private config: any;
+  private fileSystem: any;
+
   /**
    * Construtor que obtém todas as dependências do container.
-   * Para testes, o container deve ser previamente configurado com mocks.
    */
   constructor() {
-    (this as any).openClawService = container.resolve('openClawService');
-    (this as any).promptFactory = container.resolve('promptFactory');
-    (this as any).sessionChainUtils = container.resolve('sessionChainUtils');
-    (this as any).jsonUtils = container.resolve('jsonUtils');
-    (this as any).taskService = container.resolve('taskService');
-    (this as any).decompositionService = container.resolve('decompositionService');
-    (this as any).commentService = container.resolve('commentService');
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).fileSystem = container.resolve('fileSystem');
-    
-    // Dependências built-in (não injetadas por padrão, mas podem ser mockadas)
-    (this as any).path = require('path');
+    this.openClawService = container.get('openClawService');
+    this.promptFactory = container.get('promptFactory');
+    this.sessionChainUtils = container.get('sessionChainUtils');
+    this.jsonUtils = container.get('jsonUtils');
+    this.taskService = container.get('taskService');
+    this.decompositionService = container.get('decompositionService');
+    this.commentService = container.get('commentService');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.fileSystem = container.get('fileSystem');
   }
 
   /**
    * Executa o step de análise para uma tarefa
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa a ser analisada
-   * @param {Object} context.project - Projeto relacionado (opcional)
-   * @returns {Promise<Object>} Contexto atualizado com resultado da análise
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { task } = context;
     
     try {
@@ -47,7 +49,7 @@ class AnalystStep {
       const architectSessionId = await this.sessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
       
       await this.log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
-      const architectLogFile = this.path.join(this.config.TASKS_DIR, `architect-${task.id}.log`);
+      const architectLogFile = path.join(this.config.TASKS_DIR, `architect-${task.id}.log`);
 
       const primaryAgent = task.project?.agent || task.project?.programadorBack || 'main';
       const fallbackAgent = task.project?.programadorFront || 'main';
@@ -72,27 +74,29 @@ class AnalystStep {
       }
 
       // Extrai o JSON do rawOutput
-      let subtasksPlan = [];
+      let subtasksPlan: any[] = [];
       try {
         const jsonMatch = architectResult.rawOutput.match(/\[[\s\S]*?\]/);
         if (!jsonMatch) throw new Error("Nenhum array JSON encontrado na saída do agente.");
         
-        subtasksPlan = JSON.parse(architectResult.rawOutput);
+        // BUG CORRIGIDO: Agora ele faz o parse apenas do JSON extraído, e não do rawOutput inteiro
+        subtasksPlan = JSON.parse(jsonMatch[0]);
       } catch (parseError) {
         try {
           // Tenta de novo com a função extractJson
-          subtasksPlan = this.jsonUtils.extractJsonObjects(architectResult.rawOutput);  
-        } catch (extractError) {
+          const extracted = this.jsonUtils.extractJsonObjects(architectResult.rawOutput);
+          subtasksPlan = Array.isArray(extracted) ? extracted : [extracted];
+        } catch (extractError: any) {
           throw new Error(`Falha ao extrair o JSON da saída do OpenClaw: ${extractError.message}`);
         }
       }
 
-      // Verifica se subtasksPlan é um array de objetos ou outro array.
+      // Verifica se subtasksPlan é um array de arrays (acontece às vezes com IA)
       if (Array.isArray(subtasksPlan) && subtasksPlan.length > 0 && Array.isArray(subtasksPlan[0])) {
         subtasksPlan = subtasksPlan[0];
       }
 
-      if (!Array.isArray(subtasksPlan) || subtasksPlan.length === 0 || subtasksPlan.length === 1) {
+      if (!Array.isArray(subtasksPlan) || subtasksPlan.length <= 1) {
         // Marcar essa tarefa como atômica e seguir para o fluxo normal.
         await this.taskService.updateTask(task.id, { isAtomic: true });
         
@@ -109,7 +113,7 @@ class AnalystStep {
         };
       }
 
-      const mappedSubtasks = subtasksPlan.map(st => ({
+      const mappedSubtasks = subtasksPlan.map((st: any) => ({
         title: st.title,
         description: st.description,
         domain: st.domain, 
@@ -135,7 +139,7 @@ class AnalystStep {
         }
       };
       
-    } catch (error) {
+    } catch (error: any) {
       await this.log(`💥 Erro ao chamar Arquiteto para tarefa ${task.id}: ${error.message}`);
       await this._addComment(task.id, `❌ **Erro na Análise**\nFalha ao decompor tarefa: ${error.message}`, context.userId);
       
@@ -145,7 +149,6 @@ class AnalystStep {
           success: false,
           error: error.message
         },
-        // Flag opcional para interromper pipeline
         shouldAbort: true,
         abortReason: `Falha na análise: ${error.message}`
       };
@@ -153,17 +156,16 @@ class AnalystStep {
   }
 
   /**
-   * Adiciona um comentário a uma tarefa
-   * @private
+   * Adiciona um comentário a uma tarefa (Método Tipado Corretamente)
    */
-  async _addComment(taskId, content, userId = null): Promise<any> {
+  private async _addComment(taskId: string, content: string, userId: string | null = null): Promise<void> {
     try {
       await this.commentService.createComment({
         taskId,
         userId,
         content
       });
-    } catch (error) {
+    } catch (error: any) {
       await this.log(`⚠️ Erro ao adicionar comentário: ${error.message}`);
     }
   }

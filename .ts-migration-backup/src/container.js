@@ -5,7 +5,7 @@
  * Uso típico:
  *   const container = require('./container');
  *   container.register('openClawService', OpenClawService);
- *   const svc = container.resolve('openClawService');
+ *   const svc = container.get('openClawService');
  */
 class Container {
   constructor() {

@@ -1,68 +1,71 @@
-// Migrado para TypeScript - Fase: Controllers
-// Arquivo: projectController.js
+// src/controllers/projectController.ts
 
+import { Request, Response, NextFunction } from 'express';
 import projectService from '../services/projectService';
 import { validateProject, validateProjectUpdate } from '../validators/projectValidator';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import { snakeToCamel } from '../utils/caseConverter';
-import prisma from '../services/prismaService';
 import UserResolver from '../utils/userResolver';
-class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete projects have priority - no backend change
-  // 2026-03-10: Frontend fix - buttons edit/delete now have priority over row click to tasks screen (no backend change needed)
-  createProject = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+
+// Interface estendida para suportar as propriedades customizadas
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: { id: string; [key: string]: any };
+    correlationId?: string;
+  }
+}
+
+class ProjectController {
+  /**
+   * FIX 2026-03-10: Frontend buttons edit/delete projects have priority.
+   * No backend change needed for priority, but types must be strict.
+   */
+  createProject = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    // DEBUG: Log para verificar campos recebidos
     console.log('🔍 CREATE /api/projects - Campos recebidos:', JSON.stringify(body, null, 2));
-    console.log('🔍 CREATE /api/projects - programadorContratado recebido:', body.programadorContratado);
     
     // Determine createdById: prefer authenticated user, otherwise use provided ID
-    let createdById = body.createdById;
+    let createdById: string = body.createdById;
     
     if (req.user && req.user.id) {
-      // Use authenticated user's ID (overrides any provided value)
       createdById = req.user.id;
     } else if (!createdById || createdById.trim() === '') {
-      // No authenticated user and no provided ID - use default user
       try {
-        // Usar o helper UserResolver para obter ID do usuário padrão
         const defaultUserId = await UserResolver.getDefaultUserId();
         
         if (defaultUserId) {
           createdById = defaultUserId;
           console.log(`Usando usuário padrão para criação de projeto: ${defaultUserId}`);
         } else {
-          // Se não houver usuários, retornar erro
-          const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
-          (error as any).statusCode = 400;
+          const error = new Error('Nenhum usuário encontrado no sistema.');
+          error.statusCode = 400;
           throw error;
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Erro ao buscar usuário padrão:', error.message);
-        // Não usar mais ID fixo - retornar erro
-        const fallbackError = new Error('Não foi possível determinar o usuário para criar o projeto. Certifique-se de que existem usuários no sistema.');
+        const fallbackError = new Error('Não foi possível determinar o usuário para criar o projeto.');
         fallbackError.statusCode = 400;
         throw fallbackError;
       }
     }
     
-    // Update body with determined createdById
     const validatedBody = { ...body, createdById };
-    
     const validation = validateProject(validatedBody);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
-      error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
-      (error as any).statusCode = 400;
+      error.name = 'ValidationError';
+      error.errors = validation.errors;
+      error.statusCode = 400;
       throw error;
     }
 
     const project = await projectService.createProject(validation.data);
     
     res.status(201).json({
+      success: true,
       message: 'Project created successfully',
       project,
       correlationId: req.correlationId
@@ -70,15 +73,15 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
   });
 
   // Get all projects
-  getAllProjects = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { sort_by: sortBy, sort_order: sortOrder } = req.query;
-    const options = {
-      sortBy: sortBy || 'createdAt',
-      sortOrder: sortOrder || 'desc'
-    };
+  getAllProjects = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const sortBy = (req.query.sort_by as string) || 'createdAt';
+    const sortOrder = (req.query.sort_order as string) || 'desc';
+    
+    const options = { sortBy, sortOrder };
     const projects = await projectService.getAllProjects(options);
     
     res.json({
+      success: true,
       count: projects.length,
       projects,
       correlationId: req.correlationId
@@ -86,56 +89,50 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
   });
 
   // Get project by ID
-  getProjectById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  getProjectById = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const project = await projectService.getProjectById(id);
 
     if (!project) {
       const error = new Error('Project not found');
-      (error as any).statusCode = 404;
+      error.statusCode = 404;
       throw error;
     }
 
-    // DEBUG: Log para verificar campos retornados
-    console.log('🔍 GET /api/projects/:id - Campos retornados:', Object.keys(project));
-    console.log('🔍 GET /api/projects/:id - programadorContratado retornado:', project.programadorContratado);
-
     res.json({
+      success: true,
       project,
       correlationId: req.correlationId
     });
   });
 
   // Update project
-  updateProject = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-
+  updateProject = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
-    // Convert snake_case to camelCase if needed
     const body = snakeToCamel(req.body);
     
-    // DEBUG: Log para verificar campos recebidos
-    console.log('🔍 UPDATE /api/projects/:id - Campos recebidos:', JSON.stringify(body, null, 2));
-    console.log('🔍 UPDATE /api/projects/:id - programadorContratado recebido:', body.programadorContratado);
+    const existingProject = await projectService.getProjectById(id);
+
+    if (!existingProject) {
+      const error = new Error('Project not found');
+      error.statusCode = 404;
+      throw error;
+    }
     
-    const validation = validateProjectUpdate(body);
+    const validation = validateProjectUpdate(body, existingProject);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
-      error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
-      (error as any).statusCode = 400;
+      error.name = 'ValidationError';
+      error.errors = validation.errors;
+      error.statusCode = 400;
       throw error;
     }
 
     const project = await projectService.updateProject(id, validation.data);
 
-    if (!project) {
-      const error = new Error('Project not found');
-      (error as any).statusCode = 404;
-      throw error;
-    }
-
     res.json({
+      success: true,
       message: 'Project updated successfully',
       project,
       correlationId: req.correlationId
@@ -143,139 +140,48 @@ class ProjectController {  // FIX 2026-03-10: Frontend buttons edit/delete proje
   });
 
   // Delete project
-  deleteProject = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+  deleteProject = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     
-    // DEBUG: Log para verificar o ID recebido
-    console.log('🔍 DELETE /api/projects/:id - ID recebido:', id);
-    console.log('🔍 DELETE /api/projects/:id - Tipo do ID:', typeof id);
-    console.log('🔍 DELETE /api/projects/:id - URL completa:', req.originalUrl);
-    console.log('🔍 DELETE /api/projects/:id - Método:', req.method);
-    
-    // Validar se ID foi fornecido
     if (!id || id.trim() === '') {
       const error = new Error('Project ID is required');
-      (error as any).statusCode = 400;
+      error.statusCode = 400;
       throw error;
     }
     
-    // Validar formato UUID (opcional, mas recomendado)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(id)) {
-      console.log('❌ DELETE /api/projects/:id - ID inválido (não é UUID):', id);
       const error = new Error('Invalid project ID format');
-      (error as any).statusCode = 400;
+      error.statusCode = 400;
       throw error;
     }
-    
-    console.log('✅ DELETE /api/projects/:id - ID válido, chamando service...');
     
     const project = await projectService.deleteProject(id);
 
     if (!project) {
-      console.log('❌ DELETE /api/projects/:id - Projeto não encontrado:', id);
       const error = new Error(`Project with ID ${id} not found`);
-      (error as any).statusCode = 404;
-      (error as any).code = 'PROJECT_NOT_FOUND';
+      error.statusCode = 404;
+      error.code = 'PROJECT_NOT_FOUND';
       throw error;
     }
 
-    console.log('✅ DELETE /api/projects/:id - Projeto excluído com sucesso:', project.id);
-    
     res.json({
+      success: true,
       message: 'Project deleted successfully',
       project,
       correlationId: req.correlationId
     });
   });
 
-  // Get projects by user ID
-  getProjectsByUserId = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { userId } = req.params;
-    const projects = await projectService.getProjectsByUserId(userId);
-    
-    res.json({
-      count: projects.length,
-      projects,
-      correlationId: req.correlationId
-    });
-  });
+ 
 
-  // Search projects
-  searchProjects = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { q } = req.query;
-    
-    if (!q || q.trim() === '') {
-      const error = new Error('Search query is required');
-      (error as any).statusCode = 400;
-      throw error;
-    }
+  
 
-    const projects = await projectService.searchProjects(q.trim());
-    
-    res.json({
-      count: projects.length,
-      projects,
-      correlationId: req.correlationId
-    });
-  });
+ 
 
-  // Get project statistics
-  getProjectStatistics = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const statistics = await projectService.getProjectStatistics();
-    
-    res.json({
-      statistics,
-      correlationId: req.correlationId
-    });
-  });
+ 
 
-  // Archive project
-  archiveProject = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
-    const project = await projectService.archiveProject(id);
-
-    if (!project) {
-      const error = new Error('Project not found');
-      (error as any).statusCode = 404;
-      throw error;
-    }
-
-    res.json({
-      message: 'Project archived successfully',
-      project,
-      correlationId: req.correlationId
-    });
-  });
-
-  // Restore archived project
-  restoreProject = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
-    const project = await projectService.restoreProject(id);
-
-    if (!project) {
-      const error = new Error('Project not found');
-      (error as any).statusCode = 404;
-      throw error;
-    }
-
-    res.json({
-      message: 'Project restored successfully',
-      project,
-      correlationId: req.correlationId
-    });
-  });
-
-  // Get archived projects
-  getArchivedProjects = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const projects = await projectService.getArchivedProjects();
-    
-    res.json({
-      count: projects.length,
-      projects,
-      correlationId: req.correlationId
-    });
-  });
+ 
 }
 
 export default new ProjectController();

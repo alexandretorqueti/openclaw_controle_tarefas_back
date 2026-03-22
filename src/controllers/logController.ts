@@ -6,7 +6,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { LOG_FILE } from '../../aux/config';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import { Logger } from '../utils/logger';
 
 class LogController {
@@ -70,8 +70,8 @@ class LogController {
         level: 'ERROR',
         startDate: startDate || today.toISOString(),
         endDate: endDate || tomorrow.toISOString(),
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: parseInt(String(limit)),
+        offset: parseInt(String(offset))
       });
 
       res.status(200).json({
@@ -108,14 +108,14 @@ class LogController {
         level,
         endpoint,
         method,
-        statusCode: statusCode ? parseInt(statusCode) : undefined,
+        statusCode: statusCode ? parseInt(String(statusCode)) : undefined,
         errorType,
         userId,
         correlationId,
         startDate,
         endDate,
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        limit: parseInt(String(limit)),
+        offset: parseInt(String(offset))
       });
 
       res.status(200).json({

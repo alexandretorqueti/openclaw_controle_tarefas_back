@@ -12,12 +12,12 @@ class TaskFailureStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.axios = container.resolve('axios');
-    this.path = container.resolve('path');
-    this.fileUtils = container.resolve('fileUtils');
-    this.fileSystem = container.resolve('fileSystem');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = container.get('axios');
+    this.path = container.get('path');
+    this.fileUtils = container.get('fileUtils');
+    this.fileSystem = container.get('fileSystem');
     
     // Usar instâncias fornecidas ou criar do container
     this.lockService = options.lockService || this._createLockService();
@@ -30,7 +30,7 @@ class TaskFailureStep {
    * @private
    */
   _createLockService() {
-    const LockServiceClass = container.resolve('LockServiceClass');
+    const LockServiceClass = container.get('LockServiceClass');
     const { LOCK_FILE } = this.config;
     return new LockServiceClass(LOCK_FILE);
   }
@@ -40,7 +40,7 @@ class TaskFailureStep {
    * @private
    */
   _createStateService() {
-    const MonitorStateServiceClass = container.resolve('MonitorStateServiceClass');
+    const MonitorStateServiceClass = container.get('MonitorStateServiceClass');
     const { TASKS_DIR } = this.config;
     return new MonitorStateServiceClass(TASKS_DIR);
   }
@@ -50,7 +50,7 @@ class TaskFailureStep {
    * @private
    */
   _createTaskFileService() {
-    const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+    const TaskFileServiceClass = container.get('TaskFileServiceClass');
     return new TaskFileServiceClass();
   }
 

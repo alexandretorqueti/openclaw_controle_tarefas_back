@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: TaskExecutionOrchestrator.js
-
-// src/steps/TaskExecutionOrchestrator.js
+// src/steps/TaskExecutionOrchestrator.ts
 /**
  * Orchestrator principal que executa uma tarefa completa usando o pipeline de steps.
  * Substitui o método `executeTask` do TaskExecutionService.
@@ -9,23 +6,28 @@
 
 import container from '../container';
 
+// Imports estáticos movidos para o topo (Padrão ESM/TypeScript)
+import SetupContextStep from './SetupContextStep';
+import ArchitectPlanningStep from './ArchitectPlanningStep';
+import DeveloperLoopOrchestrator from './DeveloperLoopOrchestrator';
+import TeardownStep from './TeardownStep';
+
 class TaskExecutionOrchestrator {
+  // 1. Declaração explícita da propriedade
+  private log: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = options.log || container.resolve('log');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
   }
 
   /**
    * Executa uma tarefa completa usando o pipeline de steps
-   * @param {Object} task - Tarefa a ser executada
-   * @param {string} userId - ID do usuário
-   * @param {Object} config - Configuração do sistema
-   * @returns {Promise<Object>} Resultado da execução
    */
-  async executeTask(task, userId, config): Promise<any> {
+  async executeTask(task: any, userId: string, config: any): Promise<any> {
     const initialContext = { task, userId, config };
 
     try {
@@ -33,7 +35,6 @@ class TaskExecutionOrchestrator {
 
       // 1. SETUP CONTEXT
       await this.log(`🔧 [Orchestrator] Executando SetupContextStep...`);
-      import SetupContextStep from "./SetupContextStep";
       const setupStep = new SetupContextStep();
       const setupResult = await setupStep.execute(initialContext);
       
@@ -48,7 +49,6 @@ class TaskExecutionOrchestrator {
 
       // 2. ARCHITECT PLANNING
       await this.log(`🏗️ [Orchestrator] Executando ArchitectPlanningStep...`);
-      import ArchitectPlanningStep from "./ArchitectPlanningStep";
       const architectStep = new ArchitectPlanningStep();
       const architectResult = await architectStep.execute(setupResult);
       
@@ -63,7 +63,6 @@ class TaskExecutionOrchestrator {
 
       // 3. DEVELOPER LOOP
       await this.log(`🔄 [Orchestrator] Executando DeveloperLoopOrchestrator...`);
-      import DeveloperLoopOrchestrator from "./DeveloperLoopOrchestrator";
       const developerOrchestrator = new DeveloperLoopOrchestrator();
       const developerResult = await developerOrchestrator.execute(architectResult);
       
@@ -78,7 +77,6 @@ class TaskExecutionOrchestrator {
 
       // 4. TEARDOWN
       await this.log(`🔧 [Orchestrator] Executando TeardownStep...`);
-      import TeardownStep from "./TeardownStep";
       const teardownStep = new TeardownStep();
       const teardownResult = await teardownStep.execute({
         ...developerResult,
@@ -108,7 +106,7 @@ class TaskExecutionOrchestrator {
         taskId: task.id
       };
 
-    } catch (error) {
+    } catch (error: any) {
       await this.log(`💥 [FATAL Orchestrator] O pipeline falhou: ${error.message}\n${error.stack}`);
       
       return {
@@ -121,12 +119,8 @@ class TaskExecutionOrchestrator {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} task - Tarefa a ser executada
-   * @param {string} userId - ID do usuário
-   * @param {Object} config - Configuração do sistema
-   * @returns {Promise<Object>} Resultado da execução
    */
-  static async execute(task, userId, config): Promise<any> {
+  static async execute(task: any, userId: string, config: any): Promise<any> {
     const orchestrator = new TaskExecutionOrchestrator();
     return await orchestrator.executeTask(task, userId, config);
   }

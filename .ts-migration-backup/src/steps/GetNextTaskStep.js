@@ -12,9 +12,9 @@ class GetNextTaskStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.axios = options.axios || container.resolve('axios');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = options.axios || container.get('axios');
   }
 
   /**

@@ -12,7 +12,7 @@ class TaskExecutionOrchestrator {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = options.log || container.resolve('log');
+    this.log = options.log || container.get('log');
   }
 
   /**

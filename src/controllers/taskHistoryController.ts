@@ -4,7 +4,7 @@
 // src/controllers/taskHistoryController.js
 
 import taskHistoryService from '../services/taskHistoryService';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import prisma from '../services/prismaService';
 import UserResolver from '../utils/userResolver';
 

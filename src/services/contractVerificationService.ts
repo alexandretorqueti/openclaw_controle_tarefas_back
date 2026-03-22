@@ -1,7 +1,6 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: contractVerificationService.js
 
-export 
 
 
 // src/services/contractVerificationService.js
@@ -24,7 +23,7 @@ class ContractVerificationService {
    * @param {Object} options - Opcoes de verificacao
    * @returns {Promise<Object>}
    */
-  static async verifyContract(doneFile, relatorioFile, terminalLogFile, options = {}): Promise<any> {
+  static async verifyContract(doneFile, relatorioFile, terminalLogFile, options: any = {}): Promise<any> {
     try {
       // === 1. BUSCA TOLERANTE DO .DONE ===
       let doneExists = await fs.access(doneFile).then(() => true).catch(() => false);

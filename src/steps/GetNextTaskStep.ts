@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: GetNextTaskStep.js
-
-// src/steps/GetNextTaskStep.js
+// src/steps/GetNextTaskStep.ts
 /**
  * Step responsável por obter a próxima tarefa elegível para execução.
  * Faz requisição à API e trata casos de fila vazia ou erros.
@@ -10,24 +7,25 @@
 import container from '../container';
 
 class GetNextTaskStep {
+  // 1. Declaração explícita das dependências do container
+  private log: any;
+  private config: any;
+  private axios: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).axios = options.axios || container.resolve('axios');
+  constructor(options: any = {}) {
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = options.axios || container.get('axios');
   }
 
   /**
    * Executa o step para obter próxima tarefa
-   * @param {Object} context - Contexto do pipeline
-   * @param {string} context.nickname - Nickname do usuário
-   * @param {string} context.apiUrl - URL da API (opcional, usa config.API_URL por padrão)
-   * @returns {Promise<Object>} Contexto atualizado com tarefa encontrada
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { nickname } = context;
     const apiUrl = context.apiUrl || this.config.API_URL;
     
@@ -78,7 +76,7 @@ class GetNextTaskStep {
         }
       };
       
-    } catch (error) {
+    } catch (error: any) {
       // Se a API retornar 404 (Not Found) ou 204 (No Content), significa que a fila está vazia.
       // Isso é um comportamento esperado, então não precisamos logar como um erro crítico.
       if (error.response && (error.response.status === 404 || error.response.status === 204)) {
@@ -115,11 +113,8 @@ class GetNextTaskStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {string} nickname - Nickname do usuário
-   * @param {string} apiUrl - URL da API (opcional)
-   * @returns {Promise<Object|null>} Tarefa encontrada ou null
    */
-  static async getNextTask(nickname, apiUrl = null): Promise<any> {
+  static async getNextTask(nickname: string, apiUrl: string | null = null): Promise<any> {
     const step = new GetNextTaskStep();
     const result = await step.execute({ nickname, apiUrl });
     return result.nextTaskResult;

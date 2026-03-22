@@ -12,12 +12,12 @@ class EcosystemValidationStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = options.log || container.resolve('log');
+    this.log = options.log || container.get('log');
     
     // Usar instâncias fornecidas ou criar do container
-    this.taskExecutionService = options.taskExecutionService || container.resolve('taskExecutionService');
-    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
-    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
+    this.taskExecutionService = options.taskExecutionService || container.get('taskExecutionService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
   }
 
   /**

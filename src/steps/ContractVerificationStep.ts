@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: ContractVerificationStep.js
-
-// src/steps/ContractVerificationStep.js
+// src/steps/ContractVerificationStep.ts
 /**
  * Step responsável por verificar se o contrato da tarefa foi cumprido.
  * Verifica arquivos .done, relatório, evidências e snapshot changes.
@@ -10,34 +7,29 @@
 import container from '../container';
 
 class ContractVerificationStep {
+  // 1. Declaração limpa de todas as dependências
+  private log: any;
+  private contractVerificationService: any;
+  private evidenceService: any;
+  private fileUtils: any;
+  private workspaceSnapshotService: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = options.log || container.resolve('log');
-    
-    // Usar instâncias fornecidas ou criar do container
-    (this as any).contractVerificationService = options.contractVerificationService || container.resolve('contractVerificationService');
-    (this as any).evidenceService = options.evidenceService || container.resolve('evidenceService');
-    (this as any).fileUtils = options.fileUtils || container.resolve('fileUtils');
-    (this as any).workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
+    this.contractVerificationService = options.contractVerificationService || container.get('contractVerificationService');
+    this.evidenceService = options.evidenceService || container.get('evidenceService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
   }
 
   /**
    * Executa a verificação de contrato
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.project - Projeto (pode ser null)
-   * @param {Object} context.files - Arquivos preparados
-   * @param {Object} context.config - Configuração
-   * @param {Object} context.evidence - Evidências coletadas (do DeveloperTurnStep)
-   * @param {Object} context.analysisPlan - Plano de análise
-   * @param {Map} context.initialSnapshot - Snapshot inicial
-   * @param {string} context.actualDoneFilePath - Caminho real do arquivo .done (pode ser diferente do esperado)
-   * @returns {Promise<Object>} Contexto atualizado com resultado da verificação
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { 
       task, 
       project, 
@@ -117,10 +109,10 @@ class ContractVerificationStep {
           missingRequirements: contractResult.missingRequirements || [],
           evidence: contractResult.evidence || {}
         },
-        contractResult // Mantém compatibilidade com código existente
+        contractResult // Mantém compatibilidade com o Orquestrador
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no ContractVerificationStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -138,10 +130,8 @@ class ContractVerificationStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo
-   * @returns {Promise<Object>} Resultado da verificação
    */
-  static async verifyContract(context): Promise<any> {
+  static async verifyContract(context: any): Promise<any> {
     const step = new ContractVerificationStep();
     const result = await step.execute(context);
     return result.contractVerificationResult;

@@ -1,7 +1,7 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: autoTaskService.js
 
-export import prisma from "./prismaService";
+import prisma from "./prismaService";
 import logger from '../utils/logger';
 import ProcessKiller from '../utils/processKiller';
 

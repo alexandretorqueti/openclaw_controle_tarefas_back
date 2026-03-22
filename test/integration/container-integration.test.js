@@ -45,7 +45,7 @@ describe('Integração do Container', () => {
       container.register('TaskFileServiceClass', TaskFileService);
       
       // Resolver e criar instância
-      const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+      const TaskFileServiceClass = container.get('TaskFileServiceClass');
       const instance = new TaskFileServiceClass();
       
       // Verificar se a instância tem os métodos necessários

@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: TeardownStep.js
-
-// src/steps/TeardownStep.js
+// src/steps/TeardownStep.ts
 /**
  * Step responsável por finalizar a execução da tarefa, salvar logs e conteúdos
  * gerados no banco de dados e consolidar o resultado final.
@@ -10,33 +7,33 @@
 import container from '../container';
 
 class TeardownStep {
+  // 1. Declaração explícita de todas as dependências
+  private log: any;
+  private fileSystem: any;
+  private path: any;
+  private taskExecutionService: any;
+  private taskService: any;
+  private fileUtils: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = options.log || container.resolve('log');
-    (this as any).fileSystem = options.fileSystem || container.resolve('fileSystem');
-    (this as any).path = options.path || container.resolve('path');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.path = options.path || container.get('path');
     
     // Usar instâncias fornecidas ou criar do container
-    (this as any).taskExecutionService = options.taskExecutionService || container.resolve('taskExecutionService');
-    (this as any).taskService = options.taskService || container.resolve('taskService');
-    (this as any).fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.taskExecutionService = options.taskExecutionService || container.get('taskExecutionService');
+    this.taskService = options.taskService || container.get('taskService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
   }
 
   /**
    * Executa o step de finalização (teardown)
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.executionLogData - Dados do log de execução (para finalizar)
-   * @param {Object} context.contractResult - Resultado final do contrato (do DeveloperLoopOrchestrator)
-   * @param {Object} context.files - Arquivos preparados
-   * @param {Object} context.config - Configuração
-   * @param {string} context.architectPlan - Plano do arquiteto
-   * @returns {Promise<Object>} Contexto atualizado com resultado final
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { 
       task, 
       executionLogData,
@@ -85,17 +82,17 @@ class TeardownStep {
       }
 
       // 2. Salvar conteúdos dos arquivos gerados no banco de dados
-      const updateData = {};
+      const updateData: any = {};
       
-      // Helper para ler arquivos com segurança
-      const readFileSafe = async (filePath): Promise<any> => {
+      // Helper para ler arquivos com segurança (agora tipado corretamente)
+      const readFileSafe = async (filePath: string): Promise<string | null> => {
         try {
           if (filePath && await this.fileUtils.fileExists(filePath)) {
             const content = await this.fileSystem.readFile(filePath, 'utf8');
             await this.log(`📄 [Teardown] LIDO: ${this.path.basename(filePath)} (${content.length} chars)`);
             return content;
           }
-        } catch (error) {
+        } catch (error: any) {
           await this.log(`❌ [Teardown] ERRO ao ler ${this.path.basename(filePath)}: ${error.message}`);
         }
         return null;
@@ -130,7 +127,7 @@ class TeardownStep {
 
       return { ...context, finalResult };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no TeardownStep para tarefa ${task.id}: ${stepError.message}\n${stepError.stack}`);
       
       return {
@@ -147,10 +144,8 @@ class TeardownStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo
-   * @returns {Promise<Object>} Resultado final
    */
-  static async finalizeTask(context): Promise<any> {
+  static async finalizeTask(context: any): Promise<any> {
     const step = new TeardownStep();
     const result = await step.execute(context);
     return result.finalResult;

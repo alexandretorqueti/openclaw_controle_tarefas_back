@@ -2,7 +2,7 @@
  * Validador de tarefas
  */
 
-export function validateTask(data: any): { valid: boolean; errors: string[] } {
+export function validateTask(data: any): { valid: boolean; errors: string[]; data: any } {
   const errors: string[] = [];
 
   if (!data.title || typeof data.title !== 'string' || data.title.trim().length === 0) {
@@ -12,10 +12,11 @@ export function validateTask(data: any): { valid: boolean; errors: string[] } {
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 
-export function validateTaskUpdate(data: any, existingTask: any): { valid: boolean; errors: string[] } {
+export function validateTaskUpdate(data: any, existingTask: any): { valid: boolean; errors: string[]; data: any } {
   const errors: string[] = [];
 
   if (data.title !== undefined && data.title !== null) {
@@ -27,12 +28,14 @@ export function validateTaskUpdate(data: any, existingTask: any): { valid: boole
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 
-export function validateTaskSearch(params: any): { valid: boolean; errors: string[] } {
+export function validateTaskSearch(params: any): { valid: boolean; errors: string[]; data: any } {
   return {
     valid: true,
     errors: [],
+    data: params
   };
 }

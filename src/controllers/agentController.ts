@@ -1,6 +1,6 @@
-// Migrado para TypeScript - Fase: Controllers
-// Arquivo: agentController.js
+// src/controllers/agentController.ts
 
+import { Request, Response } from 'express';
 import agentService from '../services/agentService';
 import agentCache from '../services/agentCache';
 
@@ -8,12 +8,12 @@ import agentCache from '../services/agentCache';
  * Lista todos os agentes
  * @route GET /api/agents
  */
-export const listAgents = async (req, res): Promise<any> => {
+export const listAgents = async (req: Request, res: Response): Promise<void> => {
   try {
     const agents = await agentService.listAgents();
     
     // Ordenar agentes por nome de forma segura
-    agents.sort((a, b) => {
+    agents.sort((a: any, b: any) => {
       const nameA = a.identity?.name || a.name || a.id || '';
       const nameB = b.identity?.name || b.name || b.id || '';
       return nameA.localeCompare(nameB);
@@ -24,7 +24,7 @@ export const listAgents = async (req, res): Promise<any> => {
       data: agents,
       count: agents.length
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller listAgents:', error.message);
     res.status(500).json({
       success: false,
@@ -38,15 +38,16 @@ export const listAgents = async (req, res): Promise<any> => {
  * Cria um novo agente
  * @route POST /api/agents
  */
-export const createAgent = async (req, res): Promise<any> => {
+export const createAgent = async (req: Request, res: Response): Promise<void> => {
   try {
     const { name, workspace } = req.body;
     
     if (!name) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'O nome do agente é obrigatório'
       });
+      return;
     }
     
     const agent = await agentService.addAgent(name, workspace);
@@ -56,7 +57,7 @@ export const createAgent = async (req, res): Promise<any> => {
       data: agent,
       message: 'Agente criado com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller createAgent:', error.message);
     res.status(500).json({
       success: false,
@@ -70,7 +71,7 @@ export const createAgent = async (req, res): Promise<any> => {
  * Obtém detalhes de um agente específico
  * @route GET /api/agents/:id
  */
-export const getAgent = async (req, res): Promise<any> => {
+export const getAgent = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -80,14 +81,15 @@ export const getAgent = async (req, res): Promise<any> => {
       success: true,
       data: agent
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller getAgent:', error.message);
     
     if (error.message.includes('não encontrado')) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: error.message
       });
+      return;
     }
     
     res.status(500).json({
@@ -102,7 +104,7 @@ export const getAgent = async (req, res): Promise<any> => {
  * Atualiza a identidade de um agente
  * @route PUT /api/agents/:id/identity
  */
-export const updateAgentIdentity = async (req, res): Promise<any> => {
+export const updateAgentIdentity = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { name, emoji, avatar, model, workspace } = req.body;
@@ -115,18 +117,20 @@ export const updateAgentIdentity = async (req, res): Promise<any> => {
     const hasWorkspace = workspace !== undefined;
     
     if (!hasName && !hasEmoji && !hasAvatar && !hasModel && !hasWorkspace) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Pelo menos um campo (name, emoji, avatar, model ou workspace) deve ser fornecido'
       });
+      return;
     }
     
     // Name cannot be empty string if provided
     if (hasName && name.trim() === '') {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'O nome não pode ser vazio'
       });
+      return;
     }
     
     const identity = { name, emoji, avatar, model, workspace };
@@ -137,7 +141,7 @@ export const updateAgentIdentity = async (req, res): Promise<any> => {
       data: result,
       message: 'Identidade do agente atualizada com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller updateAgentIdentity:', error.message);
     res.status(500).json({
       success: false,
@@ -151,16 +155,17 @@ export const updateAgentIdentity = async (req, res): Promise<any> => {
  * Adiciona um binding a um agente
  * @route POST /api/agents/:id/bindings
  */
-export const addBinding = async (req, res): Promise<any> => {
+export const addBinding = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { binding } = req.body;
     
     if (!binding) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'O binding é obrigatório (formato: canal:conta)'
       });
+      return;
     }
     
     const result = await agentService.bindAgent(id, binding);
@@ -170,7 +175,7 @@ export const addBinding = async (req, res): Promise<any> => {
       data: result,
       message: 'Binding adicionado com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller addBinding:', error.message);
     res.status(500).json({
       success: false,
@@ -184,16 +189,17 @@ export const addBinding = async (req, res): Promise<any> => {
  * Remove um binding de um agente
  * @route DELETE /api/agents/:id/bindings
  */
-export const removeBinding = async (req, res): Promise<any> => {
+export const removeBinding = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     const { binding } = req.body;
     
     if (!binding) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'O binding é obrigatório (formato: canal:conta)'
       });
+      return;
     }
     
     const result = await agentService.unbindAgent(id, binding);
@@ -203,7 +209,7 @@ export const removeBinding = async (req, res): Promise<any> => {
       data: result,
       message: 'Binding removido com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller removeBinding:', error.message);
     res.status(500).json({
       success: false,
@@ -217,7 +223,7 @@ export const removeBinding = async (req, res): Promise<any> => {
  * Exclui um agente
  * @route DELETE /api/agents/:id
  */
-export const deleteAgent = async (req, res): Promise<any> => {
+export const deleteAgent = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
     
@@ -228,7 +234,7 @@ export const deleteAgent = async (req, res): Promise<any> => {
       data: result,
       message: 'Agente excluído com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller deleteAgent:', error.message);
     res.status(500).json({
       success: false,
@@ -242,7 +248,7 @@ export const deleteAgent = async (req, res): Promise<any> => {
  * Obtém informações do cache de agentes
  * @route GET /api/agents/cache/info
  */
-export const getCacheInfo = async (req, res): Promise<any> => {
+export const getCacheInfo = async (req: Request, res: Response): Promise<void> => {
   try {
     const cacheInfo = agentCache.getCacheInfo();
     
@@ -251,7 +257,7 @@ export const getCacheInfo = async (req, res): Promise<any> => {
       data: cacheInfo,
       message: 'Informações do cache obtidas com sucesso'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller getCacheInfo:', error.message);
     res.status(500).json({
       success: false,
@@ -264,7 +270,7 @@ export const getCacheInfo = async (req, res): Promise<any> => {
  * Invalida o cache de agentes (força atualização)
  * @route POST /api/agents/cache/invalidate
  */
-export const invalidateCache = async (req, res): Promise<any> => {
+export const invalidateCache = async (req: Request, res: Response): Promise<void> => {
   try {
     agentCache.invalidate();
     
@@ -272,7 +278,7 @@ export const invalidateCache = async (req, res): Promise<any> => {
       success: true,
       message: 'Cache invalidado com sucesso. Próxima requisição buscará dados frescos.'
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller invalidateCache:', error.message);
     res.status(500).json({
       success: false,
@@ -281,21 +287,25 @@ export const invalidateCache = async (req, res): Promise<any> => {
   }
 };
 
+// ...existing code...
+
 /**
  * Lê um arquivo do workspace do agente usando openclaw
  * @route GET /api/agents/:id/files/:__filename
  */
-export const readAgentFile = async (req, res): Promise<any> => {
+export const readAgentFile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id, __filename } = req.params;
+    const { id } = req.params;
+    const __filename = req.params.__filename as string;  // Cast to string to resolve TypeScript error
     
     // Validar nome do arquivo
     const validFiles = ['IDENTITY.md', 'SOUL.md'];
     if (!validFiles.includes(__filename)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: `Arquivo inválido. Apenas ${validFiles.join(', ')} são permitidos.`
       });
+      return;
     }
     
     // Executar comando openclaw para ler o arquivo do workspace do agente
@@ -306,23 +316,25 @@ export const readAgentFile = async (req, res): Promise<any> => {
       data: content,
       message: `Arquivo ${__filename} lido com sucesso do workspace do agente`
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller readAgentFile:', error.message);
     
     if (error.message.includes('não encontrado') || error.message.includes('not found')) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: error.message
       });
+      return;
     }
     
     // Se o arquivo não existir, retornar vazio (não é erro)
     if (error.message.includes('No such file') || error.message.includes('ENOENT')) {
-      return res.json({
+      res.json({
         success: true,
         data: '',
         message: `Arquivo ${__filename} não existe no workspace do agente`
       });
+      return;
     }
     
     res.status(500).json({
@@ -336,25 +348,28 @@ export const readAgentFile = async (req, res): Promise<any> => {
  * Escreve em um arquivo do workspace do agente usando openclaw
  * @route PUT /api/agents/:id/files/:__filename
  */
-export const writeAgentFile = async (req, res): Promise<any> => {
+export const writeAgentFile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { id, __filename } = req.params;
+    const { id } = req.params;
+    const __filename = req.params.__filename as string;  // Cast to string to resolve TypeScript error
     const { content } = req.body;
     
     if (content === undefined || content === null) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'O conteúdo do arquivo é obrigatório'
       });
+      return;
     }
     
     // Validar nome do arquivo
     const validFiles = ['IDENTITY.md', 'SOUL.md'];
     if (!validFiles.includes(__filename)) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: `Arquivo inválido. Apenas ${validFiles.join(', ')} são permitidos.`
       });
+      return;
     }
     
     // Executar comando openclaw para escrever no arquivo do workspace do agente
@@ -365,14 +380,15 @@ export const writeAgentFile = async (req, res): Promise<any> => {
       data: result,
       message: `Arquivo ${__filename} atualizado com sucesso no workspace do agente`
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro no controller writeAgentFile:', error.message);
     
     if (error.message.includes('não encontrado') || error.message.includes('not found')) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: error.message
       });
+      return;
     }
     
     res.status(500).json({
@@ -381,3 +397,5 @@ export const writeAgentFile = async (req, res): Promise<any> => {
     });
   }
 };
+
+// ...existing code...

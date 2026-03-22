@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: EcosystemValidationStep.js
-
-// src/steps/EcosystemValidationStep.js
+// src/steps/EcosystemValidationStep.ts
 /**
  * Step responsável por validar o ecossistema do projeto (build, testes, etc.)
  * Executa após contrato cumprido para garantir que as alterações não quebraram o sistema.
@@ -10,31 +7,27 @@
 import container from '../container';
 
 class EcosystemValidationStep {
+  // 1. Declaração limpa das dependências
+  private log: any;
+  private taskExecutionService: any;
+  private fileUtils: any;
+  private fileSystem: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = options.log || container.resolve('log');
-    
-    // Usar instâncias fornecidas ou criar do container
-    (this as any).taskExecutionService = options.taskExecutionService || container.resolve('taskExecutionService');
-    (this as any).fileUtils = options.fileUtils || container.resolve('fileUtils');
-    (this as any).fileSystem = options.fileSystem || container.resolve('fileSystem');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
+    this.taskExecutionService = options.taskExecutionService || container.get('taskExecutionService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
   }
 
   /**
    * Executa a validação do ecossistema
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.project - Projeto (pode ser null)
-   * @param {Object} context.config - Configuração
-   * @param {Object} context.analysisPlan - Plano de análise (para determinar tipo de tarefa)
-   * @param {Object} context.contractResult - Resultado da verificação de contrato
-   * @param {string} context.actualDoneFilePath - Caminho do arquivo .done
-   * @returns {Promise<Object>} Contexto atualizado com resultado da validação
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { 
       task, 
       project, 
@@ -113,7 +106,7 @@ class EcosystemValidationStep {
           try {
             await this.fileSystem.unlink(actualDoneFilePath);
             await this.log(`🗑️ [Ecosistema] Arquivo .done removido devido a falha na validação`);
-          } catch (unlinkError) {
+          } catch (unlinkError: any) {
             await this.log(`⚠️ [Ecosistema] Não foi possível remover .done: ${unlinkError.message}`);
           }
         }
@@ -135,7 +128,7 @@ class EcosystemValidationStep {
         };
       }
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no EcosystemValidationStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -153,10 +146,8 @@ class EcosystemValidationStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo
-   * @returns {Promise<Object>} Resultado da validação
    */
-  static async validateEcosystem(context): Promise<any> {
+  static async validateEcosystem(context: any): Promise<any> {
     const step = new EcosystemValidationStep();
     const result = await step.execute(context);
     return result.ecosystemValidationResult;

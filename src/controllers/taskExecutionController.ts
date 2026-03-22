@@ -2,7 +2,7 @@
 // Arquivo: taskExecutionController.js
 
 import { PrismaClient } from '@prisma/client';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 
 const prisma = new PrismaClient();
 
@@ -13,7 +13,7 @@ class TaskExecutionController {
    * @param {Object} res - Response
    */
   static getTaskExecutions = ErrorMiddleware.catchAsync(async (req, res): Promise<any> => {
-    const { taskId } = req.params;
+    const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
     const { limit = 10 } = req.query;
 
     // Validação do taskId
@@ -25,7 +25,7 @@ class TaskExecutionController {
     }
 
     // Validação do limite
-    const parsedLimit = parseInt(limit);
+    const parsedLimit = parseInt(String(limit));
     if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
       return res.status(400).json({
         success: false,
@@ -76,7 +76,7 @@ class TaskExecutionController {
    * @param {Object} res - Response
    */
   static getExecutionLog = ErrorMiddleware.catchAsync(async (req, res): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
     if (!id) {
       return res.status(400).json({
@@ -147,7 +147,7 @@ class TaskExecutionController {
    * @param {Object} res - Response
    */
   static getExecutionStats = ErrorMiddleware.catchAsync(async (req, res): Promise<any> => {
-    const { taskId } = req.params;
+    const taskId = Array.isArray(req.params.taskId) ? req.params.taskId[0] : req.params.taskId;
 
     if (!taskId) {
       return res.status(400).json({

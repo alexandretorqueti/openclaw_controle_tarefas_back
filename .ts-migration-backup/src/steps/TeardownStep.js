@@ -12,14 +12,14 @@ class TeardownStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = options.log || container.resolve('log');
-    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
-    this.path = options.path || container.resolve('path');
+    this.log = options.log || container.get('log');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.path = options.path || container.get('path');
     
     // Usar instâncias fornecidas ou criar do container
-    this.taskExecutionService = options.taskExecutionService || container.resolve('taskExecutionService');
-    this.taskService = options.taskService || container.resolve('taskService');
-    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.taskExecutionService = options.taskExecutionService || container.get('taskExecutionService');
+    this.taskService = options.taskService || container.get('taskService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
   }
 
   /**

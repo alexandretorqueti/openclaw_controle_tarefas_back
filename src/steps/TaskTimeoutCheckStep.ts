@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: TaskTimeoutCheckStep.js
-
-// src/steps/TaskTimeoutCheckStep.js
+// src/steps/TaskTimeoutCheckStep.ts
 /**
  * Step responsável por verificar timeout de tarefas em execução.
  * Mata processos que excederam o limite crítico e limpa o sistema.
@@ -10,58 +7,60 @@
 import container from '../container';
 
 class TaskTimeoutCheckStep {
+  // 1. Declaração explícita de todas as dependências
+  private log: any;
+  private config: any;
+  private timeUtils: any;
+  private lockService: any;
+  private stateService: any;
+  private taskFileService: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).timeUtils = container.resolve('timeUtils');
+  constructor(options: any = {}) {
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.timeUtils = container.get('timeUtils');
     
     // Usar instâncias fornecidas ou criar do container
-    (this as any).lockService = options.lockService || this._createLockService();
-    (this as any).stateService = options.stateService || this._createStateService();
-    (this as any).taskFileService = options.taskFileService || this._createTaskFileService();
+    this.lockService = options.lockService || this._createLockService();
+    this.stateService = options.stateService || this._createStateService();
+    this.taskFileService = options.taskFileService || this._createTaskFileService();
   }
 
   /**
    * Cria instância do LockService com configuração
-   * @private
    */
-  _createLockService() {
-    const LockServiceClass = container.resolve('LockServiceClass');
+  private _createLockService(): any {
+    // A correção mágica do TypeScript aqui (as any)
+    const LockServiceClass = container.get('LockServiceClass') as any;
     const { LOCK_FILE } = this.config;
     return new LockServiceClass(LOCK_FILE);
   }
 
   /**
    * Cria instância do MonitorStateService com configuração
-   * @private
    */
-  _createStateService() {
-    const MonitorStateServiceClass = container.resolve('MonitorStateServiceClass');
+  private _createStateService(): any {
+    const MonitorStateServiceClass = container.get('MonitorStateServiceClass') as any;
     const { TASKS_DIR } = this.config;
     return new MonitorStateServiceClass(TASKS_DIR);
   }
 
   /**
    * Cria instância do TaskFileService
-   * @private
    */
-  _createTaskFileService() {
-    const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+  private _createTaskFileService(): any {
+    const TaskFileServiceClass = container.get('TaskFileServiceClass') as any;
     return new TaskFileServiceClass();
   }
 
   /**
    * Executa o step de verificação de timeout
-   * @param {Object} context - Contexto do pipeline
-   * @param {number} context.pid - PID do processo a verificar
-   * @param {number} context.taskTimeoutMs - Timeout da tarefa em ms (opcional, usa config.TASK_TIMEOUT_MS por padrão)
-   * @returns {Promise<Object>} Contexto atualizado com resultado
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { pid } = context;
     const taskTimeoutMs = context.taskTimeoutMs || this.config.TASK_TIMEOUT_MS;
     const { TASKS_DIR, ERROR_DIR } = this.config;
@@ -166,7 +165,7 @@ class TaskTimeoutCheckStep {
         };
       }
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no TaskTimeoutCheckStep para PID ${pid}: ${stepError.message}`);
       
       return {
@@ -184,11 +183,8 @@ class TaskTimeoutCheckStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {number} pid - PID do processo a verificar
-   * @param {number} taskTimeoutMs - Timeout da tarefa em ms (opcional)
-   * @returns {Promise<Object>} Resultado da operação
    */
-  static async checkTimeout(pid, taskTimeoutMs = null): Promise<any> {
+  static async checkTimeout(pid: number, taskTimeoutMs: number | null = null): Promise<any> {
     const step = new TaskTimeoutCheckStep();
     const result = await step.execute({ pid, taskTimeoutMs });
     return result.timeoutCheckResult;

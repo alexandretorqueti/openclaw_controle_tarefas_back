@@ -48,7 +48,7 @@ function createLegacyCallAnalyst(userId: any): any {
         };
       }
     } catch (error) {
-      const log = container.resolve('log');
+      const log = container.get('log');
       log(`💥 Erro não tratado em callAnalyst: ${error.message}`);
       return {
         success: false,

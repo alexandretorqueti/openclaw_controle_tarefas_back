@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: ArchitectPlanningStep.js
-
-// src/steps/ArchitectPlanningStep.js
+// src/steps/ArchitectPlanningStep.ts
 /**
  * Step responsável pela análise e planejamento do arquiteto.
  * O arquiteto analisa a tarefa, gera um plano de ação e pode até executar a tarefa.
@@ -11,39 +8,37 @@
 import container from '../container';
 
 class ArchitectPlanningStep {
+  // 1. Declaração explícita das dependências (Adeus 'this as any')
+  private log: any;
+  private openClawService: any;
+  private sessionChainUtils: any;
+  private smartFileFinder: any;
+  private taskAnalysisService: any;
+  private workspaceSnapshotService: any;
+  private fileUtils: any;
+  private fileSystem: any;
+  private promptFactory: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    
-    // Usar instâncias fornecidas ou criar do container
-    (this as any).openClawService = options.openClawService || container.resolve('openClawService');
-    (this as any).sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
-    (this as any).smartFileFinder = options.smartFileFinder || container.resolve('smartFileFinder');
-    (this as any).taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
-    (this as any).workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
-    (this as any).fileUtils = options.fileUtils || container.resolve('fileUtils');
-    (this as any).fileSystem = options.fileSystem || container.resolve('fileSystem');
-    (this as any).promptFactory = options.promptFactory || container.resolve('promptFactory');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
+    this.openClawService = options.openClawService || container.get('openClawService');
+    this.sessionChainUtils = options.sessionChainUtils || container.get('sessionChainUtils');
+    this.smartFileFinder = options.smartFileFinder || container.get('smartFileFinder');
+    this.taskAnalysisService = options.taskAnalysisService || container.get('taskAnalysisService');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.promptFactory = options.promptFactory || container.get('promptFactory');
   }
 
   /**
    * Executa o step de planejamento do arquiteto
-   * @param {Object} context - Contexto do pipeline (deve conter dados do SetupContextStep)
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.project - Projeto (pode ser null)
-   * @param {Object} context.files - Arquivos preparados
-   * @param {Map} context.initialSnapshot - Snapshot inicial
-   * @param {Object} context.config - Configuração
-   * @param {Object} context.analysisPlan - Plano de análise
-   * @param {string} context.commentsSection - Seção de comentários
-   * @param {string} context.developerPrompt - Prompt do desenvolvedor
-   * @param {string} context.currentInput - Prompt atual
-   * @returns {Promise<Object>} Contexto atualizado com análise do arquiteto
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { 
       task, 
       project, 
@@ -87,7 +82,7 @@ class ArchitectPlanningStep {
       
       await this.log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
       
-      // Roda o Arquiteto com timeout de 10 minutos (600000ms)
+      // Roda o Arquiteto com timeout configurado
       const architectResult = await this.openClawService.executeWithFallback(
         architectSessionId,
         architectInput,
@@ -101,7 +96,7 @@ class ArchitectPlanningStep {
       );
       
       let architectPlan = "";
-      let architectAnalysis = null;
+      let architectAnalysis: any = null;
       
       // Busca inteligente pelo plano do arquiteto
       const planSearch = await this.smartFileFinder.findRealArchitectPlan(
@@ -131,7 +126,7 @@ class ArchitectPlanningStep {
         
         await this.log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
         
-        const hadExecuted = architectAnalysis.hadExecuted;
+        const hadExecuted = architectAnalysis.hasExecuted;
         
         // VALIDAÇÃO CRÍTICA: Se a IA diz que executou, verificar evidências reais
         if ((architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) || existsDoneFile) {
@@ -204,7 +199,7 @@ class ArchitectPlanningStep {
       let updatedPromptContent;
       
       if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
-        // Arquiteto já executou com alta confiança (E PASSOU NA VALIDAÇÃO) - usar APENAS a análise do arquiteto
+        // Arquiteto já executou com alta confiança (E PASSOU NA VALIDAÇÃO)
         updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
         await this.log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança + evidências validadas).`);
       } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
@@ -240,7 +235,7 @@ class ArchitectPlanningStep {
         architectPlan
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no ArchitectPlanningStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -258,10 +253,8 @@ class ArchitectPlanningStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo (deve conter todos os dados necessários)
-   * @returns {Promise<Object>} Resultado do planejamento
    */
-  static async planArchitect(context): Promise<any> {
+  static async planArchitect(context: any): Promise<any> {
     const step = new ArchitectPlanningStep();
     const result = await step.execute(context);
     return result.architectPlanningResult;

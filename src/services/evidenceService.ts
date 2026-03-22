@@ -1,7 +1,5 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: evidenceService.js
-
-export // src/services/evidenceService.js
 // Serviço responsável por rastrear as ações da IA e gerar as evidências de execução
 
 import * as path from 'path';

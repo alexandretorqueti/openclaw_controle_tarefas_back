@@ -2,7 +2,7 @@
 // Arquivo: projectTypeController.js
 
 import prisma from '../services/prismaService';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 
 class ProjectTypeController {
   // Get all project types
@@ -31,8 +31,9 @@ class ProjectTypeController {
   // Get project type by ID
   getProjectTypeById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     const { id } = req.params;
+    const projectTypeId = Array.isArray(id) ? id[0] : id;
     const projectType = await prisma.projectType.findUnique({
-      where: { id },
+      where: { id: projectTypeId },
       include: {
         projects: {
           select: {
@@ -89,11 +90,12 @@ class ProjectTypeController {
   // Update project type
   updateProjectType = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     const { id } = req.params;
+    const projectTypeId = Array.isArray(id) ? id[0] : id;
     const { name, persona_prompt, base_rules } = req.body;
     
     // Check if project type exists
     const existingProjectType = await prisma.projectType.findUnique({
-      where: { id }
+      where: { id: projectTypeId }
     });
     
     if (!existingProjectType) {
@@ -103,7 +105,7 @@ class ProjectTypeController {
     }
 
     const updatedProjectType = await prisma.projectType.update({
-      where: { id },
+      where: { id: projectTypeId },
       data: {
         name: name !== undefined ? name : existingProjectType.name,
         personaPrompt: persona_prompt !== undefined ? persona_prompt : existingProjectType.personaPrompt,
@@ -121,10 +123,11 @@ class ProjectTypeController {
   // Delete project type
   deleteProjectType = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     const { id } = req.params;
+    const projectTypeId = Array.isArray(id) ? id[0] : id;
     
     // Check if project type exists
     const existingProjectType = await prisma.projectType.findUnique({
-      where: { id }
+      where: { id: projectTypeId }
     });
     
     if (!existingProjectType) {
@@ -135,7 +138,7 @@ class ProjectTypeController {
 
     // Check if project type is being used by any projects
     const projectsWithType = await prisma.project.findFirst({
-      where: { projectTypeId: id }
+      where: { projectTypeId: projectTypeId }
     });
     
     if (projectsWithType) {
@@ -145,7 +148,7 @@ class ProjectTypeController {
     }
 
     await prisma.projectType.delete({
-      where: { id }
+      where: { id: projectTypeId }
     });
     
     res.json({

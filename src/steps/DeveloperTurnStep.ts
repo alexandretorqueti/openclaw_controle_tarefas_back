@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: DeveloperTurnStep.js
-
-// src/steps/DeveloperTurnStep.js
+// src/steps/DeveloperTurnStep.ts
 /**
  * Step responsável por executar um turno individual do desenvolvedor.
  * Inclui geração de sessão, execução via OpenClaw e coleta básica de evidências.
@@ -10,34 +7,28 @@
 import container from '../container';
 
 class DeveloperTurnStep {
+  private log: any;
+  private openClawService: any;
+  private evidenceService: any;
+  private fileSystem: any;
+  private path: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = options.log || container.resolve('log');
-    
-    // Usar instâncias fornecidas ou criar do container
-    (this as any).openClawService = options.openClawService || container.resolve('openClawService');
-    (this as any).evidenceService = options.evidenceService || container.resolve('evidenceService');
-    (this as any).fileSystem = options.fileSystem || container.resolve('fileSystem');
-    (this as any).path = options.path || container.resolve('path');
+  constructor(options: any = {}) {
+    this.log = options.log || container.get('log');
+    this.openClawService = options.openClawService || container.get('openClawService');
+    this.evidenceService = options.evidenceService || container.get('evidenceService');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.path = options.path || container.get('path');
   }
 
   /**
    * Executa um turno do desenvolvedor
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.project - Projeto (pode ser null)
-   * @param {Object} context.files - Arquivos preparados
-   * @param {Object} context.config - Configuração
-   * @param {number} context.turnNumber - Número do turno (1-indexed)
-   * @param {string} context.basePrompt - Prompt base (inclui contexto de dependências)
-   * @param {string} context.lastFeedback - Feedback do turno anterior (pode ser null)
-   * @param {string} context.backupAgent - Agente de fallback
-   * @returns {Promise<Object>} Contexto atualizado com resultado do turno
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { 
       task, 
       project, 
@@ -77,7 +68,6 @@ class DeveloperTurnStep {
         promptDesteTurno += `\n\n=== RESULTADO DA SUA ÚLTIMA AÇÃO ===\n${lastFeedback}\n\nContinue a tarefa com base neste feedback. Você DEVE usar uma ferramenta JSON para prosseguir.`;
       }
 
-      // Salva o prompt do turno no disco para auditoria
       const developerPromptFile = this.path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnNumber}.txt`);
       await this.fileSystem.writeFile(developerPromptFile, promptDesteTurno).catch(() => {});
 
@@ -103,15 +93,15 @@ class DeveloperTurnStep {
         { executionDirectory: project?.pastaBase || TASKS_DIR }
       );
       
-      // 5. ANALISA SE HÁ ARQUIVO .done FORA DO LOCAL ESPERADO (rogue done file)
+      // 5. ANALISA SE HÁ ARQUIVO .done FORA DO LOCAL ESPERADO
       let doneExists = false;
       let actualDonePath = files.doneFile;
       
-      const findDynamicDone = async (dir): Promise<any> => {
+      const findDynamicDone = async (dir: string): Promise<string | null> => {
         if (!dir) return null;
         try {
           const dirFiles = await this.fileSystem.readdir(dir);
-          const found = dirFiles.find(f => f.endsWith('.done'));
+          const found = dirFiles.find((f: string) => f.endsWith('.done'));
           return found ? this.path.join(dir, found) : null;
         } catch(e) { 
           return null; 
@@ -126,11 +116,10 @@ class DeveloperTurnStep {
         await this.log(`⚠️ [DeveloperTurnStep] Arquivo .done fora do local esperado: ${rogueDoneFile}`);
       }
       
-      // 6. DETECTA TRUNCAMENTO DE TOOL CALL (JSON mal formado)
+      // 6. DETECTA TRUNCAMENTO DE TOOL CALL
       let truncatedInfo = null;
       const raw = res.rawOutput || '';
       
-      // Simulação simples de detecção de truncamento (simplificada para testes)
       if (raw.includes('{') && !raw.includes('}') || 
           raw.includes('[') && !raw.includes(']') ||
           raw.includes('"') && (raw.match(/"/g) || []).length % 2 !== 0) {
@@ -141,13 +130,26 @@ class DeveloperTurnStep {
         };
       }
       
-      // 7. PREPARA FEEDBACK PARA PRÓXIMO TURNO (se necessário)
+      // =====================================================================
+      // 7. PREPARA FEEDBACK PARA PRÓXIMO TURNO E INTERCEPTA SUBMISSÃO
+      // =====================================================================
       let feedbackForNextTurn = null;
       let hasMeaningfulProgress = true;
+      
+      const rawLower = raw.toLowerCase();
+      const isAskingQuestion = rawLower.includes('would you like me to') || 
+                               rawLower.includes('should i proceed') || 
+                               rawLower.includes('posso continuar') || 
+                               rawLower.includes('do you want me to');
       
       if (res.toolFeedback) {
         feedbackForNextTurn = res.toolFeedback;
         await this.log(`🛠️ [DeveloperTurnStep] Resultado da ferramenta capturado (${feedbackForNextTurn.length} chars)`);
+      } else if (isAskingQuestion) {
+        // A NOSSA TRAVA DE IA MEDROSA ENTRA AQUI!
+        feedbackForNextTurn = `[ERRO DE PROTOCOLO] Você fez uma pergunta ou pediu permissão. Lembre-se: não há um humano no teclado para te responder. Assuma a melhor decisão técnica e simplesmente execute a alteração nos arquivos usando suas ferramentas.`;
+        hasMeaningfulProgress = false;
+        await this.log(`⚠️ [DeveloperTurnStep] IA detectada fazendo perguntas. Injetando feedback de correção de postura.`);
       } else if (truncatedInfo && truncatedInfo.detected) {
         feedbackForNextTurn = `[ERRO DE SINTAXE DE FERRAMENTA] O bloco JSON foi cortado no meio (limite de caracteres) ou faltam aspas/chaves finais.\nPor favor, corrija e envie APENAS o JSON válido.`;
         hasMeaningfulProgress = false;
@@ -174,18 +176,16 @@ class DeveloperTurnStep {
           truncatedInfo,
           hasMeaningfulProgress,
           feedbackForNextTurn,
-          // Dados para próximo turno
           lastFeedback: feedbackForNextTurn,
           turnExecuted: true
         },
-        // Propaga evidências para steps subsequentes
         evidence,
         currentOpenClawResult: res,
         doneFileExists: doneExists,
         actualDoneFilePath: actualDonePath
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no DeveloperTurnStep para tarefa ${task.id}, turno ${turnNumber}: ${stepError.message}`);
       
       return {
@@ -202,12 +202,7 @@ class DeveloperTurnStep {
     }
   }
 
-  /**
-   * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo
-   * @returns {Promise<Object>} Resultado do turno
-   */
-  static async executeTurn(context): Promise<any> {
+  static async executeTurn(context: any): Promise<any> {
     const step = new DeveloperTurnStep();
     const result = await step.execute(context);
     return result.turnResult;

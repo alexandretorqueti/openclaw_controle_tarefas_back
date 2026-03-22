@@ -13,17 +13,17 @@ class ArchitectPlanningStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
+    this.log = container.get('log');
     
     // Usar instâncias fornecidas ou criar do container
-    this.openClawService = options.openClawService || container.resolve('openClawService');
-    this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
-    this.smartFileFinder = options.smartFileFinder || container.resolve('smartFileFinder');
-    this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
-    this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
-    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
-    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
-    this.promptFactory = options.promptFactory || container.resolve('promptFactory');
+    this.openClawService = options.openClawService || container.get('openClawService');
+    this.sessionChainUtils = options.sessionChainUtils || container.get('sessionChainUtils');
+    this.smartFileFinder = options.smartFileFinder || container.get('smartFileFinder');
+    this.taskAnalysisService = options.taskAnalysisService || container.get('taskAnalysisService');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.promptFactory = options.promptFactory || container.get('promptFactory');
   }
 
   /**

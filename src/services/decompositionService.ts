@@ -1,10 +1,21 @@
-// Migrado para TypeScript - Fase: Services
-// Arquivo: decompositionService.js
+// src/services/DecompositionService.ts
 
-export import prisma from "./prismaService";
-import { Logger, LOG_LEVELS } from '../utils/logger';
+import prisma from "./prismaService";
+import { Logger, LOG_LEVELS, ERROR_TYPES } from '../utils/logger';
 import sseService from "./sseService";
-const logger = Logger;
+
+// Interface para definir a estrutura de uma subtarefa recebida
+interface SubtaskInput {
+  title: string;
+  description?: string;
+  domain: 'BACKEND' | 'FRONTEND';
+  statusId: string;
+  priorityId: string;
+  userId: string;
+  deadline?: string | Date;
+  projectId?: string;
+}
+
 /**
  * Serviço de decomposição de tarefas
  * Transforma um array de tarefas em tarefas encadeadas com dependências sequenciais
@@ -12,57 +23,42 @@ const logger = Logger;
 class DecompositionService {
   /**
    * Decompõe uma tarefa pai em subtarefas sequenciais
-   * @param {string} parentTaskId - ID da tarefa pai
-   * @param {Array} subtasksArray - Array de objetos de subtarefas
-   * @returns {Promise<Object>} Resultado da decomposição
    */
-  async decompose(parentTaskId, subtasksArray): Promise<any> {
+  async decompose(parentTaskId: string, subtasksArray: SubtaskInput[]): Promise<any> {
     try {
-      // Validações iniciais
-      if (!parentTaskId) {
-        throw new Error('parentTaskId é obrigatório');
-      }
-
+      if (!parentTaskId) throw new Error('parentTaskId é obrigatório');
       if (!Array.isArray(subtasksArray) || subtasksArray.length === 0) {
         throw new Error('subtasksArray deve ser um array não vazio');
       }
 
-      logger.logInfo(`Iniciando decomposição da tarefa ${parentTaskId} com ${subtasksArray.length} subtarefas`);
+      await Logger.logInfo({ message: `Iniciando decomposição da tarefa ${parentTaskId} com ${subtasksArray.length} subtarefas` });
 
-      // Verificar se a tarefa pai existe
       const parentTask = await prisma.task.findUnique({
         where: { id: parentTaskId },
         select: { id: true, isDecomposed: true, projectId: true }
       });
 
-      if (!parentTask) {
-        throw new Error(`Tarefa pai ${parentTaskId} não encontrada`);
-      }
+      if (!parentTask) throw new Error(`Tarefa pai ${parentTaskId} não encontrada`);
+      if (parentTask.isDecomposed) throw new Error(`Tarefa ${parentTaskId} já está decomposta`);
 
-      if (parentTask.isDecomposed) {
-        throw new Error(`Tarefa ${parentTaskId} já está decomposta`);
-      }
-
-      // Validar cada subtarefa
-      for (let i = 0; i < subtasksArray.length; i++) {
-        const subtask = subtasksArray[i];
+      // Validar cada subtarefa antes de abrir a transação
+      subtasksArray.forEach((subtask, i) => {
         this.validateSubtask(subtask, i, parentTask.projectId);
-      }
+      });
 
-      // Executar decomposição em transação
-      const result = await prisma.$transaction(async (tx): Promise<any> => {
+      // Executar decomposição em transação para garantir atomicidade
+      const result = await prisma.$transaction(async (tx) => {
         const createdSubtasks = [];
-        let previousTaskId = null;
+        let previousTaskId: string | null = null;
 
         for (let i = 0; i < subtasksArray.length; i++) {
           const subtask = subtasksArray[i];
           
-          // Criar subtarefa
           const created = await tx.task.create({
             data: {
               title: subtask.title,
               description: subtask.description || '',
-              domain: subtask.domain, // 'BACKEND' ou 'FRONTEND'
+              domain: subtask.domain,
               projectId: parentTask.projectId,
               parentTaskId: parentTaskId,
               statusId: subtask.statusId,
@@ -70,8 +66,8 @@ class DecompositionService {
               createdById: subtask.userId,
               assignedToId: subtask.userId,
               deadline: subtask.deadline ? new Date(subtask.deadline) : new Date(),
-              position: i, // Posição na sequência
-              isAtomic: false, // Nasce falso para passar pelo Validador
+              position: i,
+              isAtomic: false, 
               isDecomposed: false,
               isCompleted: false
             }
@@ -79,7 +75,7 @@ class DecompositionService {
 
           createdSubtasks.push(created);
 
-          // Criar dependência sequencial (exceto para a primeira)
+          // Criar dependência sequencial (DependentTaskId depende de TaskId)
           if (previousTaskId) {
             await tx.dependency.create({
               data: { 
@@ -98,7 +94,7 @@ class DecompositionService {
           where: { id: parentTaskId }, 
           data: { 
             isDecomposed: true,
-            isAtomic: false // Tarefa decomposta não é atômica
+            isAtomic: false 
           } 
         });
 
@@ -110,164 +106,96 @@ class DecompositionService {
         };
       });
 
-      // Emitir eventos SSE para atualização em tempo real
-      try {
-        // Emitir task_created para cada subtarefa criada
-        for (const subtask of result.subtasks) {
-          sseService.broadcast('task_created', subtask);
-        }
-        
-        // Buscar a tarefa pai com subtarefas incluídas para emitir task_updated
-        const parentTaskWithSubtasks = await prisma.task.findUnique({
-          where: { id: parentTaskId },
-          include: {
-            project: {
-              select: { id: true, name: true }
-            },
-            status: true,
-            priority: true,
-            createdBy: {
-              select: { id: true, name: true, email: true, avatarUrl: true }
-            },
-            assignedTo: {
-              select: { id: true, name: true, email: true, avatarUrl: true }
-            },
-            subtasks: {
-              select: { id: true, title: true, isCompleted: true }
-            }
-          }
-        });
-        
-        if (parentTaskWithSubtasks) {
-          sseService.broadcast('task_updated', parentTaskWithSubtasks);
-        }
-      } catch (sseError) {
-        logger.logError(`Erro ao emitir eventos SSE para decomposição da tarefa ${parentTaskId}:`, sseError);
-        // Não falhar a decomposição por causa do SSE
-      }
+      // Notificações SSE (Fora da transação para não travar o banco)
+      this._emitSseUpdates(parentTaskId, result.subtasks).catch(err => 
+        Logger.logError(err, {} as any, {} as any, ERROR_TYPES.SSE)
+      );
 
-      logger.logInfo(`Decomposição concluída: ${result.subtasksCreated} subtarefas criadas para tarefa ${parentTaskId}`);
+      await Logger.logInfo({ message: `Decomposição concluída: ${result.subtasksCreated} subtarefas para tarefa ${parentTaskId}` });
       return result;
 
-    } catch (error) {
-      logger.logError(`Erro na decomposição da tarefa ${parentTaskId}:`, error);
+    } catch (error: any) {
+      await Logger.logError(error, {} as any, {} as any, ERROR_TYPES.CAN_DECOMPOSE_ERROR);
       throw error;
     }
   }
 
   /**
    * Valida uma subtarefa individual
-   * @param {Object} subtask - Objeto da subtarefa
-   * @param {number} index - Índice no array
-   * @param {string} projectId - ID do projeto
    */
-  validateSubtask(subtask, index, projectId) {
+  private validateSubtask(subtask: SubtaskInput, index: number, projectId: string | null): void {
     if (!subtask.title || typeof subtask.title !== 'string') {
-      throw new Error(`Subtask[${index}]: título é obrigatório e deve ser uma string`);
+      throw new Error(`Subtask[${index}]: título é obrigatório`);
     }
-
     if (!subtask.domain || !['BACKEND', 'FRONTEND'].includes(subtask.domain)) {
       throw new Error(`Subtask[${index}]: domain deve ser 'BACKEND' ou 'FRONTEND'`);
     }
+    if (!subtask.statusId) throw new Error(`Subtask[${index}]: statusId é obrigatório`);
+    if (!subtask.userId) throw new Error(`Subtask[${index}]: userId é obrigatório`);
 
-    if (!subtask.statusId || typeof subtask.statusId !== 'string') {
-      throw new Error(`Subtask[${index}]: statusId é obrigatório`);
-    }
-
-    if (!subtask.priorityId || typeof subtask.priorityId !== 'string') {
-      throw new Error(`Subtask[${index}]: priorityId é obrigatório`);
-    }
-
-    if (!subtask.userId || typeof subtask.userId !== 'string') {
-      throw new Error(`Subtask[${index}]: userId é obrigatório`);
-    }
-
-    // Se projectId for fornecido na subtask, deve corresponder ao projeto pai
     if (subtask.projectId && subtask.projectId !== projectId) {
-      throw new Error(`Subtask[${index}]: projectId não corresponde ao projeto da tarefa pai`);
+      throw new Error(`Subtask[${index}]: projectId não corresponde ao projeto pai`);
+    }
+  }
+
+  /**
+   * Helper privado para emissão de eventos SSE
+   */
+  private async _emitSseUpdates(parentTaskId: string, subtasks: any[]): Promise<void> {
+    for (const subtask of subtasks) {
+      sseService.broadcast('task_created', subtask);
+    }
+    
+    const parentWithDetails = await prisma.task.findUnique({
+      where: { id: parentTaskId },
+      include: {
+        project: true,
+        status: true,
+        priority: true,
+        subtasks: { select: { id: true, title: true, isCompleted: true } }
+      }
+    });
+    
+    if (parentWithDetails) {
+      sseService.broadcast('task_updated', parentWithDetails);
     }
   }
 
   /**
    * Verifica se uma tarefa pode ser decomposta
-   * @param {string} taskId - ID da tarefa
-   * @returns {Promise<Object>} Informações sobre a capacidade de decomposição
    */
-  async canDecompose(taskId): Promise<any> {
+  async canDecompose(taskId: string): Promise<any> {
     try {
       const task = await prisma.task.findUnique({
         where: { id: taskId },
-        select: {
-          id: true,
-          isDecomposed: true,
-          isAtomic: true,
-          isCompleted: true,
-          projectId: true,
-          title: true
-        }
+        select: { id: true, isDecomposed: true, isAtomic: true, isCompleted: true, projectId: true, title: true }
       });
 
-      if (!task) {
-        return { canDecompose: false, reason: 'Tarefa não encontrada' };
-      }
+      if (!task) return { canDecompose: false, reason: 'Tarefa não encontrada' };
+      if (task.isDecomposed) return { canDecompose: false, reason: 'Tarefa já decomposta' };
+      if (task.isAtomic) return { canDecompose: false, reason: 'Tarefa marcada como atômica' };
+      if (task.isCompleted) return { canDecompose: false, reason: 'Tarefa já concluída' };
 
-      if (task.isDecomposed) {
-        return { canDecompose: false, reason: 'Tarefa já decomposta' };
-      }
-
-      if (task.isAtomic) {
-        return { canDecompose: false, reason: 'Tarefa marcada como atômica' };
-      }
-
-      if (task.isCompleted) {
-        return { canDecompose: false, reason: 'Tarefa já concluída' };
-      }
-
-      return { 
-        canDecompose: true, 
-        task: {
-          id: task.id,
-          title: task.title,
-          projectId: task.projectId
-        }
-      };
-
-    } catch (error) {
-      logger.logError(`Erro ao verificar decomposição da tarefa ${taskId}:`, error);
+      return { canDecompose: true, task };
+    } catch (error: any) {
+      await Logger.logError(error, {} as any, {} as any, ERROR_TYPES.DECOMPOSITION_ERROR);
       throw error;
     }
   }
 
   /**
    * Obtém as subtarefas de uma tarefa decomposta
-   * @param {string} parentTaskId - ID da tarefa pai
-   * @returns {Promise<Array>} Array de subtarefas
    */
-  async getSubtasks(parentTaskId): Promise<any> {
-    try {
-      const subtasks = await prisma.task.findMany({
-        where: { 
-          parentTaskId: parentTaskId,
-          isCompleted: false
-        },
-        include: {
-          status: true,
-          priority: true,
-          dependencies: {
-            include: {
-              dependentTask: true
-            }
-          }
-        },
-        orderBy: { position: 'asc' }
-      });
-
-      return subtasks;
-
-    } catch (error) {
-      logger.logError(`Erro ao obter subtarefas da tarefa ${parentTaskId}:`, error);
-      throw error;
-    }
+  async getSubtasks(parentTaskId: string): Promise<any[]> {
+    return prisma.task.findMany({
+      where: { parentTaskId, isCompleted: false },
+      include: {
+        status: true,
+        priority: true,
+        dependencies: { include: { dependentTask: true } }
+      },
+      orderBy: { position: 'asc' }
+    });
   }
 }
 

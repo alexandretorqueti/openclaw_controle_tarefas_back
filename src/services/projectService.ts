@@ -1,7 +1,7 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: projectService.js
 
-export import prisma from "./prismaService";
+import prisma from "./prismaService";
 import sseService from "./sseService";
 
 class ProjectService {
@@ -44,7 +44,7 @@ class ProjectService {
   }
 
   // Get all projects with task counts
-  async getAllProjects(options = {}): Promise<any> {
+  async getAllProjects(options: { sortBy?: string; sortOrder?: string } = {}): Promise<any> {
     const { sortBy = 'createdAt', sortOrder = 'desc' } = options;
     
     // Validate sort fields
@@ -161,7 +161,7 @@ class ProjectService {
     console.log('🔍 projectService.updateProject - Dados recebidos:', JSON.stringify(data, null, 2));
     console.log('🔍 projectService.updateProject - programadorFront recebido:', data.programadorFront);
     
-    const updateData = {
+    const updateData: any = {
       name: data.name,
       description: data.description,
       regras: data.regras,

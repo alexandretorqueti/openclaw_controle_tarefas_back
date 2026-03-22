@@ -12,14 +12,14 @@ class DeveloperLoopOrchestrator {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = options.log || container.resolve('log');
+    this.log = options.log || container.get('log');
     
     // Usar instâncias fornecidas ou criar do container
-    this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
-    this.taskExecutionService = options.taskExecutionService || container.resolve('taskExecutionService');
-    this.evidenceService = options.evidenceService || container.resolve('evidenceService');
-    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
-    this.path = options.path || container.resolve('path');
+    this.sessionChainUtils = options.sessionChainUtils || container.get('sessionChainUtils');
+    this.taskExecutionService = options.taskExecutionService || container.get('taskExecutionService');
+    this.evidenceService = options.evidenceService || container.get('evidenceService');
+    this.fileSystem = options.fileSystem || container.get('fileSystem');
+    this.path = options.path || container.get('path');
   }
 
   /**

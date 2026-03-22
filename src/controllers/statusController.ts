@@ -3,7 +3,7 @@
 
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware'; // Importando ErrorMiddleware from '../middlewares/errorMiddleware';
 
 class StatusController {
   // Get all statuses
@@ -23,7 +23,7 @@ class StatusController {
 
   // Get status by ID
   getStatusById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const status = await prisma.status.findUnique({
       where: { id }
     });
@@ -69,7 +69,7 @@ class StatusController {
 
   // Update status
   updateStatus = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { name, color_code, is_final_state, visible_to_ai, order } = req.body;
     
     // Check if status exists
@@ -103,7 +103,7 @@ class StatusController {
 
   // Delete status
   deleteStatus = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     
     // Check if status exists
     const existingStatus = await prisma.status.findUnique({

@@ -12,17 +12,17 @@ class SetupContextStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.fileSystem = container.resolve('fileSystem');
-    this.path = container.resolve('path');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.fileSystem = container.get('fileSystem');
+    this.path = container.get('path');
     
     // Usar instâncias fornecidas ou criar do container
-    this.prisma = options.prisma || container.resolve('prisma');
-    this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
-    this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
-    this.promptFactory = options.promptFactory || container.resolve('promptFactory');
-    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.prisma = options.prisma || container.get('prisma');
+    this.taskAnalysisService = options.taskAnalysisService || container.get('taskAnalysisService');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
+    this.promptFactory = options.promptFactory || container.get('promptFactory');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
   }
 
   /**
@@ -183,7 +183,7 @@ class SetupContextStep {
     const result = await step.execute({ 
       task, 
       userId, 
-      config: config || container.resolve('config') 
+      config: config || container.get('config') 
     });
     return result.setupResult;
   }

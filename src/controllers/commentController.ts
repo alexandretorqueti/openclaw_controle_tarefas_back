@@ -1,25 +1,28 @@
-// Migrado para TypeScript - Fase: Controllers
-// Arquivo: commentController.js
+// src/controllers/commentController.ts
 
-// CommentController.js
-
+import { Request, Response, NextFunction } from 'express';
 import commentService from '../services/commentService';
 import { validateComment, validateCommentUpdate } from '../validators/commentValidator';
-import { snakeToCamel } from '../utils/caseConverter';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
-import prisma from '../services/prismaService';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import UserResolver from '../utils/userResolver';
+
+// Extensão de interface para suportar req.user e correlationId
+declare module 'express-serve-static-core' {
+  interface Request {
+    user?: { id: string; [key: string]: any };
+    correlationId?: string;
+  }
+}
 
 class CommentController {
   // Create a new comment
-  createComment = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  createComment = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     console.log('[DEBUG Backend createComment] Body completo:', req.body);
     try {
-      // Use req.body directly
       const body = req.body || {};
       
       // Get userId from body or req.user
-      let userId = body.userId;
+      let userId: string = body.userId;
       
       // Check if req.user exists and has id
       if (req.user && req.user.id) {
@@ -29,78 +32,71 @@ class CommentController {
       // If still no userId, use default user
       if (!userId || userId.trim() === '') {
         try {
-          // Usar o helper UserResolver para obter ID do usuário padrão
           const defaultUserId = await UserResolver.getDefaultUserId();
           
           if (defaultUserId) {
             userId = defaultUserId;
             console.log(`Usando usuário padrão para criação de comentário: ${defaultUserId}`);
           } else {
-            // Se não houver usuários, retornar erro
             const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
-            (error as any).statusCode = 400;
+            error.statusCode = 400;
             throw error;
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Erro ao buscar usuário padrão:', error.message);
-          // Não usar mais ID fixo - retornar erro
-          const fallbackError = new Error('Não foi possível determinar o usuário para criar o comentário. Certifique-se de que existem usuários no sistema.');
+          const fallbackError = new Error('Não foi possível determinar o usuário para criar o comentário.');
           fallbackError.statusCode = 400;
           throw fallbackError;
         }
       }
       
       // Prepare data for validation
-      console.log('[DEBUG Backend] Body completo:', JSON.stringify(body));
-      console.log('[DEBUG Backend] taskId:', body.taskId, 'task_id:', body.task_id);
-      const taskId = body.taskId || body.task_id;
       const dataForValidation = {
         content: body.content,
-        taskId: body.taskId,
+        taskId: body.taskId || body.task_id, // Suporte a snake_case vindo do front
         userId: userId,
         parentCommentId: body.parentCommentId
       };
       
       const validation = validateComment(dataForValidation);
       
-      if (!validation.success) {
+      if (!validation.valid) {
         const error = new Error('Validation failed');
         error.name = 'ZodError';
-        (error as any).errors = validation.error.errors;
-        (error as any).statusCode = 400;
+        error.errors = (validation as any).error.errors;
+        error.statusCode = 400;
         throw error;
       }
 
       const comment = await commentService.createComment(validation.data);
       
       res.status(201).json({
+        success: true,
         message: 'Comment created successfully',
         comment,
         correlationId: req.correlationId
       });
-    } catch (error) {
-      // Tratar erros específicos de "not found" para retornar 404
+    } catch (error: any) {
       if (error.message && error.message.includes('not found')) {
-        // Entidade não encontrada - retornar 404
-        return res.status(404).json({
+        res.status(404).json({
           success: false,
           error: error.message,
           message: 'Resource not found',
           correlationId: req.correlationId
         });
+        return;
       }
-      
-      // Outros erros - passar para o error middleware
       next(error);
     }
   });
 
   // Get all comments for a task
-  getCommentsByTask = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  getCommentsByTask = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { taskId } = req.params;
     const comments = await commentService.getCommentsByTask(taskId);
     
     res.json({
+      success: true,
       count: comments.length,
       comments,
       correlationId: req.correlationId
@@ -108,32 +104,33 @@ class CommentController {
   });
 
   // Get comment by ID
-  getCommentById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  getCommentById = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const comment = await commentService.getCommentById(id);
 
     if (!comment) {
       const error = new Error('Comment not found');
-      (error as any).statusCode = 404;
+      error.statusCode = 404;
       throw error;
     }
 
     res.json({
+      success: true,
       comment,
       correlationId: req.correlationId
     });
   });
 
   // Update comment
-  updateComment = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  updateComment = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
-    const validation = validateCommentUpdate(req.body);
+    const validation = validateCommentUpdate(req.body, id);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
       error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
-      (error as any).statusCode = 400;
+      error.errors = (validation as any).error.errors;
+      error.statusCode = 400;
       throw error;
     }
 
@@ -141,11 +138,12 @@ class CommentController {
 
     if (!comment) {
       const error = new Error('Comment not found');
-      (error as any).statusCode = 404;
+      error.statusCode = 404;
       throw error;
     }
 
     res.json({
+      success: true,
       message: 'Comment updated successfully',
       comment,
       correlationId: req.correlationId
@@ -153,17 +151,18 @@ class CommentController {
   });
 
   // Delete comment
-  deleteComment = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  deleteComment = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const comment = await commentService.deleteComment(id);
 
     if (!comment) {
       const error = new Error('Comment not found');
-      (error as any).statusCode = 404;
+      error.statusCode = 404;
       throw error;
     }
 
     res.json({
+      success: true,
       message: 'Comment deleted successfully',
       comment,
       correlationId: req.correlationId
@@ -171,36 +170,35 @@ class CommentController {
   });
 
   // Get comments by user ID
-  getCommentsByUserId = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { userId } = req.params;
-    // Note: This would need to be implemented in commentService
+  getCommentsByUserId = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Implementação pendente no service
     const error = new Error('Method not implemented yet');
-    (error as any).statusCode = 501;
+    error.statusCode = 501;
     throw error;
   });
 
   // Search comments
-  searchComments = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  searchComments = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { q } = req.query;
     
-    if (!q || q.trim() === '') {
+    if (!q || String(q).trim() === '') {
       const error = new Error('Search query is required');
-      (error as any).statusCode = 400;
+      error.statusCode = 400;
       throw error;
     }
 
-    // Note: This would need to be implemented in commentService
     const error = new Error('Method not implemented yet');
-    (error as any).statusCode = 501;
+    error.statusCode = 501;
     throw error;
   });
 
   // Get replies for a comment
-  getCommentReplies = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  getCommentReplies = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { commentId } = req.params;
     const replies = await commentService.getCommentReplies(commentId);
     
     res.json({
+      success: true,
       count: replies.length,
       replies,
       correlationId: req.correlationId

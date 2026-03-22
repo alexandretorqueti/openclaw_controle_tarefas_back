@@ -2,7 +2,7 @@
  * Validador de projetos
  */
 
-export function validateProject(data: any): { valid: boolean; errors: string[] } {
+export function validateProject(data: any): { valid: boolean; errors: string[]; data: any } {
   const errors: string[] = [];
 
   if (!data.name || typeof data.name !== 'string' || data.name.trim().length === 0) {
@@ -16,10 +16,15 @@ export function validateProject(data: any): { valid: boolean; errors: string[] }
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 
-export function validateProjectUpdate(data: any, existingProject: any): { valid: boolean; errors: string[] } {
+export function validateProjectUpdate(data: any, existingProject: any): { 
+    valid: boolean; 
+    errors: string[]; 
+    data: any
+  } {
   const errors: string[] = [];
 
   if (data.name !== undefined && data.name !== null) {
@@ -31,6 +36,7 @@ export function validateProjectUpdate(data: any, existingProject: any): { valid:
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 

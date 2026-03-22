@@ -12,13 +12,13 @@ class ContractVerificationStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = options.log || container.resolve('log');
+    this.log = options.log || container.get('log');
     
     // Usar instâncias fornecidas ou criar do container
-    this.contractVerificationService = options.contractVerificationService || container.resolve('contractVerificationService');
-    this.evidenceService = options.evidenceService || container.resolve('evidenceService');
-    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
-    this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
+    this.contractVerificationService = options.contractVerificationService || container.get('contractVerificationService');
+    this.evidenceService = options.evidenceService || container.get('evidenceService');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
   }
 
   /**

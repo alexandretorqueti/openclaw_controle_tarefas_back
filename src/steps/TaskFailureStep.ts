@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: TaskFailureStep.js
-
-// src/steps/TaskFailureStep.js
+// src/steps/TaskFailureStep.ts
 /**
  * Step responsável por tratar falhas na execução de tarefas.
  * Inclui logging, comentários, reatribuição, limpeza de locks e movimentação de arquivos.
@@ -10,63 +7,65 @@
 import container from '../container';
 
 class TaskFailureStep {
+  // 1. Declaração explícita de todas as dependências
+  private log: any;
+  private config: any;
+  private axios: any;
+  private path: any;
+  private fileUtils: any;
+  private fileSystem: any;
+  private lockService: any;
+  private stateService: any;
+  private taskFileService: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).axios = container.resolve('axios');
-    (this as any).path = container.resolve('path');
-    (this as any).fileUtils = container.resolve('fileUtils');
-    (this as any).fileSystem = container.resolve('fileSystem');
+  constructor(options: any = {}) {
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = container.get('axios');
+    this.path = container.get('path');
+    this.fileUtils = container.get('fileUtils');
+    this.fileSystem = container.get('fileSystem');
     
     // Usar instâncias fornecidas ou criar do container
-    (this as any).lockService = options.lockService || this._createLockService();
-    (this as any).stateService = options.stateService || this._createStateService();
-    (this as any).taskFileService = options.taskFileService || this._createTaskFileService();
+    this.lockService = options.lockService || this._createLockService();
+    this.stateService = options.stateService || this._createStateService();
+    this.taskFileService = options.taskFileService || this._createTaskFileService();
   }
 
   /**
    * Cria instância do LockService com configuração
-   * @private
    */
-  _createLockService() {
-    const LockServiceClass = container.resolve('LockServiceClass');
+  private _createLockService(): any {
+    const LockServiceClass = container.get('LockServiceClass') as any;
     const { LOCK_FILE } = this.config;
     return new LockServiceClass(LOCK_FILE);
   }
 
   /**
    * Cria instância do MonitorStateService com configuração
-   * @private
    */
-  _createStateService() {
-    const MonitorStateServiceClass = container.resolve('MonitorStateServiceClass');
+  private _createStateService(): any {
+    const MonitorStateServiceClass = container.get('MonitorStateServiceClass') as any;
     const { TASKS_DIR } = this.config;
     return new MonitorStateServiceClass(TASKS_DIR);
   }
 
   /**
    * Cria instância do TaskFileService
-   * @private
    */
-  _createTaskFileService() {
-    const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+  private _createTaskFileService(): any {
+    const TaskFileServiceClass = container.get('TaskFileServiceClass') as any;
     return new TaskFileServiceClass();
   }
 
   /**
    * Executa o step de tratamento de falha
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa que falhou
-   * @param {Error} context.error - Erro que ocorreu
-   * @param {string} context.userId - ID do usuário (opcional)
-   * @param {string} context.apiUrl - URL da API (opcional, usa config.API_URL por padrão)
-   * @returns {Promise<Object>} Contexto atualizado com resultado
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { task, error } = context;
     const userId = context.userId || null;
     const apiUrl = context.apiUrl || this.config.API_URL;
@@ -102,7 +101,7 @@ class TaskFailureStep {
             userId,
             content: `⚠️ **FALHA DE EXECUÇÃO LOCAL**\nErro: ${error.message}\n\nSaída do Terminal:\n${terminalOutput.substring(0, 1000)}`
           });
-        } catch (commentError) {
+        } catch (commentError: any) {
           await this.log(`❌ Erro ao postar comentário de falha: ${commentError.message}`);
         }
       }
@@ -137,7 +136,7 @@ class TaskFailureStep {
         }
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no TaskFailureStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -155,12 +154,11 @@ class TaskFailureStep {
 
   /**
    * Tenta reatribuir tarefa para o usuário 'alexandre'
-   * @private
    */
-  async _tryReassignTask(task, apiUrl): Promise<any> {
+  private async _tryReassignTask(task: any, apiUrl: string): Promise<any> {
     try {
       const usersRes = await this.axios.get(`${apiUrl}/api/users`);
-      const dev = (usersRes.data.users || []).find(u => u.nickname === 'alexandre');
+      const dev = (usersRes.data.users || []).find((u: any) => u.nickname === 'alexandre');
       
       if (dev) {
         await this.log(`👤 Reatribuindo tarefa ${task.id} para o usuário alexandre.`);
@@ -168,28 +166,27 @@ class TaskFailureStep {
       } else {
         await this.log(`⚠️ Usuário 'alexandre' não encontrado na API`);
       }
-    } catch (assignError) {
+    } catch (assignError: any) {
       await this.log(`❌ Erro de rede ao tentar reatribuir a tarefa: ${assignError.message}`);
     }
   }
 
   /**
    * Libera lock e limpa estado de execução
-   * @private
    */
-  async _cleanupExecutionState(task): Promise<any> {
+  private async _cleanupExecutionState(task: any): Promise<any> {
     try {
       // Usar lockService.releaseLock() em vez da rota depreciada
       await this.lockService.releaseLock();
       await this.log(`🔓 Tarefa "${task.title}" desmarcada após erro (isExecuting: false)`);
-    } catch (cleanupError) {
+    } catch (cleanupError: any) {
       await this.log(`❌ Erro ao limpar estado de execução: ${cleanupError.message}`);
       // Fallback: tentar a rota depreciada
       try {
         const apiUrl = this.config.API_URL;
         await this.axios.put(`${apiUrl}/api/tasks/${task.id}/finish-execution`);
         await this.log(`⚠️ Usando fallback para finish-execution`);
-      } catch (fallbackError) {
+      } catch (fallbackError: any) {
         await this.log(`❌ Fallback também falhou: ${fallbackError.message}`);
       }
     }
@@ -197,12 +194,8 @@ class TaskFailureStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} task - Tarefa que falhou
-   * @param {Error} error - Erro que ocorreu
-   * @param {string} userId - ID do usuário (opcional)
-   * @returns {Promise<Object>} Resultado da operação
    */
-  static async handleFailure(task, error, userId = null): Promise<any> {
+  static async handleFailure(task: any, error: any, userId: string | null = null): Promise<any> {
     const step = new TaskFailureStep();
     const result = await step.execute({ task, error, userId });
     return result.failureResult;

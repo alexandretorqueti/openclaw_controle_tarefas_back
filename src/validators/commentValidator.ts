@@ -2,7 +2,10 @@
  * Validador de comentários
  */
 
-export function validateComment(data: any, agentId?: string): { valid: boolean; errors: string[] } {
+export function validateComment(data: any, agentId?: string): 
+  { valid: boolean; 
+    errors: string[] 
+    data: any } {
   const errors: string[] = [];
 
   if (!data.content || typeof data.content !== 'string' || data.content.trim().length === 0) {
@@ -16,10 +19,16 @@ export function validateComment(data: any, agentId?: string): { valid: boolean; 
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 
-export function validateCommentUpdate(data: any, existingComment: any): { valid: boolean; errors: string[] } {
+export function validateCommentUpdate(data: any, existingComment: any): 
+  { 
+    valid: boolean; 
+    errors: string[]; 
+    data: any;
+  } {
   const errors: string[] = [];
 
   if (data.content !== undefined && data.content !== null) {
@@ -31,6 +40,7 @@ export function validateCommentUpdate(data: any, existingComment: any): { valid:
   return {
     valid: errors.length === 0,
     errors,
+    data
   };
 }
 

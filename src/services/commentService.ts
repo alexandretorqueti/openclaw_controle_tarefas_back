@@ -1,7 +1,6 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: commentService.js
 
-export // commentService.js
 
 import prisma from "./prismaService";
 

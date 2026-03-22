@@ -117,6 +117,15 @@ class AgentCache {
       queueSize: this.refreshQueue.length
     };
   }
+
+  getCacheInfo() {
+        return {
+            hasCache: !!this.cache,
+            cacheSize: this.cache ? this.cache.length : 0,
+            cacheAge: this.cacheTimestamp ? Date.now() - this.cacheTimestamp : null,
+            cacheTTL: this.cacheTTL
+        };
+    }
 }
 
 export default new AgentCache();

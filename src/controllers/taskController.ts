@@ -4,8 +4,8 @@
 // src/controllers/taskController.js
 
 import taskService from '../services/taskService';
-import { validateTask, validateTaskUpdate, validateTaskFilters } from '../validators/taskValidator';
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { validateTask, validateTaskUpdate, validateTaskSearch } from '../validators/taskValidator';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import { snakeToCamel } from '../utils/caseConverter';
 import prisma from '../services/prismaService';
 import UserResolver from '../utils/userResolver';
@@ -67,10 +67,10 @@ class TaskController {
     
     const validation = validateTask(validatedBody);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
       error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
+      (error as any).errors = validation.errors;
       (error as any).statusCode = 400;
       throw error;
     }
@@ -86,12 +86,12 @@ class TaskController {
 
   // Get all tasks with filters
   getAllTasks = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const validation = validateTaskFilters(req.query);
+    const validation = validateTaskSearch(req.query);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
       error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
+      (error as any).errors = validation.errors;
       (error as any).statusCode = 400;
       throw error;
     }
@@ -133,12 +133,12 @@ class TaskController {
 
     }
     
-    const validation = validateTaskUpdate(body);
+    const validation = validateTaskUpdate(body, id);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
       error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
+      (error as any).errors = validation.errors;
       (error as any).statusCode = 400;
       throw error;
     }
@@ -181,12 +181,12 @@ class TaskController {
     const { projectId } = req.params;
     
     // Validate filters from query string
-    const validation = validateTaskFilters(req.query);
+    const validation = validateTaskSearch(req.query);
     
-    if (!validation.success) {
+    if (!validation.valid) {
       const error = new Error('Validation failed');
       error.name = 'ZodError';
-      (error as any).errors = validation.error.errors;
+      (error as any).errors = validation.errors;
       (error as any).statusCode = 400;
       throw error;
     }
@@ -259,7 +259,7 @@ class TaskController {
   searchTasks = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     const { q } = req.query;
     
-    if (!q || q.trim() === '') {
+    if (!q || typeof q !== 'string' || q.trim() === '') {
       const error = new Error('Search query is required');
       (error as any).statusCode = 400;
       throw error;
@@ -439,7 +439,12 @@ class TaskController {
 
   // Finish task execution - Set isExecuting to false
   finishTaskExecution = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    let { id } = req.params;
+    
+    // Ensure id is a string, not an array
+    if (Array.isArray(id)) {
+      id = id[0];
+    }
     
     console.warn(`⚠️ DEPRECATED: Endpoint /api/tasks/${id}/finish-execution chamado. ` +
                 `Use lockService.releaseLock() em vez disso.`);

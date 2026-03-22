@@ -1,8 +1,6 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: llmService.js
 
-export // src/services/llmService.js
-
 import * as axios from 'axios';
 import { extractJsonObjects } from '../utils/jsonUtils'; // Usando seu utilitário
 

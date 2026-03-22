@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: TaskSuccessStep.js
-
-// src/steps/TaskSuccessStep.js
+// src/steps/TaskSuccessStep.ts
 /**
  * Step responsável por tratar sucesso na execução de tarefas.
  * Inclui logging, finalização na API, movimentação de arquivos e liberação de lock.
@@ -10,60 +7,60 @@
 import container from '../container';
 
 class TaskSuccessStep {
+  // 1. Declaração explícita de todas as dependências
+  private log: any;
+  private config: any;
+  private axios: any;
+  private lockService: any;
+  private stateService: any;
+  private taskFileService: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).axios = container.resolve('axios');
+  constructor(options: any = {}) {
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.axios = container.get('axios');
     
     // Usar instâncias fornecidas ou criar do container
-    (this as any).lockService = options.lockService || this._createLockService();
-    (this as any).stateService = options.stateService || this._createStateService();
-    (this as any).taskFileService = options.taskFileService || this._createTaskFileService();
+    this.lockService = options.lockService || this._createLockService();
+    this.stateService = options.stateService || this._createStateService();
+    this.taskFileService = options.taskFileService || this._createTaskFileService();
   }
 
   /**
    * Cria instância do LockService com configuração
-   * @private
    */
-  _createLockService() {
-    const LockServiceClass = container.resolve('LockServiceClass');
+  private _createLockService(): any {
+    // A correção mágica do TypeScript aqui (as any)
+    const LockServiceClass = container.get('LockServiceClass') as any;
     const { LOCK_FILE } = this.config;
     return new LockServiceClass(LOCK_FILE);
   }
 
   /**
    * Cria instância do MonitorStateService com configuração
-   * @private
    */
-  _createStateService() {
-    const MonitorStateServiceClass = container.resolve('MonitorStateServiceClass');
+  private _createStateService(): any {
+    const MonitorStateServiceClass = container.get('MonitorStateServiceClass') as any;
     const { TASKS_DIR } = this.config;
     return new MonitorStateServiceClass(TASKS_DIR);
   }
 
   /**
    * Cria instância do TaskFileService
-   * @private
    */
-  _createTaskFileService() {
-    const TaskFileServiceClass = container.resolve('TaskFileServiceClass');
+  private _createTaskFileService(): any {
+    const TaskFileServiceClass = container.get('TaskFileServiceClass') as any;
     return new TaskFileServiceClass();
   }
 
   /**
    * Executa o step de tratamento de sucesso
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa executada com sucesso
-   * @param {Object} context.executionResult - Resultado da execução
-   * @param {string} context.userId - ID do usuário (opcional, usa config.MY_USER_ID por padrão)
-   * @param {string} context.apiUrl - URL da API (opcional, usa config.API_URL por padrão)
-   * @returns {Promise<Object>} Contexto atualizado com resultado
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { task, executionResult } = context;
     const userId = context.userId || this.config.MY_USER_ID || null;
     const apiUrl = context.apiUrl || this.config.API_URL;
@@ -91,7 +88,7 @@ class TaskSuccessStep {
             executionNotes: executionResult.executionNotes || 'Executado com sucesso'
           });
           await this.log(`📝 Tarefa ${task.id} finalizada na API`);
-        } catch (apiError) {
+        } catch (apiError: any) {
           await this.log(`❌ Erro ao finalizar a tarefa na API: ${apiError.message}`);
           // Não falha o step inteiro, apenas loga o erro
         }
@@ -111,7 +108,7 @@ class TaskSuccessStep {
       try {
         await this.lockService.releaseLock();
         await this.log(`🔓 Lock liberado para tarefa ${task.id} (isExecuting: false)`);
-      } catch (lockError) {
+      } catch (lockError: any) {
         await this.log(`⚠️ Erro ao liberar lock: ${lockError.message}`);
         // Não falha o step inteiro, apenas loga o erro
       }
@@ -133,7 +130,7 @@ class TaskSuccessStep {
         }
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no TaskSuccessStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -151,12 +148,8 @@ class TaskSuccessStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} task - Tarefa executada com sucesso
-   * @param {Object} executionResult - Resultado da execução
-   * @param {string} userId - ID do usuário (opcional)
-   * @returns {Promise<Object>} Resultado da operação
    */
-  static async handleSuccess(task, executionResult, userId = null): Promise<any> {
+  static async handleSuccess(task: any, executionResult: any, userId: string | null = null): Promise<any> {
     const step = new TaskSuccessStep();
     const result = await step.execute({ task, executionResult, userId });
     return result.successResult;

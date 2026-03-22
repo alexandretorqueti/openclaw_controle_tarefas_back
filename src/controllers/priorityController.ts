@@ -3,7 +3,7 @@
 
 import { PrismaClient } from '@prisma/client';
 prisma = new PrismaClient();
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 
 class PriorityController {
   // Get all priorities
@@ -23,7 +23,7 @@ class PriorityController {
 
   // Get priority by ID
   getPriorityById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const priority = await prisma.priority.findUnique({
       where: { id }
     });
@@ -66,7 +66,7 @@ class PriorityController {
 
   // Update priority
   updatePriority = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const { name, weight } = req.body;
     
     // Check if priority exists
@@ -97,7 +97,7 @@ class PriorityController {
 
   // Delete priority
   deletePriority = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     
     // Check if priority exists
     const existingPriority = await prisma.priority.findUnique({

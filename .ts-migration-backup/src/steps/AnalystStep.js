@@ -12,16 +12,16 @@ class AnalystStep {
    * Para testes, o container deve ser previamente configurado com mocks.
    */
   constructor() {
-    this.openClawService = container.resolve('openClawService');
-    this.promptFactory = container.resolve('promptFactory');
-    this.sessionChainUtils = container.resolve('sessionChainUtils');
-    this.jsonUtils = container.resolve('jsonUtils');
-    this.taskService = container.resolve('taskService');
-    this.decompositionService = container.resolve('decompositionService');
-    this.commentService = container.resolve('commentService');
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.fileSystem = container.resolve('fileSystem');
+    this.openClawService = container.get('openClawService');
+    this.promptFactory = container.get('promptFactory');
+    this.sessionChainUtils = container.get('sessionChainUtils');
+    this.jsonUtils = container.get('jsonUtils');
+    this.taskService = container.get('taskService');
+    this.decompositionService = container.get('decompositionService');
+    this.commentService = container.get('commentService');
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.fileSystem = container.get('fileSystem');
     
     // Dependências built-in (não injetadas por padrão, mas podem ser mockadas)
     this.path = require('path');

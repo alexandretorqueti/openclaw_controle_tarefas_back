@@ -3,11 +3,33 @@
 
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import { getAbsoluteAvatarUrl } from '../utils/avatarUrl';
 import taskService from '../services/taskService';
+import { Request } from 'express';
+import { File } from 'multer';
+import { ParamsDictionary } from 'express-serve-static-core';
+import { ParsedQs } from 'qs';
+
+interface MulterRequest extends Request {
+  file?: File;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      session: {
+        userId?: string;
+      };
+      correlationId?: string;
+    }
+  }
+}
 
 class UserController {
+  getAbsoluteAvatarUrl(req: Request<ParamsDictionary, any, any, ParsedQs, Record<string, any>>, avatarUrl: string) {
+    throw new Error('Method not implemented.');
+  }
   // Get all users
   getAllUsers = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     const users = await prisma.user.findMany({
@@ -39,9 +61,17 @@ class UserController {
     });
   });
 
+  // ...existing code...
+  private normalizeParam(param: string | string[] | undefined, field: string): string {
+    if (!param) throw new Error(`${field} missing`);
+    if (Array.isArray(param)) return param[0];
+    return param;
+  }
+
+// ...existing code...
   // Get user by ID
   getUserById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = this.normalizeParam(req.params.id, 'id');
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -179,7 +209,7 @@ class UserController {
 
   // Update user
   updateUser = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = this.normalizeParam(req.params.id, 'id');
     const { name, email, avatarUrl, role, nickname } = req.body;
     
     // Check if user exists
@@ -255,7 +285,7 @@ class UserController {
 
   // Delete user
   deleteUser = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { id } = req.params;
+    const id = this.normalizeParam(req.params.id, 'id');
     
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -313,7 +343,7 @@ class UserController {
 
   // Get next task for a user by nickname
   getNextTaskByNickname = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const { nickname } = req.params;
+    const nickname = this.normalizeParam(req.params.nickname, 'nickname');
 
     // 1. Find the user
     const user = await prisma.user.findUnique({
@@ -345,7 +375,7 @@ class UserController {
   });
 
   // Upload avatar for user
-  uploadAvatar = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  uploadAvatar = ErrorMiddleware.catchAsync(async (req: MulterRequest, res, next): Promise<any> => {
     const { userId } = req.body;
     
     if (!userId) {

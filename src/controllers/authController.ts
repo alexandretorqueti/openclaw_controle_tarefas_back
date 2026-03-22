@@ -1,16 +1,23 @@
-// Migrado para TypeScript - Fase: Controllers
-// Arquivo: authController.js
+// src/controllers/authController.ts
 
 /**
  * Controller de Autenticação Simplificado
- * 
- * Sistema simplificado para uso local. Login apenas com nickname,
+ * * Sistema simplificado para uso local. Login apenas com nickname,
  * sem senha ou tokens.
  */
 
-import ErrorMiddleware from '../middlewares/errorMiddleware';
+import { Request, Response, NextFunction } from 'express';
+// CORREÇÃO: Importar a classe ErrorMiddleware, não os destruturados que não são usados
+import { ErrorMiddleware } from '../middlewares/errorMiddleware';
 import prisma from '../services/prismaService';
 import { getAbsoluteAvatarUrl } from '../utils/avatarUrl';
+
+// Expande a interface do Request para aceitar o correlationId (se já não estiver num arquivo global.d.ts)
+declare module 'express' {
+  interface Request {
+    correlationId?: string;
+  }
+}
 
 class AuthController {
   /**
@@ -18,20 +25,21 @@ class AuthController {
    * POST /api/auth/login
    * Body: { nickname: string }
    */
-  login = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  login = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { nickname } = req.body;
 
     if (!nickname) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Bad Request',
         message: 'Nickname é obrigatório'
       });
+      return;
     }
 
     // Buscar usuário pelo nickname
     const user = await prisma.user.findUnique({
-      where: { nickname: nickname.trim() },
+      where: { nickname: (typeof nickname === 'string' ? nickname : String(nickname)).trim() },
       select: {
         id: true,
         name: true,
@@ -45,11 +53,12 @@ class AuthController {
     });
 
     if (!user) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'Not Found',
         message: 'Usuário não encontrado com este nickname'
       });
+      return;
     }
 
     console.log(`✅ Login simplificado: ${user.nickname} (${user.name})`);
@@ -73,19 +82,25 @@ class AuthController {
    * GET /api/auth/me
    * Header: X-User-Nickname ou Query: ?nickname=xxx
    */
-  getCurrentUser = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
-    const nickname = req.headers['x-user-nickname'] || req.query?.nickname;
+  getCurrentUser = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    // Tratamento para garantir que pegamos a string caso venha como array nos headers
+    const headerNickname = req.headers['x-user-nickname'];
+    const queryNickname = req.query?.nickname;
+    
+    const nickname = (Array.isArray(headerNickname) ? headerNickname[0] : headerNickname) 
+                  || (Array.isArray(queryNickname) ? queryNickname[0] : queryNickname as string);
 
     if (!nickname) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Bad Request',
         message: 'Nickname é obrigatório (header X-User-Nickname ou query ?nickname=xxx)'
       });
+      return;
     }
 
     const user = await prisma.user.findUnique({
-      where: { nickname: nickname.trim() },
+      where: { nickname: (typeof nickname === 'string' ? nickname : String(nickname)).trim() },
       select: {
         id: true,
         name: true,
@@ -99,11 +114,12 @@ class AuthController {
     });
 
     if (!user) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         user: null,
         message: 'Usuário não encontrado'
       });
+      return;
     }
 
     // Convert relative avatar URL to absolute URL
@@ -123,7 +139,7 @@ class AuthController {
    * Logout simplificado (apenas resposta de sucesso)
    * POST /api/auth/logout
    */
-  logout = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  logout = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     res.json({
       success: true,
       message: 'Logout realizado com sucesso',
@@ -136,11 +152,13 @@ class AuthController {
    * GET /api/auth/check
    * POST /api/auth/check
    */
-  checkAuth = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  checkAuth = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const headerNickname = req.headers['x-user-nickname'];
+    
     const nickname = 
-      req.headers['x-user-nickname'] || 
+      (Array.isArray(headerNickname) ? headerNickname[0] : headerNickname) || 
       req.body?.nickname ||
-      req.query?.nickname;
+      (typeof req.query?.nickname === 'string' ? req.query.nickname : undefined);
     
     const userId = req.body?.userId;
 
@@ -166,11 +184,12 @@ class AuthController {
         avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
       } : null;
       
-      return res.json({
+      res.json({
         isAuthenticated: !!user,
         user: userWithAbsoluteUrl,
         correlationId: req.correlationId
       });
+      return;
     }
 
     // Se nickname foi passado, buscar por nickname
@@ -195,11 +214,12 @@ class AuthController {
         avatarUrl: getAbsoluteAvatarUrl(req, user.avatarUrl)
       } : null;
       
-      return res.json({
+      res.json({
         isAuthenticated: !!user,
         user: userWithAbsoluteUrl,
         correlationId: req.correlationId
       });
+      return;
     }
 
     // Nenhum identificador fornecido
@@ -214,7 +234,7 @@ class AuthController {
   /**
    * Callback OAuth removido - mantido para compatibilidade
    */
-  googleAuthCallback = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+  googleAuthCallback = ErrorMiddleware.catchAsync(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     res.status(410).json({
       success: false,
       message: 'OAuth Google foi removido. Use login por nickname.',

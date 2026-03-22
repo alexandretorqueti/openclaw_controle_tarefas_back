@@ -1,59 +1,85 @@
-// Migrado para TypeScript - Fase: Utils
-// Arquivo: logger.js
+// src/utils/logger.ts (Arquitetura Refatorada - Worker Leve)
 
-// logger.js (Arquitetura Refatorada - Worker Leve)
-
+import { Request, Response } from 'express';
 import prisma from '../services/prismaService';
 
 /**
  * Log levels
  */
-const LOG_LEVELS = {
-  ERROR: 'ERROR',
-  WARN: 'WARN',
-  INFO: 'INFO',
-  DEBUG: 'DEBUG'
-};
+export enum LOG_LEVELS {
+  ERROR = 'ERROR',
+  WARN = 'WARN',
+  INFO = 'INFO',
+  DEBUG = 'DEBUG'
+}
 
 /**
  * Error types
  */
-const ERROR_TYPES = {
-  VALIDATION: 'ValidationError',
-  DATABASE: 'DatabaseError',
-  BUSINESS: 'BusinessError',
-  SYSTEM: 'SystemError',
-  AUTH: 'AuthenticationError',
-  NOT_FOUND: 'NotFoundError',
-  FORBIDDEN: 'ForbiddenError'
-};
+export enum ERROR_TYPES {
+  VALIDATION = 'ValidationError',
+  DATABASE = 'DatabaseError',
+  BUSINESS = 'BusinessError',
+  SYSTEM = 'SystemError',
+  AUTH = 'AuthenticationError',
+  NOT_FOUND = 'NotFoundError',
+  FORBIDDEN = 'ForbiddenError',
+  CAN_DECOMPOSE_ERROR = 'CanDecomposeError',
+  SSE = 'SSE',
+  DECOMPOSITION_ERROR = 'DecompositionError'
+}
 
 /**
- * Logger export class for centralized error handling and logging
+ * Interfaces para tipagem rigorosa
+ */
+interface LogOptions {
+  level?: LOG_LEVELS;
+  endpoint?: string;
+  method?: string;
+  statusCode?: number;
+  message: string;
+  errorType?: string;
+  stackTrace?: string;
+  requestBody?: any;
+  requestQuery?: any;
+  requestParams?: any;
+  headers?: any;
+  clientIp?: string;
+  userId?: string | null;
+  correlationId?: string | null;
+  parentLogId?: string | null;
+  responseTime?: number;
+}
+
+interface LogFilters {
+  level?: LOG_LEVELS;
+  endpoint?: string;
+  method?: string;
+  statusCode?: number;
+  errorType?: string;
+  userId?: string;
+  correlationId?: string;
+  startDate?: string | Date;
+  endDate?: string | Date;
+  limit?: number;
+  offset?: number;
+}
+
+// Extensão local para propriedades injetadas por middlewares
+interface ExtendedRequest extends Request {
+  _startTime?: number;
+  user?: { id: string };
+  correlationId?: string;
+}
+
+/**
+ * Logger class for centralized error handling and logging
  */
 export class Logger {
   /**
    * Create a log entry in the database
-   * @param {Object} options - Log options
-   * @param {string} options.level - Log level (ERROR, WARN, INFO, DEBUG)
-   * @param {string} options.endpoint - API endpoint
-   * @param {string} options.method - HTTP method
-   * @param {number} options.statusCode - HTTP status code
-   * @param {string} options.message - Error message
-   * @param {string} options.errorType - Type of error
-   * @param {string} options.stackTrace - Stack trace
-   * @param {Object} options.requestBody - Request body
-   * @param {Object} options.requestQuery - Request query parameters
-   * @param {Object} options.requestParams - Request path parameters
-   * @param {Object} options.headers - Request headers
-   * @param {string} options.clientIp - Client IP address
-   * @param {string} options.userId - User ID (if authenticated)
-   * @param {string} options.correlationId - Correlation ID for request tracing
-   * @param {string} options.parentLogId - Parent log ID for hierarchical logging
-   * @param {number} options.responseTime - Response time in milliseconds
-   * @returns {Promise<Object>} Created log entry
    */
-  static async createLog(options): Promise<any> {
+  static async createLog(options: LogOptions): Promise<any> {
     try {
       const {
         level = LOG_LEVELS.ERROR,
@@ -81,30 +107,30 @@ export class Logger {
       const stringifiedHeaders = headers ? JSON.stringify(headers) : null;
 
       const log = await prisma.log.create({
-  data: {
-  timestamp: new Date(),
+        data: {
+          timestamp: new Date(),
           level,
-          endpoint,
-          method,
-          statusCode,
+          endpoint: endpoint || null,
+          method: method || null,
+          statusCode: statusCode || null,
           message,
-          errorType,
-          stackTrace,
-  requestBody: stringifiedRequestBody,
-  requestQuery: stringifiedRequestQuery,
-  requestParams: stringifiedRequestParams,
-  headers: stringifiedHeaders,
-          clientIp,
-          userId,
-          correlationId,
-          parentLogId,
-          responseTime
+          errorType: errorType || null,
+          stackTrace: stackTrace || null,
+          requestBody: stringifiedRequestBody,
+          requestQuery: stringifiedRequestQuery,
+          requestParams: stringifiedRequestParams,
+          headers: stringifiedHeaders,
+          clientIp: clientIp || null,
+          userId: userId || null,
+          correlationId: correlationId || null,
+          parentLogId: parentLogId || null,
+          responseTime: responseTime || null
         }
       });
 
-      // Also log to console for development
+      // Console logging for development
       if (process.env.NODE_ENV === 'development') {
-        const logMessage = `[${level}] ${method} ${endpoint} - ${statusCode}: ${message}`;
+        const logMessage = `[${level}] ${method || 'LOG'} ${endpoint || ''} - ${statusCode || ''}: ${message}`;
         if (level === LOG_LEVELS.ERROR) {
           console.error(logMessage);
           if (stackTrace) console.error(stackTrace);
@@ -117,7 +143,6 @@ export class Logger {
 
       return log;
     } catch (error) {
-      // Fallback to console if database logging fails
       console.error('Failed to create log entry:', error);
       console.error('Original log data:', options);
       return null;
@@ -126,102 +151,67 @@ export class Logger {
 
   /**
    * Log an error with full context
-   * @param {Error} error - Error object
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @param {string} errorType - Type of error
-   * @param {string} correlationId - Correlation ID
-   * @returns {Promise<Object>} Created log entry
    */
-  static async logError(error, req, res, errorType = ERROR_TYPES.SYSTEM, correlationId = null): Promise<any> {
-    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+  static async logError(
+      error: any, 
+      req: ExtendedRequest, 
+      res: Response, 
+      errorType = ERROR_TYPES.SYSTEM, correlationId: string | null = null
+    ): Promise<any> {
+    const clientIp = (req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
     
     return await Logger.createLog({
-  level: LOG_LEVELS.ERROR,
-  endpoint: req.originalUrl || req.url,
-  method: req.method,
-  statusCode: res.statusCode || 500,
-  message: error.message || 'Unknown error',
+      level: LOG_LEVELS.ERROR,
+      endpoint: req.originalUrl || req.url,
+      method: req.method,
+      statusCode: res.statusCode || 500,
+      message: error.message || 'Unknown error',
       errorType,
-  stackTrace: error.stack,
-  requestBody: req.body,
-  requestQuery: req.query,
-  requestParams: req.params,
-  headers: req.headers,
+      stackTrace: error.stack,
+      requestBody: req.body,
+      requestQuery: req.query,
+      requestParams: req.params,
+      headers: req.headers,
       clientIp,
-  userId: req.user?.id || null,
-      correlationId,
-  responseTime: Date.now() - (req._startTime || Date.now())
+      userId: req.user?.id || null,
+      correlationId: correlationId || req.correlationId || null,
+      responseTime: req._startTime ? Date.now() - req._startTime : 0
     });
   }
 
-  /**
-   * Log a validation error
-   * @param {Object} validationError - Zod validation error
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @returns {Promise<Object>} Created log entry
-   */
-  static async logValidationError(validationError, req, res): Promise<any> {
+  static async logValidationError(validationError: any, req: ExtendedRequest, res: Response): Promise<any> {
     const error = new Error('Validation failed');
-    error.validationErrors = validationError.errors;
-    
+    (error as any).validationErrors = validationError.errors;
     return await Logger.logError(error, req, res, ERROR_TYPES.VALIDATION);
   }
 
-  /**
-   * Log a database error
-   * @param {Error} error - Database error
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @returns {Promise<Object>} Created log entry
-   */
-  static async logDatabaseError(error, req, res): Promise<any> {
+  static async logDatabaseError(error: any, req: ExtendedRequest, res: Response): Promise<any> {
     return await Logger.logError(error, req, res, ERROR_TYPES.DATABASE);
   }
 
-  /**
-   * Log a business logic error
-   * @param {string} message - Error message
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
-   * @returns {Promise<Object>} Created log entry
-   */
-  static async logBusinessError(message, req, res): Promise<any> {
+  static async logBusinessError(message: string, req: ExtendedRequest, res: Response): Promise<any> {
     const error = new Error(message);
     return await Logger.logError(error, req, res, ERROR_TYPES.BUSINESS);
   }
 
-  /**
-   * Log informational message
-   * @param {Object} options - Log options
-   * @returns {Promise<Object>} Created log entry
-   */
-  static async logInfo(options): Promise<any> {
+  static async logInfo(options: LogOptions): Promise<any> {
     return await Logger.createLog({
-  level: LOG_LEVELS.INFO,
+      level: LOG_LEVELS.INFO,
       ...options
     });
   }
 
-  /**
-   * Log warning message
-   * @param {Object} options - Log options
-   * @returns {Promise<Object>} Created log entry
-   */
-  static async logWarning(options): Promise<any> {
+  static async logWarning(options: LogOptions): Promise<any> {
     return await Logger.createLog({
-  level: LOG_LEVELS.WARN,
+      level: LOG_LEVELS.WARN,
       ...options
     });
   }
 
   /**
    * Get logs with filters
-   * @param {Object} filters - Filter options
-   * @returns {Promise<Array>} Array of logs
    */
-  static async getLogs(filters = {}): Promise<any> {
+  static async getLogs(filters: LogFilters = {}): Promise<any> {
     const {
       level,
       endpoint,
@@ -236,7 +226,7 @@ export class Logger {
       offset = 0
     } = filters;
 
-    const where = {};
+    const where: any = {};
 
     if (level) where.level = level;
     if (endpoint) where.endpoint = { contains: endpoint };
@@ -254,48 +244,25 @@ export class Logger {
 
     return await prisma.log.findMany({
       where,
-  include: {
-  user: {
-  select: {
-  id: true,
-  name: true,
-  email: true
-          }
+      include: {
+        user: {
+          select: { id: true, name: true, email: true }
         }
       },
-  orderBy: {
-  timestamp: 'desc'
-      },
-  take: limit,
-  skip: offset
+      orderBy: { timestamp: 'desc' },
+      take: limit,
+      skip: offset
     });
   }
 
-  /**
-   * Get log by ID
-   * @param {string} logId - Log ID
-   * @returns {Promise<Object>} Log entry
-   */
-  static async getLogById(logId): Promise<any> {
+  static async getLogById(logId: string): Promise<any> {
     return await prisma.log.findUnique({
-  where: { id: logId },
-  include: {
-  user: {
-  select: {
-  id: true,
-  name: true,
-  email: true
-          }
-        },
-  childLogs: {
-  include: {
-  user: {
-  select: {
-  id: true,
-  name: true,
-  email: true
-              }
-            }
+      where: { id: logId },
+      include: {
+        user: { select: { id: true, name: true, email: true } },
+        childLogs: {
+          include: {
+            user: { select: { id: true, name: true, email: true } }
           }
         }
       }
@@ -303,17 +270,13 @@ export class Logger {
   }
 
   /**
-   * Generate a user-friendly error response with log ID
-   * @param {Error} error - Error object
-   * @param {string} logId - Log ID for tracking
-   * @param {boolean} includeDetails - Whether to include error details
-   * @returns {Object} Formatted error response
+   * Generate a user-friendly error response
    */
-  static formatErrorResponse(error, logId, includeDetails = false) {
-    const response = {
-  error: 'An error occurred',
+  static formatErrorResponse(error: Error, logId: string, includeDetails = false) {
+    const response: any = {
+      error: 'An error occurred',
       logId,
-  timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString()
     };
 
     if (includeDetails && process.env.NODE_ENV === 'development') {
@@ -325,15 +288,5 @@ export class Logger {
   }
 }
 
-export {
-  Logger,
-  LOG_LEVELS,
-  ERROR_TYPES
-};
-
-
-
-
-export default { Logger,
-  LOG_LEVELS,
-  ERROR_TYPES };
+// Export default pattern compatível com o sistema atual
+export default Logger;

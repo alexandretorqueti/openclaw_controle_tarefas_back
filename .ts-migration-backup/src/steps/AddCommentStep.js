@@ -11,8 +11,8 @@ class AddCommentStep {
    * Construtor que obtém todas as dependências do container.
    */
   constructor() {
-    this.commentService = container.resolve('commentService');
-    this.log = container.resolve('log');
+    this.commentService = container.get('commentService');
+    this.log = container.get('log');
   }
 
   /**

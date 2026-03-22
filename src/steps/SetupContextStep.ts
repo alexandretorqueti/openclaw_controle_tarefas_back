@@ -1,7 +1,4 @@
-// Migrado para TypeScript - Fase: Steps
-// Arquivo: SetupContextStep.js
-
-// src/steps/SetupContextStep.js
+// src/steps/SetupContextStep.ts
 /**
  * Step responsável por preparar o contexto para execução de tarefas.
  * Inclui análise de escopo, preparação de arquivos, geração de prompts e snapshot inicial.
@@ -10,32 +7,39 @@
 import container from '../container';
 
 class SetupContextStep {
+  // 1. Declaração explícita de dependências
+  private log: any;
+  private config: any;
+  private fileSystem: any;
+  private path: any;
+  private prisma: any;
+  private taskAnalysisService: any;
+  private workspaceSnapshotService: any;
+  private promptFactory: any;
+  private fileUtils: any;
+
   /**
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    (this as any).log = container.resolve('log');
-    (this as any).config = container.resolve('config');
-    (this as any).fileSystem = container.resolve('fileSystem');
-    (this as any).path = container.resolve('path');
+  constructor(options: any = {}) {
+    this.log = container.get('log');
+    this.config = container.get('config');
+    this.fileSystem = container.get('fileSystem');
+    this.path = container.get('path');
     
     // Usar instâncias fornecidas ou criar do container
-    (this as any).prisma = options.prisma || container.resolve('prisma');
-    (this as any).taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
-    (this as any).workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
-    (this as any).promptFactory = options.promptFactory || container.resolve('promptFactory');
-    (this as any).fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.prisma = options.prisma || container.get('prisma');
+    this.taskAnalysisService = options.taskAnalysisService || container.get('taskAnalysisService');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.get('workspaceSnapshotService');
+    this.promptFactory = options.promptFactory || container.get('promptFactory');
+    this.fileUtils = options.fileUtils || container.get('fileUtils');
   }
 
   /**
    * Executa o step de preparação de contexto
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa a ser executada
-   * @param {string} context.userId - ID do usuário
-   * @returns {Promise<Object>} Contexto atualizado com setup completo
    */
-  async execute(context): Promise<any> {
+  async execute(context: any): Promise<any> {
     const { task, userId } = context;
     const { TASKS_DIR } = this.config;
     
@@ -88,7 +92,7 @@ class SetupContextStep {
       let commentsSection = '';
       if (task.comments && task.comments.length > 0) {
         commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
-        task.comments.forEach((comment, index) => {
+        task.comments.forEach((comment: any, index: number) => {
           const userInfo = comment.user ? `${comment.user.name} (${comment.user.nickname})` : 'Usuário';
           const timestamp = new Date(comment.createdAt).toLocaleString('pt-BR');
           commentsSection += `\n${index + 1}. [${timestamp}] ${userInfo}: ${comment.content}`;
@@ -158,7 +162,7 @@ class SetupContextStep {
         }
       };
       
-    } catch (stepError) {
+    } catch (stepError: any) {
       await this.log(`💥 Erro no SetupContextStep para tarefa ${task.id}: ${stepError.message}`);
       
       return {
@@ -176,17 +180,13 @@ class SetupContextStep {
 
   /**
    * Método estático de conveniência para uso direto
-   * @param {Object} task - Tarefa a ser preparada
-   * @param {string} userId - ID do usuário
-   * @param {Object} config - Configuração (opcional, usa container por padrão)
-   * @returns {Promise<Object>} Resultado do setup
    */
-  static async setupContext(task, userId, config = null): Promise<any> {
+  static async setupContext(task: any, userId: string, config: any = null): Promise<any> {
     const step = new SetupContextStep();
     const result = await step.execute({ 
       task, 
       userId, 
-      config: config || container.resolve('config') 
+      config: config || container.get('config') 
     });
     return result.setupResult;
   }
