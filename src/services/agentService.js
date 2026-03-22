@@ -15,7 +15,7 @@ exports.execOpenClawCommand = async (command, args = []) => {
     // Não adicionar --json para comandos 'config set' pois interfere com os valores
     const shouldAddJson = !(command === 'config' && args[0] === 'set');
     const fullArgs = [command, ...args, ...(shouldAddJson ? ['--json'] : [])];
-    console.log('Executando openclaw:', fullArgs.join(' '));
+    
     const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
     const OPENCLAW_PATH = '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/lib/node_modules/openclaw/openclaw.mjs';
     const child = spawn(OPENCLAW_NODE, [OPENCLAW_PATH, ...fullArgs], {
@@ -173,6 +173,8 @@ exports.addAgent = async (name, workspace) => {
  */
 exports.setAgentIdentity = async (agentId, identity) => {
   try {
+    
+    
     // Atualiza identidade (name, emoji, avatar) via CLI agents set-identity
     const identityArgs = ['set-identity', '--agent', agentId];
     if (identity.name !== undefined) {
@@ -190,7 +192,9 @@ exports.setAgentIdentity = async (agentId, identity) => {
     }
     
     try {
+
       await exports.execOpenClawCommand('agents', identityArgs);
+
     } catch (error) {
       // Se falhar por validação de avatar, tentar sem avatar
       if (error.message.includes('identity.avatar must stay within')) {
@@ -230,11 +234,20 @@ exports.setAgentIdentity = async (agentId, identity) => {
     }
 
     // Invalida o cache para forçar atualização na próxima requisição
+
     agentCache.invalidate();
+    
+    // Aguarda um momento para garantir que OpenClaw processou o comando
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Força recarga imediata do cache
+
+    await agentCache.getAgents(() => exports._fetchAgentsDirectly());
     
     return { success: true, agentId };
   } catch (error) {
-    console.error('Erro ao atualizar identidade do agente:', error.message);
+    console.error('❌ agentService: Erro ao atualizar identidade do agente:', error.message);
     throw error;
   }
 };

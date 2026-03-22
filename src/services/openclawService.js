@@ -223,7 +223,15 @@ class OpenClawService {
   /**
    * Executa uma chamada ao agente via CLI do OpenClaw
    */
-  static async execute(taskId, inputMessage, agent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000) {
+  static async execute(
+    taskId, 
+    inputMessage, 
+    agent, 
+    model, 
+    tasksDir, 
+    terminalLogFile, 
+    projectPath, 
+    timeoutMs = 14400000) {
     return new Promise(async (resolve) => {
       const fsSync = require('fs');
       const path = require('path');

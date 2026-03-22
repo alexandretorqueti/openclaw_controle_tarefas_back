@@ -78,7 +78,7 @@ class AgentCache {
   }
 
   /**
-   * Invalida o cache (força atualização na próxima requisição)
+   * Invalida o cache
    */
   invalidate() {
     this.cache = null;
@@ -86,58 +86,28 @@ class AgentCache {
   }
 
   /**
-   * Atualiza um agente específico no cache
-   * @param {string} agentId - ID do agente
-   * @param {Object} updates - Atualizações para aplicar
+   * Limpa completamente o cache (para testes)
    */
-  updateAgentInCache(agentId, updates) {
-    if (!this.cache) return;
-    
-    const index = this.cache.findIndex(agent => agent.id === agentId);
-    if (index !== -1) {
-      this.cache[index] = { ...this.cache[index], ...updates };
-      this.cacheTimestamp = Date.now();
-    }
+  clear() {
+    this.cache = null;
+    this.cacheTimestamp = null;
+    this.refreshQueue = [];
   }
 
   /**
-   * Adiciona um novo agente ao cache
-   * @param {Object} agent - Novo agente
+   * Obtém estatísticas do cache
+   * @returns {Object} Estatísticas do cache
    */
-  addAgentToCache(agent) {
-    if (!this.cache) return;
-    
-    this.cache.push(agent);
-    this.cacheTimestamp = Date.now();
-  }
-
-  /**
-   * Remove um agente do cache
-   * @param {string} agentId - ID do agente a remover
-   */
-  removeAgentFromCache(agentId) {
-    if (!this.cache) return;
-    
-    this.cache = this.cache.filter(agent => agent.id !== agentId);
-    this.cacheTimestamp = Date.now();
-  }
-
-  /**
-   * Obtém informações do cache (para debug/monitoramento)
-   * @returns {Object} Informações do cache
-   */
-  getCacheInfo() {
+  getStats() {
     return {
       hasCache: !!this.cache,
       cacheSize: this.cache ? this.cache.length : 0,
       cacheAge: this.cacheTimestamp ? Date.now() - this.cacheTimestamp : null,
       cacheTTL: this.cacheTTL,
-      isValid: this.isValid(),
       isRefreshing: this.isRefreshing,
       queueSize: this.refreshQueue.length
     };
   }
 }
 
-// Exporta uma instância singleton do cache
 module.exports = new AgentCache();

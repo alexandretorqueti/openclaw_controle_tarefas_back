@@ -211,7 +211,7 @@ class DeveloperLoopOrchestrator {
           const ecosystemResult = await ecosystemStep.execute(ecosystemContext);
           
           if (!ecosystemResult.ecosystemValidationResult.success) {
-            await this.log(`💥 [Desenvolvedor] Validação de ecossistema falhou`);
+            await this.log(`💥 [Desenvolvedor] Validação de ecossistema falhou (Erro sistêmico)`);
             return {
               ...context,
               developerLoopResult: {
@@ -225,10 +225,41 @@ class DeveloperLoopOrchestrator {
           }
           
           if (!ecosystemResult.ecosystemValidationResult.passed) {
-            // Validação falhou, continua loop com feedback
+            // Validação falhou (código quebrado, lint, etc), continua loop com feedback
             lastFeedback = ecosystemResult.lastFeedback;
             contractResult.contractFulfilled = false;
+            
+            // CORREÇÃO: Incrementa a estagnação se a IA ficar presa quebrando o ecossistema
+            turnosSemProgresso++;
             await this.log(`🔄 [Desenvolvedor] Ecossistema falhou, continuando loop com feedback...`);
+            
+            // Verifica estagnação específica do ecossistema
+            if (turnosSemProgresso >= maxTurnsWithoutProgress) {
+              const abortMsg = `Estagnação detectada no Ecossistema (${maxTurnsWithoutProgress} turnos falhando validação)`;
+              await this.log(`⏹️ [Desenvolvedor] ${abortMsg}`);
+              
+              const finalContract = {
+                ...contractResult, // Preserva histórico do que a IA acertou/errou
+                contractFulfilled: false,
+                executionNotes: abortMsg
+              };
+
+              // Retorna FALSE imediatamente
+              return {
+                ...context,
+                developerLoopResult: {
+                  success: false,
+                  error: abortMsg,
+                  turnsExecuted: turnos,
+                  contractFulfilled: false,
+                  finalContractResult: finalContract
+                },
+                contractResult: finalContract,
+                shouldAbort: true,
+                abortReason: abortMsg
+              };
+            }
+            
             continue;
           }
           
@@ -256,36 +287,63 @@ class DeveloperLoopOrchestrator {
           await this.log(`⚠️ [Desenvolvedor] Turno ${turnos} sem progresso significativo (${turnosSemProgresso}/${maxTurnsWithoutProgress})`);
         }
         
-        // Verifica estagnação
+        // Verifica estagnação principal
         if (turnosSemProgresso >= maxTurnsWithoutProgress) {
-          await this.log(`⏹️ [Desenvolvedor] Estagnação detectada (${maxTurnsWithoutProgress} turnos sem progresso)`);
-          finalContractResult = {
+          const abortMsg = `Estagnação de IA detectada (${maxTurnsWithoutProgress} turnos sem progresso real)`;
+          await this.log(`⏹️ [Desenvolvedor] ${abortMsg}`);
+          
+          const finalContract = {
+            ...contractResult, // Preserva histórico da análise de contrato
             contractFulfilled: false,
-            executionNotes: `Estagnação de IA detectada (${maxTurnsWithoutProgress} turnos sem progresso real)`
+            executionNotes: abortMsg
           };
-          break;
+          
+          // Retorna FALSE imediatamente
+          return {
+            ...context,
+            developerLoopResult: {
+              success: false,
+              error: abortMsg,
+              turnsExecuted: turnos,
+              contractFulfilled: false,
+              finalContractResult: finalContract
+            },
+            contractResult: finalContract,
+            shouldAbort: true,
+            abortReason: abortMsg
+          };
         }
-      }
+      } // FIM DO LOOP WHILE
       
-      // 8. RESULTADO FINAL
+      // 8. RESULTADO FINAL (Só chega aqui se houver break de SUCESSO ou bater limite maxTurns)
       if (!finalContractResult) {
-        finalContractResult = contractResult;
+        finalContractResult = contractResult || { contractFulfilled: false, executionNotes: 'Loop finalizado sem validação clara' };
       }
       
-      if (!finalContractResult || finalContractResult.contractFulfilled === undefined) {
-        finalContractResult = { 
-          contractFulfilled: false, 
-          executionNotes: 'Loop finalizado sem verificação de contrato' 
+      // Se bateu maxTurns (15) mas não cumpriu contrato
+      if (!finalContractResult.contractFulfilled) {
+        return {
+           ...context,
+           developerLoopResult: {
+             success: false,
+             error: `Limite de turnos atingido (${maxTurns}) sem cumprir o contrato.`,
+             turnsExecuted: turnos,
+             contractFulfilled: false,
+             finalContractResult
+           },
+           contractResult: finalContractResult,
+           shouldAbort: true,
+           abortReason: `Limite de ${maxTurns} turnos atingido.`
         };
       }
-      
-      await this.log(`📊 [Desenvolvedor] Loop finalizado. contractFulfilled: ${finalContractResult.contractFulfilled}, turnos: ${turnos}`);
+
+      await this.log(`📊 [Desenvolvedor] Loop finalizado com sucesso. turnos: ${turnos}`);
       
       return {
         ...context,
         developerLoopResult: {
           success: true,
-          contractFulfilled: finalContractResult.contractFulfilled,
+          contractFulfilled: true,
           turnsExecuted: turnos,
           finalContractResult,
           executionNotes: finalContractResult.executionNotes
