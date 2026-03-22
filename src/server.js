@@ -229,37 +229,31 @@ app.get('/api/ia-test', (req, res) => {
 // app.use(ErrorMiddleware.notFoundHandler());
 
 // Global error handler
+// ... (resto do seu código acima igual)
+
+// 1. Global error handler (Mantenha este por último entre os middlewares de API)
 app.use(ErrorMiddleware.handler());
 
-// Start server
+// 2. CONFIGURAÇÃO PARA PRODUÇÃO (O segredo das rotas no navegador)
+// Servir os arquivos estáticos da pasta build do React
+// Certifique-se de que a pasta 'build' está na raiz do seu projeto back-end
+app.use(express.static(path.join(__dirname, 'build')));
+
+// 3. O CATCH-ALL: Se não for rota de API ou arquivo físico, entrega o index.html
+// IMPORTANTE: Esta rota '*' tem que ser a última de todas!
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
+});
+
+// 4. Iniciar o servidor (Apenas UM listen)
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`📁 Database: ${process.env.DATABASE_URL}`);
   console.log(`🌐 CORS Origin: ${process.env.CORS_ORIGIN}`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV}`);
-  console.log(`🔓 Auth: Simplificado (apenas nickname, sem senha/tokens)`);
-  console.log(`📊 Error logging: ENABLED`);
   
-  // Start cron scheduler for recurring tasks
   if (process.env.ENABLE_CRON_SCHEDULER !== 'false') {
     cronScheduler.init();
     console.log('🕐 Cron scheduler enabled for recurring tasks');
-  } else {
-    console.log('⏸️ Cron scheduler disabled (ENABLE_CRON_SCHEDULER=false)');
   }
 });
-
-const path = require('path');
-
-// ... suas rotas de API (ex: app.get('/api/tasks', ...)) ...
-
-// Servir arquivos estáticos
-app.use(express.static(path.join(__dirname, 'build')));
-
-// O CÓDIGO DE FALLBACK VAI AQUI:
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
-});
-
-app.listen(8090, () => console.log('Rodando...'));
-
