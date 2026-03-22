@@ -1,0 +1,102 @@
+// Migrado para TypeScript - Fase: Controllers
+// Arquivo: taskHistoryController.js
+
+// src/controllers/taskHistoryController.js
+
+import taskHistoryService from '../services/taskHistoryService';
+import ErrorMiddleware from '../middlewares/errorMiddleware';
+import prisma from '../services/prismaService';
+import UserResolver from '../utils/userResolver';
+
+class TaskHistoryController {
+  // Get all history records for a task
+  getHistoryByTask = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+    const { taskId } = req.params;
+    const history = await taskHistoryService.getHistoryByTask(taskId);
+    
+    res.json({
+      count: history.length,
+      history,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Get history by ID
+  getHistoryById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+    const { id } = req.params;
+    const history = await taskHistoryService.getHistoryById(id);
+
+    if (!history) {
+      const error = new Error('History record not found');
+      (error as any).statusCode = 404;
+      throw error;
+    }
+
+    res.json({
+      history,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Create a new history record
+  createHistory = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+    const body = req.body || {};
+    
+    // Garantir que temos um userId
+    let userId = body.userId;
+    
+    if (!userId || userId.trim() === '') {
+      try {
+        // Usar o helper UserResolver para obter ID do usuário padrão
+        const defaultUserId = await UserResolver.getDefaultUserId();
+        
+        if (defaultUserId) {
+          userId = defaultUserId;
+          console.log(`Usando usuário padrão para criação de histórico: ${defaultUserId}`);
+        } else {
+          // Se não houver usuários, retornar erro
+          const error = new Error('Nenhum usuário encontrado no sistema. É necessário criar um usuário primeiro.');
+          (error as any).statusCode = 400;
+          throw error;
+        }
+      } catch (error) {
+        console.error('Erro ao buscar usuário padrão:', error.message);
+        // Não usar mais ID fixo - retornar erro
+        const fallbackError = new Error('Não foi possível determinar o usuário para criar o histórico. Certifique-se de que existem usuários no sistema.');
+        fallbackError.statusCode = 400;
+        throw fallbackError;
+      }
+    }
+    
+    // Atualizar body com userId
+    const dataWithUser = { ...body, userId };
+    
+    const history = await taskHistoryService.createHistory(dataWithUser);
+    
+    res.status(201).json({
+      message: 'History record created successfully',
+      history,
+      correlationId: req.correlationId
+    });
+  });
+
+  // Delete history record
+  deleteHistory = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
+    const { id } = req.params;
+    const history = await taskHistoryService.deleteHistory(id);
+
+    if (!history) {
+      const error = new Error('History record not found');
+      (error as any).statusCode = 404;
+      throw error;
+    }
+
+    res.json({
+      message: 'History record deleted successfully',
+      history,
+      correlationId: req.correlationId
+    });
+  });
+}
+
+export default new TaskHistoryController();

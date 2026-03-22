@@ -1,0 +1,396 @@
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function main() {
+  console.log('🌱 Starting ENHANCED database seeding...');
+
+  // Clear existing data
+  console.log('Clearing existing data...');
+  await prisma.$transaction([
+    prisma.taskHistory.deleteMany(),
+    prisma.attachment.deleteMany(),
+    prisma.comment.deleteMany(),
+    prisma.dependency.deleteMany(),
+    prisma.task.deleteMany(),
+    prisma.project.deleteMany(),
+    prisma.status.deleteMany(),
+    prisma.priority.deleteMany(),
+    prisma.user.deleteMany()
+  ]);
+
+  // Create users
+  console.log('Creating users...');
+  const users = await prisma.user.createManyAndReturn({
+    data: [
+      {
+        name: 'Alexandre Bragato',
+        nickname: 'alexandre',
+        email: 'alexandre@example.com',
+        avatarUrl: 'https://i.pravatar.cc/150?img=1',
+        role: 'Admin'
+      },
+      {
+        name: 'Maria Silva',
+        nickname: 'maria',
+        email: 'maria@example.com',
+        avatarUrl: 'https://i.pravatar.cc/150?img=2',
+        role: 'Editor'
+      },
+      {
+        name: 'João Santos',
+        nickname: 'joao',
+        email: 'joao@example.com',
+        avatarUrl: 'https://i.pravatar.cc/150?img=3',
+        role: 'Viewer'
+      },
+      {
+        name: 'Ana Costa',
+        nickname: 'ana',
+        email: 'ana@example.com',
+        avatarUrl: 'https://i.pravatar.cc/150?img=4',
+        role: 'Editor'
+      },
+      {
+        name: 'Pedro Oliveira',
+        nickname: 'pedro',
+        email: 'pedro@example.com',
+        avatarUrl: 'https://i.pravatar.cc/150?img=5',
+        role: 'Viewer'
+      }
+    ]
+  });
+
+  // Create statuses - MAIS COMPLETO
+  console.log('Creating statuses...');
+  const statuses = await prisma.status.createManyAndReturn({
+    data: [
+      { name: 'Backlog', colorCode: '#999999', isFinalState: false, order: 0 },
+      { name: 'A Fazer', colorCode: '#FF6B6B', isFinalState: false, order: 1 },
+      { name: 'Em Análise', colorCode: '#FFD166', isFinalState: false, order: 2 },
+      { name: 'Em Desenvolvimento', colorCode: '#4ECDC4', isFinalState: false, order: 3 },
+      { name: 'Em Teste', colorCode: '#118AB2', isFinalState: false, order: 4 },
+      { name: 'Em Revisão', colorCode: '#9D4EDD', isFinalState: false, order: 5 },
+      { name: 'Pronto', colorCode: '#06D6A0', isFinalState: true, order: 6 },
+      { name: 'Bloqueado', colorCode: '#EF476F', isFinalState: false, order: 7 },
+      { name: 'Cancelado', colorCode: '#6C757D', isFinalState: true, order: 8 }
+    ]
+  });
+
+  // Create priorities - MAIS COMPLETO
+  console.log('Creating priorities...');
+  const priorities = await prisma.priority.createManyAndReturn({
+    data: [
+      { name: 'Muito Baixa', weight: 1 },
+      { name: 'Baixa', weight: 2 },
+      { name: 'Média', weight: 3 },
+      { name: 'Alta', weight: 4 },
+      { name: 'Muito Alta', weight: 5 },
+      { name: 'Crítica', weight: 6 },
+      { name: 'Urgente', weight: 7 }
+    ]
+  });
+
+  // Create projects
+  console.log('Creating projects...');
+  const projects = await prisma.project.createManyAndReturn({
+    data: [
+      {
+        name: 'Sistema de Gestão de Tarefas',
+        description: 'Desenvolvimento completo do novo sistema de gestão de tarefas com React, Node.js, Prisma e SQLite. Inclui frontend, backend, autenticação e relatórios.',
+        status: true,
+        createdById: users[0].id
+      },
+      {
+        name: 'Documentação Técnica',
+        description: 'Criação da documentação completa do sistema incluindo API, frontend, deploy e manutenção. Documentação para desenvolvedores e usuários finais.',
+        status: true,
+        createdById: users[1].id
+      },
+      {
+        name: 'Marketing Digital',
+        description: 'Campanha de marketing para lançamento do novo produto. Inclui redes sociais, email marketing, conteúdo e analytics.',
+        status: true,
+        createdById: users[0].id
+      },
+      {
+        name: 'Treinamento da Equipe',
+        description: 'Programa de treinamento para capacitação da equipe no novo sistema. Inclui workshops, tutoriais e documentação interna.',
+        status: true,
+        createdById: users[2].id
+      },
+      {
+        name: 'Manutenção e Suporte',
+        description: 'Suporte técnico e manutenção contínua do sistema em produção. Monitoramento, correções de bugs e melhorias.',
+        status: true,
+        createdById: users[3].id
+      }
+    ]
+  });
+
+  // Create tasks for Sistema de Gestão de Tarefas
+  console.log('Creating tasks for Sistema de Gestão de Tarefas...');
+  const tasksProject1 = await prisma.task.createManyAndReturn({
+    data: [
+      {
+        title: 'Criar Componente de Lista de Tarefas',
+        description: 'Desenvolver o componente principal que exibe a lista de tarefas com filtros avançados, ordenação e busca em tempo real.',
+        deadline: new Date('2024-03-15T23:59:59Z'),
+        position: 1,
+        isCompleted: true,
+        projectId: projects[0].id,
+        statusId: statuses[6].id, // Pronto
+        priorityId: priorities[3].id, // Alta
+        createdById: users[0].id,
+        assignedToId: users[1].id
+      },
+      {
+        title: 'Implementar Sistema de Dependências',
+        description: 'Criar a lógica completa para gerenciar dependências entre tarefas (bloqueia/é bloqueada por) com validações e visualização gráfica.',
+        deadline: new Date('2024-03-20T23:59:59Z'),
+        position: 2,
+        isCompleted: false,
+        projectId: projects[0].id,
+        statusId: statuses[3].id, // Em Desenvolvimento
+        priorityId: priorities[5].id, // Crítica
+        createdById: users[0].id,
+        assignedToId: users[0].id
+      },
+      {
+        title: 'Criar Componente de Subtarefas',
+        description: 'Implementar a funcionalidade completa de subtarefas hierárquicas com arrastar e soltar, progresso automático e visualização em árvore.',
+        deadline: new Date('2024-03-10T23:59:59Z'),
+        position: 3,
+        isCompleted: false,
+        projectId: projects[0].id,
+        statusId: statuses[1].id, // A Fazer
+        priorityId: priorities[2].id, // Média
+        createdById: users[1].id,
+        assignedToId: users[2].id,
+        parentTaskId: null
+      },
+      {
+        title: 'Implementar Autenticação com Google OAuth',
+        description: 'Integrar autenticação via Google OAuth 2.0 com sessões seguras, refresh tokens e tratamento de permissões.',
+        deadline: new Date('2024-03-25T23:59:59Z'),
+        position: 4,
+        isCompleted: false,
+        projectId: projects[0].id,
+        statusId: statuses[2].id, // Em Análise
+        priorityId: priorities[4].id, // Muito Alta
+        createdById: users[3].id,
+        assignedToId: users[3].id
+      },
+      {
+        title: 'Criar Sistema de Relatórios',
+        description: 'Desenvolver módulo de relatórios com gráficos, estatísticas, exportação para PDF/Excel e filtros avançados.',
+        deadline: new Date('2024-04-05T23:59:59Z'),
+        position: 5,
+        isCompleted: false,
+        projectId: projects[0].id,
+        statusId: statuses[0].id, // Backlog
+        priorityId: priorities[1].id, // Baixa
+        createdById: users[4].id,
+        assignedToId: users[4].id
+      }
+    ]
+  });
+
+  // Update parent task reference
+  await prisma.task.update({
+    where: { id: tasksProject1[2].id },
+    data: { parentTaskId: tasksProject1[0].id }
+  });
+
+  // Create tasks for Documentação Técnica
+  console.log('Creating tasks for Documentação Técnica...');
+  const tasksProject2 = await prisma.task.createManyAndReturn({
+    data: [
+      {
+        title: 'Documentar API REST',
+        description: 'Criar documentação completa da API REST com exemplos de requests/responses, códigos de erro e autenticação.',
+        deadline: new Date('2024-03-18T23:59:59Z'),
+        position: 1,
+        isCompleted: false,
+        projectId: projects[1].id,
+        statusId: statuses[3].id, // Em Desenvolvimento
+        priorityId: priorities[3].id, // Alta
+        createdById: users[1].id,
+        assignedToId: users[0].id
+      },
+      {
+        title: 'Criar Guia de Instalação',
+        description: 'Desenvolver guia passo a passo para instalação e configuração do sistema em diferentes ambientes (dev, staging, prod).',
+        deadline: new Date('2024-03-12T23:59:59Z'),
+        position: 2,
+        isCompleted: true,
+        projectId: projects[1].id,
+        statusId: statuses[6].id, // Pronto
+        priorityId: priorities[2].id, // Média
+        createdById: users[2].id,
+        assignedToId: users[2].id
+      }
+    ]
+  });
+
+  // Create tasks for Marketing Digital
+  console.log('Creating tasks for Marketing Digital...');
+  const tasksProject3 = await prisma.task.createManyAndReturn({
+    data: [
+      {
+        title: 'Criar Conteúdo para Redes Sociais',
+        description: 'Desenvolver conteúdo estratégico para LinkedIn, Twitter e Instagram com calendário editorial e métricas.',
+        deadline: new Date('2024-03-22T23:59:59Z'),
+        position: 1,
+        isCompleted: false,
+        projectId: projects[2].id,
+        statusId: statuses[4].id, // Em Teste
+        priorityId: priorities[3].id, // Alta
+        createdById: users[0].id,
+        assignedToId: users[3].id
+      },
+      {
+        title: 'Configurar Google Analytics',
+        description: 'Implementar tracking completo no site com Google Analytics 4, eventos personalizados e dashboards.',
+        deadline: new Date('2024-03-08T23:59:59Z'),
+        position: 2,
+        isCompleted: true,
+        projectId: projects[2].id,
+        statusId: statuses[6].id, // Pronto
+        priorityId: priorities[1].id, // Baixa
+        createdById: users[4].id,
+        assignedToId: users[4].id
+      }
+    ]
+  });
+
+  // Create dependencies
+  console.log('Creating dependencies...');
+  await prisma.dependency.createMany({
+    data: [
+      {
+        type: 'BLOCKING',
+        taskId: tasksProject1[1].id, // Implementar Sistema de Dependências
+        dependentTaskId: tasksProject1[0].id // Criar Componente de Lista de Tarefas
+      },
+      {
+        type: 'BLOCKING',
+        taskId: tasksProject1[3].id, // Implementar Autenticação com Google OAuth
+        dependentTaskId: tasksProject1[1].id // Implementar Sistema de Dependências
+      }
+    ]
+  });
+
+  // Create comments
+  console.log('Creating comments...');
+  await prisma.comment.createMany({
+    data: [
+      {
+        content: 'Ótimo trabalho no componente de lista! As funcionalidades de filtro estão muito intuitivas.',
+        taskId: tasksProject1[0].id,
+        userId: users[0].id
+      },
+      {
+        content: 'Precisamos adicionar suporte para ordenação por múltiplas colunas.',
+        taskId: tasksProject1[0].id,
+        userId: users[1].id
+      },
+      {
+        content: 'As dependências estão funcionando perfeitamente nos testes. Bom trabalho!',
+        taskId: tasksProject1[1].id,
+        userId: users[2].id
+      },
+      {
+        content: 'Encontrei um bug na validação de dependências circulares. Vou corrigir.',
+        taskId: tasksProject1[1].id,
+        userId: users[0].id
+      },
+      {
+        content: 'A documentação da API está 90% completa. Faltam apenas os exemplos de erro.',
+        taskId: tasksProject2[0].id,
+        userId: users[1].id
+      }
+    ]
+  });
+
+  // Create task history
+  console.log('Creating task history...');
+  await prisma.taskHistory.createMany({
+    data: [
+      {
+        oldStatusId: statuses[1].id, // A Fazer
+        newStatusId: statuses[3].id, // Em Desenvolvimento
+        notes: 'Iniciado desenvolvimento',
+        taskId: tasksProject1[0].id,
+        userId: users[1].id
+      },
+      {
+        oldStatusId: statuses[3].id, // Em Desenvolvimento
+        newStatusId: statuses[4].id, // Em Teste
+        notes: 'Enviado para testes',
+        taskId: tasksProject1[0].id,
+        userId: users[0].id
+      },
+      {
+        oldStatusId: statuses[4].id, // Em Teste
+        newStatusId: statuses[6].id, // Pronto
+        notes: 'Aprovado nos testes',
+        taskId: tasksProject1[0].id,
+        userId: users[2].id
+      }
+    ]
+  });
+
+  // Create attachments
+  console.log('Creating attachments...');
+  await prisma.attachment.createMany({
+    data: [
+      {
+        fileName: 'wireframe-lista-tarefas.pdf',
+        fileUrl: '/attachments/wireframe-lista-tarefas.pdf',
+        mimeType: 'application/pdf',
+        taskId: tasksProject1[0].id,
+        userId: users[0].id
+      },
+      {
+        fileName: 'api-specification.yaml',
+        fileUrl: '/attachments/api-specification.yaml',
+        mimeType: 'text/yaml',
+        taskId: tasksProject2[0].id,
+        userId: users[1].id
+      },
+      {
+        fileName: 'analytics-dashboard.png',
+        fileUrl: '/attachments/analytics-dashboard.png',
+        mimeType: 'image/png',
+        taskId: tasksProject3[1].id,
+        userId: users[4].id
+      }
+    ]
+  });
+
+  console.log('');
+  console.log('✅ ENHANCED database seeding completed successfully!');
+  console.log('📊 Created:');
+  console.log(`   • ${users.length} users`);
+  console.log(`   • ${statuses.length} statuses`);
+  console.log(`   • ${priorities.length} priorities`);
+  console.log(`   • ${projects.length} projects`);
+  console.log(`   • ${tasksProject1.length + tasksProject2.length + tasksProject3.length} tasks`);
+  console.log(`   • 5 comments, 3 dependencies, 3 history entries, 3 attachments`);
+  console.log('');
+  console.log('🔗 Acesse o sistema com:');
+  console.log('   • Nickname: alexandre (Admin)');
+  console.log('   • Nickname: maria (Editor)');
+  console.log('   • Nickname: joao (Viewer)');
+  console.log('   • Nickname: ana (Editor)');
+  console.log('   • Nickname: pedro (Viewer)');
+}
+
+main()
+  .catch((e) => {
+    console.error('Error seeding database:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

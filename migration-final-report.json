@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-03-22T15:05:48.526Z",
+  "stats": {
+    "jsFiles": 115,
+    "tsFiles": 86,
+    "totalFiles": 201,
+    "conversionRate": "42.8%"
+  },
+  "criticalFiles": [
+    {
+      "file": "src/bootstrap.ts",
+      "exists": true
+    },
+    {
+      "file": "src/services/taskService.ts",
+      "exists": true
+    },
+    {
+      "file": "src/services/agentService.ts",
+      "exists": true
+    },
+    {
+      "file": "src/controllers/taskController.ts",
+      "exists": true
+    },
+    {
+      "file": "src/controllers/agentController.ts",
+      "exists": true
+    }
+  ],
+  "packageJson": {
+    "hasTypeScript": "^5.9.3",
+    "hasTypesNode": "^25.5.0"
+  }
+}

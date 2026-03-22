@@ -1,0 +1,154 @@
+{
+  "timestamp": "2026-03-22T15:00:42.231Z",
+  "stats": {
+    "phases": {
+      "Utils": {
+        "converted": 14,
+        "errors": 0,
+        "files": [
+          "src/utils/buscaPlanoArquiteto.js",
+          "src/utils/commandUtils.js",
+          "src/utils/index.js",
+          "src/utils/jsonUtils.js",
+          "src/utils/logger.js",
+          "src/utils/monitorUtils.js",
+          "src/utils/pathUtils.js",
+          "src/utils/pipelineUtils.js",
+          "src/utils/processKiller.js",
+          "src/utils/promptFactory.js",
+          "src/utils/sessionChainUtils.js",
+          "src/utils/smartFileFinder.js",
+          "src/utils/timeUtils.js",
+          "src/utils/userResolver.js"
+        ]
+      },
+      "Services": {
+        "converted": 28,
+        "errors": 0,
+        "files": [
+          "src/services/agentCache.js",
+          "src/services/agentService.js",
+          "src/services/autoTaskService.js",
+          "src/services/avatarService.js",
+          "src/services/commandExecutor.js",
+          "src/services/commentService.js",
+          "src/services/contractValidationRules.js",
+          "src/services/contractVerificationService.js",
+          "src/services/decompositionService.js",
+          "src/services/evidenceService.js",
+          "src/services/llmService.js",
+          "src/services/lockService.js",
+          "src/services/monitorStateService.js",
+          "src/services/notificationService.js",
+          "src/services/openclawService.js",
+          "src/services/prismaService.js",
+          "src/services/projectService.js",
+          "src/services/sseService.js",
+          "src/services/stageService.js",
+          "src/services/taskAnalysisService.js",
+          "src/services/taskExecutionService.js",
+          "src/services/taskFileService.js",
+          "src/services/taskHierarchyService.js",
+          "src/services/taskHistoryService.js",
+          "src/services/toolCallService.js",
+          "src/services/userService.js",
+          "src/services/validationService.js",
+          "src/services/workspaceSnapshotService.js"
+        ]
+      },
+      "Controllers": {
+        "converted": 16,
+        "errors": 0,
+        "files": [
+          "src/controllers/agentController.js",
+          "src/controllers/authController.js",
+          "src/controllers/avatarController.js",
+          "src/controllers/commentController.js",
+          "src/controllers/dependencyController.js",
+          "src/controllers/logController.js",
+          "src/controllers/priorityController.js",
+          "src/controllers/projectController.js",
+          "src/controllers/projectTypeController.js",
+          "src/controllers/recurrenceController.js",
+          "src/controllers/stageController.js",
+          "src/controllers/statusController.js",
+          "src/controllers/taskController.js",
+          "src/controllers/taskExecutionController.js",
+          "src/controllers/taskHistoryController.js",
+          "src/controllers/userController.js"
+        ]
+      },
+      "Steps": {
+        "converted": 21,
+        "errors": 0,
+        "files": [
+          "src/steps/AddCommentStep.js",
+          "src/steps/AnalystStep.js",
+          "src/steps/ArchitectPlanningStep.js",
+          "src/steps/ContractVerificationStep.js",
+          "src/steps/DeveloperLoopOrchestrator.js",
+          "src/steps/DeveloperTurnStep.js",
+          "src/steps/EcosystemValidationStep.js",
+          "src/steps/GetNextTaskStep.js",
+          "src/steps/SetupContextStep.js",
+          "src/steps/TaskExecutionOrchestrator.js",
+          "src/steps/TaskFailureStep.js",
+          "src/steps/TaskSuccessStep.js",
+          "src/steps/TaskTimeoutCheckStep.js",
+          "src/steps/TeardownStep.js",
+          "src/steps/adapters/legacyAddComment.js",
+          "src/steps/adapters/legacyCallAnalyst.js",
+          "src/steps/adapters/legacyExecuteTask.js",
+          "src/steps/adapters/legacyGetNextTask.js",
+          "src/steps/adapters/legacyTaskFailure.js",
+          "src/steps/adapters/legacyTaskSuccess.js",
+          "src/steps/adapters/legacyTaskTimeoutCheck.js"
+        ]
+      },
+      "Adapters": {
+        "converted": 0,
+        "errors": 0,
+        "files": []
+      },
+      "Core": {
+        "converted": 0,
+        "errors": 2,
+        "files": []
+      }
+    },
+    "totalConverted": 79,
+    "totalErrors": 2
+  },
+  "phases": [
+    {
+      "name": "Utils",
+      "dir": "src/utils",
+      "priority": 1
+    },
+    {
+      "name": "Services",
+      "dir": "src/services",
+      "priority": 2
+    },
+    {
+      "name": "Controllers",
+      "dir": "src/controllers",
+      "priority": 3
+    },
+    {
+      "name": "Steps",
+      "dir": "src/steps",
+      "priority": 4
+    },
+    {
+      "name": "Adapters",
+      "dir": "src/steps/adapters",
+      "priority": 5
+    },
+    {
+      "name": "Core",
+      "dir": "src",
+      "priority": 6
+    }
+  ]
+}

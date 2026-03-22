@@ -1,0 +1,227 @@
+// Migrado para TypeScript - Fase: Services
+// Arquivo: avatarService.js
+
+import { PrismaClient } from '@prisma/client';
+import fs from 'fs/promises';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+
+const prisma = new PrismaClient();
+
+class AvatarService {
+  // Diretório base para avatares
+  static AVATARS_DIR = path.join(__dirname, '../../public/agent-avatars');
+  
+  /**
+   * Inicializa o serviço (cria diretório se não existir)
+   */
+  static async init(): Promise<any> {
+    try {
+      await fs.mkdir(this.AVATARS_DIR, { recursive: true });
+      console.log(`✅ AvatarService inicializado: ${this.AVATARS_DIR}`);
+    } catch (error) {
+      console.error('❌ Erro ao inicializar AvatarService:', error);
+    }
+  }
+  
+  /**
+   * Faz upload de avatar para um agente
+   * @param {string} agentId - ID do agente
+   * @param {Object} file - Objeto file do multer
+   * @returns {Promise<Object>} - Informações do avatar salvo
+   */
+  static async uploadAvatar(agentId, file): Promise<any> {
+    try {
+      // Validar entrada
+      if (!agentId || !file) {
+        throw new Error('agentId e file são obrigatórios');
+      }
+      
+      // Gerar nome único para o arquivo
+      const fileExt = path.extname(file.originalname).toLowerCase();
+      const uniqueFilename = `${uuidv4()}${fileExt}`;
+      
+      // Caminho relativo e absoluto
+      const relativePath = `${agentId}/${uniqueFilename}`;
+      const absolutePath = path.join(this.AVATARS_DIR, relativePath);
+      
+      // Criar diretório do agente se não existir
+      const agentDir = path.join(this.AVATARS_DIR, agentId);
+      await fs.mkdir(agentDir, { recursive: true });
+      
+      // Mover arquivo para diretório final
+      await fs.rename(file.path, absolutePath);
+      
+      // Salvar metadados no banco
+      const avatarRecord = await prisma.agentAvatar.upsert({
+        where: { agentId },
+        update: {
+          __filename: uniqueFilename,
+          mimeType: file.mimetype,
+          path: relativePath,
+          size: file.size,
+          updatedAt: new Date()
+        },
+        create: {
+          agentId,
+          __filename: uniqueFilename,
+          mimeType: file.mimetype,
+          path: relativePath,
+          size: file.size
+        }
+      });
+      
+      // URL para acesso
+      const avatarUrl = `/agent-avatars/${relativePath}`;
+      
+      return {
+        success: true,
+        avatar: avatarRecord,
+        avatarUrl,
+        message: 'Avatar atualizado com sucesso'
+      };
+      
+    } catch (error) {
+      console.error('Erro no upload de avatar:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtém informações do avatar de um agente
+   * @param {string} agentId - ID do agente
+   * @returns {Promise<Object|null>} - Informações do avatar ou null
+   */
+  static async getAvatar(agentId): Promise<any> {
+    try {
+      const avatar = await prisma.agentAvatar.findUnique({
+        where: { agentId }
+      });
+      
+      if (!avatar) {
+        return null;
+      }
+      
+      // Verificar se arquivo físico existe
+      const absolutePath = path.join(this.AVATARS_DIR, avatar.path);
+      try {
+        await fs.access(absolutePath);
+      } catch {
+        // Arquivo não existe, remover do banco
+        await this.deleteAvatar(agentId);
+        return null;
+      }
+      
+      return {
+        ...avatar,
+        avatarUrl: `/agent-avatars/${avatar.path}`
+      };
+      
+    } catch (error) {
+      console.error('Erro ao obter avatar:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Remove avatar de um agente
+   * @param {string} agentId - ID do agente
+   * @returns {Promise<boolean>} - true se removido, false se não existia
+   */
+  static async deleteAvatar(agentId): Promise<any> {
+    try {
+      const avatar = await prisma.agentAvatar.findUnique({
+        where: { agentId }
+      });
+      
+      if (!avatar) {
+        return false;
+      }
+      
+      // Remover arquivo físico
+      const absolutePath = path.join(this.AVATARS_DIR, avatar.path);
+      try {
+        await fs.unlink(absolutePath);
+      } catch (error) {
+        console.warn(`Arquivo não encontrado: ${absolutePath}`);
+      }
+      
+      // Remover diretório do agente se estiver vazio
+      const agentDir = path.join(this.AVATARS_DIR, agentId);
+      try {
+        const files = await fs.readdir(agentDir);
+        if (files.length === 0) {
+          await fs.rmdir(agentDir);
+        }
+      } catch (error) {
+        // Ignorar erro se diretório não existir
+      }
+      
+      // Remover do banco
+      await prisma.agentAvatar.delete({
+        where: { agentId }
+      });
+      
+      return true;
+      
+    } catch (error) {
+      console.error('Erro ao remover avatar:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Serve arquivo de avatar
+   * @param {string} agentId - ID do agente
+   * @param {string} __filename - Nome do arquivo
+   * @returns {Promise<Object>} - Informações do arquivo
+   */
+  static async serveAvatarFile(agentId, __filename): Promise<any> {
+    try {
+      // Construir caminho
+      const relativePath = `${agentId}/${__filename}`;
+      const absolutePath = path.join(this.AVATARS_DIR, relativePath);
+      
+      // Verificar se arquivo existe
+      await fs.access(absolutePath);
+      
+      // Ler metadados do banco para validar
+      const avatar = await prisma.agentAvatar.findUnique({
+        where: { agentId }
+      });
+      
+      if (!avatar || avatar.__filename !== __filename) {
+        throw new Error('Avatar não encontrado ou não pertence ao agente');
+      }
+      
+      // Ler arquivo
+      const fileBuffer = await fs.readFile(absolutePath);
+      
+      return {
+        buffer: fileBuffer,
+        mimeType: avatar.mimeType,
+        size: avatar.size,
+        __filename: avatar.__filename
+      };
+      
+    } catch (error) {
+      console.error('Erro ao servir arquivo de avatar:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Obtém URL do avatar para um agente
+   * @param {string} agentId - ID do agente
+   * @returns {Promise<string|null>} - URL do avatar ou null
+   */
+  static async getAvatarUrl(agentId): Promise<any> {
+    const avatar = await this.getAvatar(agentId);
+    return avatar ? avatar.avatarUrl : null;
+  }
+}
+
+// Inicializar ao carregar
+AvatarService.init().catch(console.error);
+
+export default AvatarService;
