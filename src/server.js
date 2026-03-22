@@ -30,7 +30,7 @@ const corsOptions = {
     
     const allowedOrigins = process.env.CORS_ORIGIN 
       ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-      : ['http://localhost:3000'];
+      : ['*'];
     
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
