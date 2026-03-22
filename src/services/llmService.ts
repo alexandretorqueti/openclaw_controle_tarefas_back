@@ -1,37 +1,64 @@
-// Migrado para TypeScript - Fase: Services
-// Arquivo: llmService.js
+// src/services/LlmService.ts
 
-import * as axios from 'axios';
-import { extractJsonObjects } from '../utils/jsonUtils'; // Usando seu utilitário
+import axios from 'axios';
+import { extractJsonObjects } from '../utils/jsonUtils';
 
 class LlmService {
+  private endpoint: string;
+  private model: string;
+
+  /**
+   * Construtor do serviço de LLM Local (Ollama/LM Studio)
+   * @param model Nome do modelo (ex: phi4, qwen2.5-coder)
+   * @param endpoint URL da API de geração
+   */
   constructor(model = 'phi4:latest', endpoint = 'http://localhost:11434/api/generate') {
-    (this as any).endpoint = endpoint; // Ajuste para o seu provedor
-    (this as any).model = model;
+    this.endpoint = endpoint;
+    this.model = model;
   }
-  // Retiro o 'ollama/' do model
-  async analyze(prompt): Promise<any> {
+
+  /**
+   * Envia um prompt para o modelo e extrai o JSON da resposta
+   * @param prompt O texto de instrução para a IA
+   * @returns O primeiro objeto JSON encontrado ou null
+   */
+  async analyze(prompt: string): Promise<any> {
     try {
+      // Limpa o prefixo 'ollama/' caso venha na configuração
+      const modelName = this.model.replace(/^ollama\//, '');
+
       const response = await axios.post(this.endpoint, {
-        model: this.model.replace(/^ollama\//, ''),
+        model: modelName,
         prompt: prompt,
         stream: false,
-        format: "json"
+        format: "json" // Força o Ollama a estruturar a saída
       });
 
-      const rawText = response.data.response || response.data.thinking || '';
+      // Alguns provedores usam 'response', outros 'thinking' ou 'content'
+      const rawText = response.data.response || response.data.message?.content || response.data.thinking || '';
       
-      // Usa o seu extrator para garantir que pegamos apenas o objeto JSON
-      // mesmo que a IA responda com "Aqui está o json: { ... }"
+      // Usa o seu utilitário robusto para extrair o JSON 
+      // (Ignora lixo textual que a IA possa colocar antes ou depois)
       const foundObjects = extractJsonObjects(rawText);
       
-      return foundObjects.length > 0 ? foundObjects[0] : null;
-    } catch (error) {
-      console.error("❌ Falha crítica no LlmService:", error.message);
+      if (foundObjects && foundObjects.length > 0) {
+        return foundObjects[0];
+      }
+
+      console.warn(`⚠️ [LlmService] Nenhum JSON válido encontrado na resposta do modelo ${modelName}`);
+      return null;
+
+    } catch (error: any) {
+      console.error("❌ [LlmService] Falha crítica na comunicação com o provedor de LLM:", error.message);
+      
+      // Se for erro de conexão (ECONNREFUSED), vale um log mais amigável
+      if (error.code === 'ECONNREFUSED') {
+        console.error("🚨 Verifique se o Ollama ou o LM Studio está rodando no endpoint:", this.endpoint);
+      }
+      
       return null;
     }
   }
 }
 
 export default LlmService;
-

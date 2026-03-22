@@ -1,55 +1,57 @@
-// Migrado para TypeScript - Fase: Services
-// Arquivo: notificationService.js
-
-export /**
- * Serviço de notificações para Telegram via OpenClaw
- */
+// src/services/NotificationService.ts
 
 import { exec } from 'child_process';
-import util from 'util';
-const execAsync = util.promisify(exec);
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
+
+/**
+ * Interface simples para representar Tarefas e Usuários nas notificações
+ */
+interface NotificationData {
+  id: string;
+  title: string;
+  project?: { name: string };
+  [key: string]: any;
+}
 
 class NotificationService {
   
   /**
-   * Envia uma notificação no Telegram
-   * @param {string} message - Mensagem a ser enviada
-   * @param {string} chatId - ID do chat (opcional, usa default se não informado)
-   * @returns {Promise<boolean>} true se enviado com sucesso
+   * Envia uma notificação no Telegram via OpenClaw CLI
    */
-  static async sendTelegramNotification(message, chatId = null): Promise<any> {
+  static async sendTelegramNotification(message: string, chatId: string | null = null): Promise<boolean> {
     try {
       console.log(`📱 Tentando enviar notificação no Telegram: ${message.substring(0, 100)}...`);
       
-      // Comando OpenClaw para enviar mensagem
-      // O chatId padrão é o do Alexandre (7147090795) conforme USER.md
+      // ID padrão do Alexandre conforme configurado no sistema
       const targetChatId = chatId || '7147090795';
       
-      const command = `openclaw message send --channel telegram --target ${targetChatId} --message "${this.escapeMessage(message)}"`;
+      // Escapa a mensagem para evitar injeção de comando no shell
+      const escapedMsg = this.escapeMessage(message);
+      const command = `openclaw message send --channel telegram --target ${targetChatId} --message "${escapedMsg}"`;
       
-      console.log(`🔧 Executando comando: ${command}`);
+      console.log(`🔧 Executando comando de notificação...`);
       
       const { stdout, stderr } = await execAsync(command, {
-        timeout: 10000, // 10 segundos timeout
-        shell: true
+        timeout: 10000,
+        shell: true as any
       });
       
-      if (stderr && !stderr.includes('warning')) {
-        console.error(`❌ Erro ao enviar notificação no Telegram: ${stderr}`);
+      if (stderr && !stderr.toLowerCase().includes('warning')) {
+        console.error(`❌ Erro no comando OpenClaw Telegram: ${stderr}`);
         return false;
       }
       
-      console.log(`✅ Notificação enviada com sucesso no Telegram para chat ${targetChatId}`);
-      console.log(`📤 Resposta: ${stdout || '(sem output)'}`);
-      
+      console.log(`✅ Notificação enviada para chat ${targetChatId}`);
       return true;
       
-    } catch (error) {
-      console.error(`❌ Falha ao enviar notificação no Telegram: ${error.message}`);
+    } catch (error: any) {
+      console.error(`❌ Falha ao enviar notificação: ${error.message}`);
       
-      // Fallback: tentar método alternativo se o comando openclaw não estiver disponível
-      if ((error as any).code === 'ENOENT' || error.message.includes('openclaw: command not found')) {
-        console.log('⚠️ Comando openclaw não encontrado. Tentando método alternativo...');
+      // Fallback automático se o binário openclaw não estiver no PATH
+      if (error.code === 'ENOENT' || error.message.includes('not found')) {
+        console.log('⚠️ Comando openclaw não encontrado. Usando fallback...');
         return await this.sendTelegramNotificationFallback(message, chatId);
       }
       
@@ -58,144 +60,91 @@ class NotificationService {
   }
   
   /**
-   * Método fallback para enviar notificação (usando curl ou outro método)
-   * @param {string} message - Mensagem a ser enviada
-   * @param {string} chatId - ID do chat
-   * @returns {Promise<boolean>} true se enviado com sucesso
+   * Método fallback (log local) caso a CLI do OpenClaw falhe
    */
-  static async sendTelegramNotificationFallback(message, chatId = null): Promise<any> {
+  static async sendTelegramNotificationFallback(message: string, chatId: string | null = null): Promise<boolean> {
     try {
-      console.log('🔄 Usando método fallback para notificação no Telegram...');
-      
-      // Aqui você poderia implementar uma integração direta com a API do Telegram
-      // usando um bot token se tiver configurado
-      // Por enquanto, apenas logamos
-      
-      console.log(`📝 [FALLBACK] Notificação para Telegram (chat ${chatId || 'default'}): ${message}`);
-      
-      // Retornar true para simular sucesso (em produção, implementar API real)
+      console.log(`📝 [FALLBACK LOG] Telegram (${chatId || 'Alexandre'}): ${message}`);
       return true;
-      
     } catch (error) {
-      console.error(`❌ Falha no método fallback: ${error.message}`);
       return false;
     }
   }
   
   /**
-   * Envia notificação quando uma tarefa é concluída
-   * @param {Object} task - Objeto da tarefa
-   * @param {Object} user - Usuário que finalizou a tarefa
-   * @param {string} executionNotes - Notas de execução (opcional)
-   * @returns {Promise<boolean>} true se notificação enviada
+   * Notifica conclusão de tarefa individual
    */
-  static async sendTaskCompletedNotification(task, user, executionNotes = null): Promise<any> {
+  static async sendTaskCompletedNotification(task: NotificationData, user: any, executionNotes: string | null = null): Promise<boolean> {
     try {
-      if (!task || !user) {
-        console.error('❌ Dados insuficientes para notificação de tarefa concluída');
-        return false;
-      }
+      if (!task || !user) return false;
       
-      const projectName = task.project?.name || 'Projeto desconhecido';
-      const userName = user.name || 'Usuário desconhecido';
-      const taskTitle = task.title || 'Tarefa sem título';
+      const projectName = task.project?.name || 'Projeto Geral';
+      const userName = user.name || 'Agente Autônomo';
       
-      // Construir mensagem formatada
       let message = `✅ *TAREFA CONCLUÍDA!*\n\n`;
-      message += `*Tarefa:* ${taskTitle}\n`;
+      message += `*Tarefa:* ${task.title}\n`;
       message += `*Projeto:* ${projectName}\n`;
       message += `*Concluída por:* ${userName}\n`;
       
-      if (executionNotes && executionNotes.trim() !== '') {
-        message += `\n*Notas:* ${executionNotes.substring(0, 200)}${executionNotes.length > 200 ? '...' : ''}\n`;
+      if (executionNotes?.trim()) {
+        const cleanNotes = executionNotes.substring(0, 200).replace(/[_*`[\]()]/g, ''); // Limpa markdown problemático
+        message += `\n*Notas:* ${cleanNotes}${executionNotes.length > 200 ? '...' : ''}\n`;
       }
       
       message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
-      message += `\n🔗 *ID:* ${task.id.substring(0, 8)}...`;
+      message += `\n🔗 *ID:* \`${task.id.substring(0, 8)}\``;
       
-      // Enviar notificação
       return await this.sendTelegramNotification(message);
-      
-    } catch (error) {
-      console.error(`❌ Erro ao enviar notificação de tarefa concluída: ${error.message}`);
+    } catch (error: any) {
+      console.error(`❌ Erro na notificação de conclusão: ${error.message}`);
       return false;
     }
   }
   
   /**
-   * Envia notificação quando uma tarefa pai é automaticamente finalizada
-   * @param {Object} parentTask - Tarefa pai
-   * @param {Array} completedSubtasks - Lista de subtasks concluídas
-   * @returns {Promise<boolean>} true se notificação enviada
+   * Notifica finalização de tarefa pai (Decomposição concluída)
    */
-  static async sendParentTaskAutoCompletedNotification(parentTask, completedSubtasks): Promise<any> {
+  static async sendParentTaskAutoCompletedNotification(parentTask: NotificationData, completedSubtasks: any[]): Promise<boolean> {
     try {
-      if (!parentTask || !completedSubtasks || completedSubtasks.length === 0) {
-        return false;
-      }
+      if (!parentTask || !completedSubtasks?.length) return false;
       
-      const projectName = parentTask.project?.name || 'Projeto desconhecido';
-      const parentTaskTitle = parentTask.title || 'Tarefa pai sem título';
+      let message = `🎯 *TAREFA PAI FINALIZADA!*\n\n`;
+      message += `*Tarefa Pai:* ${parentTask.title}\n`;
+      message += `*Projeto:* ${parentTask.project?.name || 'Projeto Geral'}\n`;
+      message += `*Status:* Todas as ${completedSubtasks.length} subtasks concluídas.\n`;
       
-      // Construir mensagem formatada
-      let message = `🎯 *TAREFA PAI FINALIZADA AUTOMATICAMENTE!*\n\n`;
-      message += `*Tarefa Pai:* ${parentTaskTitle}\n`;
-      message += `*Projeto:* ${projectName}\n`;
-      message += `*Motivo:* Todas as ${completedSubtasks.length} subtasks foram concluídas\n`;
-      
-      message += `\n📋 *Subtasks concluídas:*\n`;
-      completedSubtasks.forEach((subtask, index) => {
-        message += `  ${index + 1}. ${subtask.title || 'Subtarefa sem título'}\n`;
+      message += `\n📋 *Resumo:*\n`;
+      completedSubtasks.slice(0, 5).forEach((st, i) => {
+        message += `  ${i + 1}. ${st.title}\n`;
       });
+      if (completedSubtasks.length > 5) message += `  ... e mais ${completedSubtasks.length - 5} tarefas.\n`;
       
-      message += `\n📅 *Data:* ${new Date().toLocaleString('pt-BR')}`;
-      message += `\n🔗 *ID:* ${parentTask.id.substring(0, 8)}...`;
+      message += `\n📅 ${new Date().toLocaleString('pt-BR')}`;
       
-      // Enviar notificação
       return await this.sendTelegramNotification(message);
-      
-    } catch (error) {
-      console.error(`❌ Erro ao enviar notificação de tarefa pai concluída: ${error.message}`);
+    } catch (error: any) {
       return false;
     }
   }
   
   /**
-   * Escapa caracteres especiais para shell command
-   * @param {string} text - Texto a ser escapado
-   * @returns {string} Texto escapado
+   * Limpa a string para não quebrar o comando Shell
    */
-  static escapeMessage(text) {
+  private static escapeMessage(text: string): string {
     return text
-      .replace(/"/g, '\\"')  // Escapar aspas duplas
-      .replace(/`/g, '\\`')  // Escapar crases
-      .replace(/\$/g, '\\$') // Escapar cifrões
-      .replace(/\n/g, '\\n') // Manter quebras de linha
-      .substring(0, 4000);   // Limitar tamanho (limite do Telegram)
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/`/g, '\\`')
+      .replace(/\$/g, '\\$')
+      .substring(0, 4000);
   }
-  
+
   /**
-   * Testa a conexão com o Telegram
-   * @returns {Promise<boolean>} true se conexão bem-sucedida
+   * Teste de sanidade do serviço
    */
-  static async testConnection(): Promise<any> {
-    try {
-      const testMessage = '🔔 *Teste de Notificação do Sistema de Tarefas*\n\nEsta é uma mensagem de teste para verificar se as notificações estão funcionando corretamente.\n\n✅ Sistema operacional normalmente.';
-      
-      const result = await this.sendTelegramNotification(testMessage);
-      
-      if (result) {
-        console.log('✅ Conexão com Telegram testada com sucesso!');
-      } else {
-        console.log('❌ Falha ao testar conexão com Telegram');
-      }
-      
-      return result;
-      
-    } catch (error) {
-      console.error(`❌ Erro no teste de conexão: ${error.message}`);
-      return false;
-    }
+  static async testConnection(): Promise<boolean> {
+    const testMessage = '🔔 *Teste de Sistema*\n\nAs notificações do Jarbas estão operacionais.';
+    return await this.sendTelegramNotification(testMessage);
   }
 }
 
