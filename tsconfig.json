@@ -1,26 +1,16 @@
 {
   "compilerOptions": {
-    "target": "ES2019",
-    "module": "commonjs",
-    "lib": ["ES2019"],
-    "outDir": "./dist",
-    "rootDir": ".",
-    "strict": false,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "allowJs": true,           // O coração da estratégia híbrida!
+    "checkJs": false,          // Ignora erros de tipagem dentro dos arquivos .js
+    "outDir": "./dist",        // Joga a mistura compilada aqui dentro
+    "rootDir": "./",        // Garanta que aponta para a raiz do seu código-fonte
+    "strict": false,           // Comece relaxado
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "allowJs": true,
-    "checkJs": false,
-    "noEmit": false,
-    "resolveJsonModule": true
+    "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "src/**/*",
-    "aux/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "test"
-  ]
+  "include": ["src/**/*", "aux/**/*"],
+  "exclude": ["node_modules", "dist", ]
 }
