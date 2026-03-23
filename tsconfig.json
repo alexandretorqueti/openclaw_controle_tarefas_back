@@ -5,12 +5,12 @@
     "allowJs": true,           // O coração da estratégia híbrida!
     "checkJs": false,          // Ignora erros de tipagem dentro dos arquivos .js
     "outDir": "./dist",        // Joga a mistura compilada aqui dentro
-    "rootDir": "./",        // Garanta que aponta para a raiz do seu código-fonte
+    "rootDir": "./src",        // Garanta que aponta para a raiz do seu código-fonte
     "strict": false,           // Comece relaxado
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "src/aux/**/*"],
+  "include": ["src/**/*", "aux/**/*"],
   "exclude": ["node_modules", "dist", ]
 }

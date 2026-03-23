@@ -19,7 +19,7 @@ const SmartFileFinder = require('../utils/smartFileFinder');
 // Utilitários
 const { fileExists } = require('../utils/fileUtils');
 const { runPipeline } = require('../utils/pipelineUtils'); 
-const { log } = require('../aux/logger');
+const { log } = require('../../aux/logger');
 const { arch } = require('os');
 const projectService = require('./projectService');
 
@@ -440,7 +440,7 @@ class TaskExecutionService {
     const { fileExists } = require('../utils/fileUtils');
     const LlmService = require('./llmService');
     const projectService = require('./projectService'); 
-    const { log } = require('../aux/logger');
+    const { log } = require('../../aux/logger');
 
     const domain = task.domain; // FRONTEND, BACKEND ou nulo
     const baseDir = project.pastaBase;

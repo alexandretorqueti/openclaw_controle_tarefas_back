@@ -3,7 +3,7 @@
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
 const llmService = new LlmService('phi4:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
-const { log } = require('../aux/logger');
+const { log } = require('../../aux/logger');
 
 class TaskAnalysisService {
   static lastAnalysis = null;

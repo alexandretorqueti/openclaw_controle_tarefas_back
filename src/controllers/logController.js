@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { LOG_FILE } = require('../aux/config');
+const { LOG_FILE } = require('../../aux/config');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { Logger } = require('../utils/logger');
 
