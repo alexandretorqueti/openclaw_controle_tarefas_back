@@ -1,0 +1,24 @@
+declare const express: any;
+declare const cors: any;
+declare const path: any;
+declare const projectRoutes: any;
+declare const taskRoutes: any;
+declare const statusRoutes: any;
+declare const priorityRoutes: any;
+declare const userRoutes: any;
+declare const authRoutes: any;
+declare const recurrenceRoutes: any;
+declare const commentRoutes: any;
+declare const logRoutes: any;
+declare const agentRoutes: any;
+declare const ErrorMiddleware: any;
+declare const Logger: any, LOG_LEVELS: any;
+declare const extractUser: any;
+declare const cronScheduler: any;
+declare const app: any;
+declare const PORT: string | number;
+declare const corsOptions: {
+    credentials: boolean;
+    origin: (origin: any, callback: any) => any;
+};
+declare const sseService: any;

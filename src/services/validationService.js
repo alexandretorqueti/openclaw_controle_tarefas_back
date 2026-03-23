@@ -1,5 +1,13 @@
 // ValidationService.js
-
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 const LlmService = require('./llmService');
 const buildValidationPrompt = require('../utils/promptFactory').buildValidationPrompt;
 /**
@@ -7,282 +15,255 @@ const buildValidationPrompt = require('../utils/promptFactory').buildValidationP
  * Utiliza LLM (Ollama) para determinar se uma tarefa é atômica
  */
 class ValidationService {
-  constructor() {
-    this.cache = new Map(); // Cache simples para validações
-    this.defaultModel = 'phi4:latest';
-    this.timeoutMs = 5 * 60 * 1000; // 5 minutos
-    this.logger = this.createLogger();
-  }
-
-  /**
-   * Cria logger compatível (usa console se logger não estiver disponível)
-   */
-  createLogger() {
-    try {
-      const { Logger, LOG_LEVELS } = require('../utils/logger');
-      
-      // Como os métodos são estáticos, usamos a própria classe Logger, não uma instância
-      return {
-        logInfo: (message) => {
-          if (typeof Logger.logInfo === 'function') {
-            return Logger.logInfo({ message, level: LOG_LEVELS.INFO });
-          }
-          console.log(`[INFO] ${message}`);
-        },
-        logError: (message, error) => {
-          if (typeof Logger.createLog === 'function') {
-            return Logger.createLog({ 
-              message: `${message} ${error?.message || ''}`, 
-              level: LOG_LEVELS.ERROR,
-              stackTrace: error?.stack 
-            });
-          }
-          console.error(`[ERROR] ${message}`, error);
-        },
-        logWarning: (message) => {
-          if (typeof Logger.logWarning === 'function') {
-            return Logger.logWarning({ message, level: LOG_LEVELS.WARN });
-          }
-          console.warn(`[WARN] ${message}`);
-        },
-        logDebug: (message) => {
-          console.debug(`[DEBUG] ${message}`);
-        }
-      };
-    } catch (error) {
-      // Fallback para console
-      return {
-        logInfo: (message) => console.log(`[INFO] ${message}`),
-        logError: (message, error) => console.error(`[ERROR] ${message}`, error),
-        logWarning: (message) => console.warn(`[WARN] ${message}`),
-        logDebug: (message) => console.debug(`[DEBUG] ${message}`)
-      };
+    constructor() {
+        this.cache = new Map(); // Cache simples para validações
+        this.defaultModel = 'phi4:latest';
+        this.timeoutMs = 5 * 60 * 1000; // 5 minutos
+        this.logger = this.createLogger();
     }
-  }
-
-  /**
-   * Valida se uma tarefa é atômica usando modelo auxiliar
-   * @param {Object} task - Objeto da tarefa
-   * @param {Object} project - Objeto do projeto
-   * @returns {Promise<Object>} Resultado da validação {isAtomic, reason, confidence}
-   */
-  async validateWithAuxModel(task, project) {
-    try {
-      // Validações iniciais
-      if (!task || !project) {
-        throw new Error('task e project são obrigatórios');
-      }
-
-      if (!task.title || !task.description) {
+    /**
+     * Cria logger compatível (usa console se logger não estiver disponível)
+     */
+    createLogger() {
+        try {
+            const { Logger, LOG_LEVELS } = require('../utils/logger');
+            // Como os métodos são estáticos, usamos a própria classe Logger, não uma instância
+            return {
+                logInfo: (message) => {
+                    if (typeof Logger.logInfo === 'function') {
+                        return Logger.logInfo({ message, level: LOG_LEVELS.INFO });
+                    }
+                    console.log(`[INFO] ${message}`);
+                },
+                logError: (message, error) => {
+                    if (typeof Logger.createLog === 'function') {
+                        return Logger.createLog({
+                            message: `${message} ${(error === null || error === void 0 ? void 0 : error.message) || ''}`,
+                            level: LOG_LEVELS.ERROR,
+                            stackTrace: error === null || error === void 0 ? void 0 : error.stack
+                        });
+                    }
+                    console.error(`[ERROR] ${message}`, error);
+                },
+                logWarning: (message) => {
+                    if (typeof Logger.logWarning === 'function') {
+                        return Logger.logWarning({ message, level: LOG_LEVELS.WARN });
+                    }
+                    console.warn(`[WARN] ${message}`);
+                },
+                logDebug: (message) => {
+                    console.debug(`[DEBUG] ${message}`);
+                }
+            };
+        }
+        catch (error) {
+            // Fallback para console
+            return {
+                logInfo: (message) => console.log(`[INFO] ${message}`),
+                logError: (message, error) => console.error(`[ERROR] ${message}`, error),
+                logWarning: (message) => console.warn(`[WARN] ${message}`),
+                logDebug: (message) => console.debug(`[DEBUG] ${message}`)
+            };
+        }
+    }
+    /**
+     * Valida se uma tarefa é atômica usando modelo auxiliar
+     * @param {Object} task - Objeto da tarefa
+     * @param {Object} project - Objeto do projeto
+     * @returns {Promise<Object>} Resultado da validação {isAtomic, reason, confidence}
+     */
+    validateWithAuxModel(task, project) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                // Validações iniciais
+                if (!task || !project) {
+                    throw new Error('task e project são obrigatórios');
+                }
+                if (!task.title || !task.description) {
+                    return {
+                        isAtomic: false,
+                        reason: 'Tarefa sem título ou descrição suficiente',
+                        confidence: 0,
+                        error: 'Dados insuficientes'
+                    };
+                }
+                // Verificar cache (opcional)
+                const cacheKey = `${task.id}_${project.id}`;
+                const cached = this.cache.get(cacheKey);
+                if (cached && Date.now() - cached.timestamp < 3600000) { // 1 hora de cache
+                    this.logger.logInfo(`Usando cache para validação da tarefa ${task.id}`);
+                    return cached.result;
+                }
+                // Determinar modelo a ser usado
+                const model = project.modeloAuxiliar || this.defaultModel;
+                this.logger.logInfo(`Validando tarefa ${task.id} com modelo ${model}`);
+                // Criar instância do LlmService
+                let ollama;
+                try {
+                    ollama = new LlmService(model);
+                }
+                catch (error) {
+                    this.logger.logWarning(`Erro ao criar LlmService com modelo ${model}:`, error);
+                    return this.getFallbackValidation(task);
+                }
+                // Construir prompt otimizado
+                const prompt = buildValidationPrompt(task, project);
+                // Executar análise com timeout
+                let llmResponse;
+                try {
+                    llmResponse = yield this.callWithTimeout(() => ollama.analyze(prompt), this.timeoutMs, `Timeout na validação da tarefa ${task.id}`);
+                }
+                catch (error) {
+                    this.logger.logError(`Erro na chamada LLM para tarefa ${task.id}:`, error);
+                    return this.getFallbackValidation(task);
+                }
+                // Processar resposta do LLM
+                const validationResult = this.parseLlmResponse(llmResponse, task);
+                // Adicionar ao cache
+                this.cache.set(cacheKey, {
+                    result: validationResult,
+                    timestamp: Date.now()
+                });
+                this.logger.logInfo(`Validação concluída para tarefa ${task.id}: isAtomic=${validationResult.isAtomic}`);
+                return validationResult;
+            }
+            catch (error) {
+                this.logger.logError(`Erro na validação da tarefa ${task.id}:`, error);
+                return this.getFallbackValidation(task, error.message);
+            }
+        });
+    }
+    /**
+     * Processa a resposta do LLM
+     * @param {Object} llmResponse - Resposta do LLM (objeto JSON)
+     * @param {Object} task - Tarefa original
+     * @returns {Object} Resultado validado
+     */
+    parseLlmResponse(llmResponse, task) {
+        try {
+            if (!llmResponse) {
+                throw new Error('Resposta do LLM é null');
+            }
+            if (typeof llmResponse === 'string') {
+                llmResponse = JSON.parse(llmResponse);
+            }
+            // Valida o isIdeal (Corrigi a string de erro para bater com a propriedade)
+            if (typeof llmResponse.isIdeal !== 'boolean') {
+                throw new Error('Campo isIdeal não é booleano no JSON retornado');
+            }
+            if (!llmResponse.reason || typeof llmResponse.reason !== 'string') {
+                llmResponse.reason = 'Razão não fornecida pelo modelo';
+            }
+            if (typeof llmResponse.confidence !== 'number' || llmResponse.confidence < 0 || llmResponse.confidence > 1) {
+                llmResponse.confidence = llmResponse.isIdeal ? 0.7 : 0.5;
+            }
+            if (!Array.isArray(llmResponse.suggestions)) {
+                llmResponse.suggestions = [];
+            }
+            // --- A MÁGICA DO DOMÍNIO ACONTECE AQUI ---
+            let extractedDomain = null;
+            if (llmResponse.inferredDomain && llmResponse.inferredDomain !== 'UNKNOWN') {
+                // Garantimos que vem limpo, removendo espaços e forçando maiúsculo
+                extractedDomain = llmResponse.inferredDomain.trim().toUpperCase();
+            }
+            // -----------------------------------------
+            return {
+                isAtomic: llmResponse.isIdeal,
+                domain: extractedDomain,
+                reason: llmResponse.reason,
+                confidence: llmResponse.confidence,
+                suggestions: llmResponse.suggestions,
+                source: 'llm',
+                taskId: task.id,
+                timestamp: new Date().toISOString()
+            };
+        }
+        catch (error) {
+            this.logger.logError(`Erro ao processar resposta LLM: ${error.message}. Resposta: ${JSON.stringify(llmResponse)}`);
+            throw new Error(`Erro ao processar resposta LLM: ${error.message}`);
+        }
+    }
+    /**
+     * Validação de fallback quando LLM falha
+     * @param {Object} task - Tarefa
+     * @param {string} error - Mensagem de erro
+     * @returns {Object} Resultado de fallback
+     */
+    getFallbackValidation(task, error = 'Serviço LLM indisponível') {
         return {
-          isAtomic: false,
-          reason: 'Tarefa sem título ou descrição suficiente',
-          confidence: 0,
-          error: 'Dados insuficientes'
+            isAtomic: true,
+            reason: `Não foi possível validar atomicidade: ${error}`,
+            confidence: 0,
+            suggestions: ['Verificar conexão com Ollama', 'Usar validação manual'],
+            source: 'fallback',
+            taskId: task.id,
+            timestamp: new Date().toISOString(),
+            error: error
         };
-      }
-
-      // Verificar cache (opcional)
-      const cacheKey = `${task.id}_${project.id}`;
-      const cached = this.cache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < 3600000) { // 1 hora de cache
-        this.logger.logInfo(`Usando cache para validação da tarefa ${task.id}`);
-        return cached.result;
-      }
-
-      // Determinar modelo a ser usado
-      const model = project.modeloAuxiliar || this.defaultModel;
-      this.logger.logInfo(`Validando tarefa ${task.id} com modelo ${model}`);
-
-      // Criar instância do LlmService
-      let ollama;
-      try {
-        ollama = new LlmService(model);
-      } catch (error) {
-        this.logger.logWarning(`Erro ao criar LlmService com modelo ${model}:`, error);
-        return this.getFallbackValidation(task);
-      }
-
-      // Construir prompt otimizado
-      const prompt = buildValidationPrompt(task, project);
-      
-      // Executar análise com timeout
-      let llmResponse;
-      try {
-        llmResponse = await this.callWithTimeout(
-          () => ollama.analyze(prompt),
-          this.timeoutMs,
-          `Timeout na validação da tarefa ${task.id}`
-        );
-      } catch (error) {
-        this.logger.logError(`Erro na chamada LLM para tarefa ${task.id}:`, error);
-        return this.getFallbackValidation(task);
-      }
-
-      // Processar resposta do LLM
-      const validationResult = this.parseLlmResponse(llmResponse, task);
-      
-      // Adicionar ao cache
-      this.cache.set(cacheKey, {
-        result: validationResult,
-        timestamp: Date.now()
-      });
-
-      this.logger.logInfo(`Validação concluída para tarefa ${task.id}: isAtomic=${validationResult.isAtomic}`);
-      return validationResult;
-
-    } catch (error) {
-      this.logger.logError(`Erro na validação da tarefa ${task.id}:`, error);
-      return this.getFallbackValidation(task, error.message);
     }
-  }
- 
-
-  /**
-   * Processa a resposta do LLM
-   * @param {Object} llmResponse - Resposta do LLM (objeto JSON)
-   * @param {Object} task - Tarefa original
-   * @returns {Object} Resultado validado
-   */
-  parseLlmResponse(llmResponse, task) {
-    try {
-      if (!llmResponse) {
-        throw new Error('Resposta do LLM é null');
-      }
-      
-      if (typeof llmResponse === 'string') {
-        llmResponse = JSON.parse(llmResponse);
-      }
-      
-      // Valida o isIdeal (Corrigi a string de erro para bater com a propriedade)
-      if (typeof llmResponse.isIdeal !== 'boolean') {
-        throw new Error('Campo isIdeal não é booleano no JSON retornado');
-      }
-      
-      if (!llmResponse.reason || typeof llmResponse.reason !== 'string') {
-        llmResponse.reason = 'Razão não fornecida pelo modelo';
-      }
-      
-      if (typeof llmResponse.confidence !== 'number' || llmResponse.confidence < 0 || llmResponse.confidence > 1) {
-        llmResponse.confidence = llmResponse.isIdeal ? 0.7 : 0.5;
-      }
-      
-      if (!Array.isArray(llmResponse.suggestions)) {
-        llmResponse.suggestions = [];
-      }
-
-      // --- A MÁGICA DO DOMÍNIO ACONTECE AQUI ---
-      let extractedDomain = null;
-      if (llmResponse.inferredDomain && llmResponse.inferredDomain !== 'UNKNOWN') {
-        // Garantimos que vem limpo, removendo espaços e forçando maiúsculo
-        extractedDomain = llmResponse.inferredDomain.trim().toUpperCase(); 
-      }
-      // -----------------------------------------
-      
-      return {
-        isAtomic: llmResponse.isIdeal,  // Tradução de "Ideal" para "Atomic"
-        domain: extractedDomain,        // Passamos o domínio inferido para a frente!
-        reason: llmResponse.reason,
-        confidence: llmResponse.confidence,
-        suggestions: llmResponse.suggestions,
-        source: 'llm',
-        taskId: task.id,
-        timestamp: new Date().toISOString()
-      };
-      
-    } catch (error) {
-      this.logger.logError(`Erro ao processar resposta LLM: ${error.message}. Resposta: ${JSON.stringify(llmResponse)}`);
-      throw new Error(`Erro ao processar resposta LLM: ${error.message}`);
+    /**
+     * Executa função com timeout
+     * @param {Function} fn - Função a executar
+     * @param {number} timeoutMs - Timeout em milissegundos
+     * @param {string} timeoutMessage - Mensagem de timeout
+     * @returns {Promise<any>} Resultado da função
+     */
+    callWithTimeout(fn, timeoutMs, timeoutMessage) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return Promise.race([
+                fn(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs))
+            ]);
+        });
     }
-  }
-
-  /**
-   * Validação de fallback quando LLM falha
-   * @param {Object} task - Tarefa
-   * @param {string} error - Mensagem de erro
-   * @returns {Object} Resultado de fallback
-   */
-  getFallbackValidation(task, error = 'Serviço LLM indisponível') {
-    return {
-      isAtomic: true,
-      reason: `Não foi possível validar atomicidade: ${error}`,
-      confidence: 0,
-      suggestions: ['Verificar conexão com Ollama', 'Usar validação manual'],
-      source: 'fallback',
-      taskId: task.id,
-      timestamp: new Date().toISOString(),
-      error: error
-    };
-  }
-
-  /**
-   * Executa função com timeout
-   * @param {Function} fn - Função a executar
-   * @param {number} timeoutMs - Timeout em milissegundos
-   * @param {string} timeoutMessage - Mensagem de timeout
-   * @returns {Promise<any>} Resultado da função
-   */
-  async callWithTimeout(fn, timeoutMs, timeoutMessage) {
-    return Promise.race([
-      fn(),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
-      )
-    ]);
-  }
-
-  /**
-   * Limpa o cache de validações
-   * @param {number} maxAgeMs - Idade máxima em milissegundos (opcional)
-   */
-  clearCache(maxAgeMs) {
-    if (maxAgeMs) {
-      const now = Date.now();
-      for (const [key, value] of this.cache.entries()) {
-        if (now - value.timestamp > maxAgeMs) {
-          this.cache.delete(key);
+    /**
+     * Limpa o cache de validações
+     * @param {number} maxAgeMs - Idade máxima em milissegundos (opcional)
+     */
+    clearCache(maxAgeMs) {
+        if (maxAgeMs) {
+            const now = Date.now();
+            for (const [key, value] of this.cache.entries()) {
+                if (now - value.timestamp > maxAgeMs) {
+                    this.cache.delete(key);
+                }
+            }
+            this.logger.logInfo(`Cache limpo: removidas entradas com mais de ${maxAgeMs}ms`);
         }
-      }
-      this.logger.logInfo(`Cache limpo: removidas entradas com mais de ${maxAgeMs}ms`);
-    } else {
-      this.cache.clear();
-      this.logger.logInfo('Cache limpo completamente');
+        else {
+            this.cache.clear();
+            this.logger.logInfo('Cache limpo completamente');
+        }
     }
-  }
-
-  /**
-   * Valida múltiplas tarefas em lote
-   * @param {Array} tasks - Array de tarefas
-   * @param {Object} project - Projeto
-   * @returns {Promise<Array>} Resultados das validações
-   */
-  async validateBatch(tasks, project) {
-    const results = [];
-    
-    for (const task of tasks) {
-      try {
-        const result = await this.validateWithAuxModel(task, project);
-        results.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          ...result
+    /**
+     * Valida múltiplas tarefas em lote
+     * @param {Array} tasks - Array de tarefas
+     * @param {Object} project - Projeto
+     * @returns {Promise<Array>} Resultados das validações
+     */
+    validateBatch(tasks, project) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const results = [];
+            for (const task of tasks) {
+                try {
+                    const result = yield this.validateWithAuxModel(task, project);
+                    results.push(Object.assign({ taskId: task.id, taskTitle: task.title }, result));
+                }
+                catch (error) {
+                    this.logger.logError(`Erro na validação em lote da tarefa ${task.id}:`, error);
+                    results.push({
+                        taskId: task.id,
+                        taskTitle: task.title,
+                        isAtomic: false,
+                        reason: `Erro na validação: ${error.message}`,
+                        confidence: 0,
+                        source: 'error',
+                        error: error.message
+                    });
+                }
+            }
+            return results;
         });
-      } catch (error) {
-        this.logger.logError(`Erro na validação em lote da tarefa ${task.id}:`, error);
-        results.push({
-          taskId: task.id,
-          taskTitle: task.title,
-          isAtomic: false,
-          reason: `Erro na validação: ${error.message}`,
-          confidence: 0,
-          source: 'error',
-          error: error.message
-        });
-      }
     }
-    
-    return results;
-  }
 }
-
 module.exports = new ValidationService();

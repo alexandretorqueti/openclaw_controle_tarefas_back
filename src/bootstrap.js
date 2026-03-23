@@ -5,7 +5,6 @@
  * dependa do container (por exemplo, no início de monitor.js ou em testes).
  */
 const container = require('./container');
-
 // Serviços reais da aplicação
 const OpenClawService = require('./services/openclawService');
 const PromptFactory = require('./utils/promptFactory');
@@ -35,7 +34,6 @@ const config = require('../aux/config');
 const fs = require('fs').promises;
 const axios = require('axios');
 const path = require('path');
-
 // Registra as dependências
 container.register('openClawService', OpenClawService);
 container.register('promptFactory', PromptFactory);
@@ -61,11 +59,9 @@ container.register('agentService', AgentService);
 container.register('projectService', ProjectService);
 container.register('llmService', LlmService);
 container.register('taskExecutionService', TaskExecutionService);
-
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
 container.register('LockServiceClass', LockService);
 container.register('MonitorStateServiceClass', MonitorStateService);
 container.register('TaskFileServiceClass', TaskFileService);
-
 module.exports = container;

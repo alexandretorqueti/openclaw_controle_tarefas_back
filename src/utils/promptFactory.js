@@ -1,17 +1,16 @@
 // src/utils/promptFactory.js
-
 class PromptFactory {
-  /**
-   * Gera o prompt para a análise inicial de escopo da tarefa.
-   */
-  static buildTaskAnalysisPrompt(task, project, preAnalysisFile = null) {
-    return `
+    /**
+     * Gera o prompt para a análise inicial de escopo da tarefa.
+     */
+    static buildTaskAnalysisPrompt(task, project, preAnalysisFile = null) {
+        return `
       Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
       
       PROJETO:
-      - Base: ${project?.pastaBase}
-      - Frontend Path: ${project?.frontendPath || 'N/A'}
-      - Backend Path: ${project?.backendPath || 'N/A'}
+      - Base: ${project === null || project === void 0 ? void 0 : project.pastaBase}
+      - Frontend Path: ${(project === null || project === void 0 ? void 0 : project.frontendPath) || 'N/A'}
+      - Backend Path: ${(project === null || project === void 0 ? void 0 : project.backendPath) || 'N/A'}
 
       TAREFA:
       - Título: ${task.title}
@@ -41,26 +40,24 @@ class PromptFactory {
         "risks": ["Risco de não encontrar o arquivo de configuração"]
       }
     `.trim();
-  }
-
-   static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
-    const path = require('path');
-    const truncatedFiles = fileList.slice(0, 500).join('\n');
-    
-    const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
-    const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
-
-    let portasCtx = '';
-    if (project?.frontendPort || project?.backendPort) {
-      portasCtx = `\n[INFRAESTRUTURA DE PORTAS]\n`;
-      if (project?.frontendPort) portasCtx += `- Frontend roda na porta: ${project.frontendPort}\n`;
-      if (project?.backendPort) portasCtx += `- Backend roda na porta: ${project.backendPort}\n`;
-      portasCtx += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
     }
-
-    // Diferentes instruções baseadas no tipo de tarefa
-    const taskTypeInstructions = {
-      development: `
+    static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
+        const path = require('path');
+        const truncatedFiles = fileList.slice(0, 500).join('\n');
+        const frontDir = (project === null || project === void 0 ? void 0 : project.frontendPath) ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
+        const backDir = (project === null || project === void 0 ? void 0 : project.backendPath) ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
+        let portasCtx = '';
+        if ((project === null || project === void 0 ? void 0 : project.frontendPort) || (project === null || project === void 0 ? void 0 : project.backendPort)) {
+            portasCtx = `\n[INFRAESTRUTURA DE PORTAS]\n`;
+            if (project === null || project === void 0 ? void 0 : project.frontendPort)
+                portasCtx += `- Frontend roda na porta: ${project.frontendPort}\n`;
+            if (project === null || project === void 0 ? void 0 : project.backendPort)
+                portasCtx += `- Backend roda na porta: ${project.backendPort}\n`;
+            portasCtx += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
+        }
+        // Diferentes instruções baseadas no tipo de tarefa
+        const taskTypeInstructions = {
+            development: `
 === SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
 * Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
 * Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
@@ -71,8 +68,7 @@ class PromptFactory {
 * PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
 * Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
       `,
-      
-      analysis: `
+            analysis: `
 === SEU FLUXO DE TRABALHO OBRIGATÓRIO (ANÁLISE) ===
 1. Esta é uma tarefa EXCLUSIVA de leitura e investigação. NÃO modifique códigos.
 2. Use a ferramenta 'read' ou 'exec' (comandos bash como cat, grep) para inspecionar os arquivos solicitados.
@@ -81,8 +77,7 @@ class PromptFactory {
 5. Redija seu relatório e mensagens no PASSADO (ex: "verifiquei", "encontrei", "descobri") para provar que a ação foi concluída.
 6. Responda com: "Análise concluída. Tarefa finalizada pelo arquiteto."
       `,
-      
-      automation: `
+            automation: `
 === SEU FLUXO DE TRABALHO OBRIGATÓRIO (AUTOMAÇÃO) ===
 1. Avalie se o script ou comando de automação pode ser rodado por você agora mesmo (ex: comandos shell simples, limpeza, git).
 2. Se puder resolver agora, EXECUTE a ação usando a ferramenta 'exec'.
@@ -90,11 +85,9 @@ class PromptFactory {
 4. Se você executou com sucesso, finalize criando o marcador de conclusão via ferramenta 'exec' rodando \`touch .done\`.
 5. Se for complexo demais e exigir codificação pesada, crie apenas um plano de ação (como em 'development') e NÃO crie o arquivo .done.
       `
-    };
-
-    const instructions = taskTypeInstructions[taskType] || taskTypeInstructions.development;
-
-    return `
+        };
+        const instructions = taskTypeInstructions[taskType] || taskTypeInstructions.development;
+        return `
 Você é o Arquiteto de Software Líder do projeto.
 Tipo de Tarefa: [${taskType.toUpperCase()}]
 
@@ -106,8 +99,8 @@ Backend: ${backDir}${portasCtx}
 ${truncatedFiles}
 
 [TAREFA ATUAL]
-Título: ${task?.title}
-Descrição: ${task?.description}${commentsSection}
+Título: ${task === null || task === void 0 ? void 0 : task.title}
+Descrição: ${task === null || task === void 0 ? void 0 : task.description}${commentsSection}
 
 [REGRAS CRÍTICAS DE SISTEMA]
 - Você NÃO PODE interagir de forma conversacional. Você deve AGIR utilizando as ferramentas JSON fornecidas.
@@ -117,31 +110,26 @@ ${instructions}
 
 Inicie agora o seu fluxo de trabalho estrito.
 `.trim();
-  }
- 
-  static buildAgentSystemPrompt(agentContext) {
-    return `
+    }
+    static buildAgentSystemPrompt(agentContext) {
+        return `
       Você é o Agente Jarbas.
       O seu contexto atual é: ${agentContext}
       // ... outras regras do agente
     `.trim();
-  }
-  
-  /**
-   * Exemplo: Prompt para gerar relatórios
-   */
-  static buildReportPrompt(taskTitle, executionEvidence) {
-     return `
+    }
+    /**
+     * Exemplo: Prompt para gerar relatórios
+     */
+    static buildReportPrompt(taskTitle, executionEvidence) {
+        return `
        A tarefa "${taskTitle}" foi concluída. 
        Com base nas evidências: ${JSON.stringify(executionEvidence)}
        Escreva um relatório detalhado.
      `.trim();
-  }
-
-  static buildEngineRulesPrompt(
-    files
-  ) {
-    return `
+    }
+    static buildEngineRulesPrompt(files) {
+        return `
 [REGRA DE OURO]
 1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
 2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
@@ -164,10 +152,9 @@ PASSO 2: ENCERRAMENTO
 Use a ferramenta "exec" com o comando touch para avisar o sistema que você finalizou.
 - Exemplo exato: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}
 `.trim();
-  }
-
-  static buildArchitectAnalysisPrompt(architectResponse, task, project) {
-    const prompt = `
+    }
+    static buildArchitectAnalysisPrompt(architectResponse, task, project) {
+        const prompt = `
       Você é um analista de respostas de arquitetos de software.
       Analise a resposta abaixo de um arquiteto e determine:
 
@@ -179,7 +166,7 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
       CONTEXTO:
       - Tarefa: ${task.title}
       - Descrição: ${task.description}
-      - Projeto: ${project?.name || 'N/A'}
+      - Projeto: ${(project === null || project === void 0 ? void 0 : project.name) || 'N/A'}
 
       RESPOSTA DO ARQUITETO:
       ${architectResponse}
@@ -219,14 +206,13 @@ Use a ferramenta "exec" com o comando touch para avisar o sistema que você fina
       - Se o arquiteto usa verbos no PASSADO ("fiz", "modifiquei", "alterei") → É EXECUÇÃO (hasExecuted: true)
       - Plano detalhado NÃO é execução! Um plano com 100 passos ainda é apenas um plano.
     `.trim();
-    return prompt;
-  }
-
-  /**
-   * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
-   */
-  static buildDecompositionPrompt(task) {
-    return `# ROLE
+        return prompt;
+    }
+    /**
+     * Gera o prompt para o Arquiteto decompor uma Tarefa Mãe em micro-tarefas de Front e Back.
+     */
+    static buildDecompositionPrompt(task) {
+        return `# ROLE
 Você é um Arquiteto de Software focado em automação de workflow. Sua função é avaliar e, se estritamente necessário, descompor uma tarefa complexa em formato JSON.
 
 # TAREFA MÃE
@@ -256,16 +242,15 @@ Descrição: ${task.description}
     "domain": "BACKEND ou FRONTEND"
   }
 ]`;
-  }
-  
-  /**
-   * Constrói prompt para validação de atomicidade
-   * @param {Object} task - Tarefa
-   * @param {Object} project - Projeto
-   * @returns {string} Prompt formatado
-   */
-  static buildValidationPrompt(task, project) {
-    return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" para ser entregue a um desenvolvedor senior.
+    }
+    /**
+     * Constrói prompt para validação de atomicidade
+     * @param {Object} task - Tarefa
+     * @param {Object} project - Projeto
+     * @returns {string} Prompt formatado
+     */
+    static buildValidationPrompt(task, project) {
+        return `Você é um Juiz de Arquitetura de Software. Sua função é avaliar se uma tarefa tem o "Tamanho Ideal" para ser entregue a um desenvolvedor senior.
 
 O QUE É UMA TAREFA DE TAMANHO IDEAL:
 1. É uma unidade coesa de funcionalidade ou correção. Exemplo: "Criar endpoint de login", "Implementar layout da tela de perfil", "Adicionar validação no formulário X".
@@ -298,10 +283,9 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 
 REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se a tarefa pertence ao FRONTEND ou BACKEND baseado na descrição. Se não for possível deduzir, retorne "UNKNOWN". Se já vier preenchido, apenas repita-o.
 `;
-  }
-
-  static ensureAndValidateBuildPrompt(pkgContent) {
-    return `
+    }
+    static ensureAndValidateBuildPrompt(pkgContent) {
+        return `
         Analise este package.json de um projeto Node.js e decida qual o melhor comando para VALIDAR se o código está funcionando (smoke test).
         Regras:
         1. Se houver um script de 'test' real, use 'npm test'.
@@ -311,8 +295,6 @@ REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se 
         Conteúdo do package.json:
         ${pkgContent}
     `;
-  }
-
+    }
 }
-
 module.exports = PromptFactory;
