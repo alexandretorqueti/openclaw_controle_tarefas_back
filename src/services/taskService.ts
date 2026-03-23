@@ -28,32 +28,45 @@ class TaskService {
 
   // Função principal de commit
   async checkAndCommit(projectPath, taskId, taskTitle): Promise<any> {
-    return false;
-
     try {
+      console.log(`📦 Verificando commit para ${taskId} em ${projectPath}...`);
+      
       // Verificar se path existe e tem .git
-      if (!fs.existsSync(projectPath) || !fs.existsSync(path.join(projectPath, '.git'))) {
+      if (!fs.existsSync(projectPath)) {
+        console.error(`❌ Path não existe: ${projectPath}`);
+        return false;
+      }
+      
+      if (!fs.existsSync(path.join(projectPath, '.git'))) {
+        console.error(`❌ Diretório .git não encontrado em: ${projectPath}`);
+        return false;
+      }
+
+      // Verificar alterações não tracking
+      const untracked = await this.exec('git', ['ls-files', '--others', '--exclude-standard'], projectPath);
+      if (!untracked.trim()) {
+        console.log(`ℹ️ Sem alterações não tracking em ${projectPath}`);
         return false;
       }
 
       // Verificar alterações
       const status = await this.exec('git', ['status', '--porcelain'], projectPath);
-      if (!status.trim()) return false; // Sem alterações
+      const hasUncommittedChanges = status.trim().length > 0;
 
       // Criar branch com o Id da tarefa e primeiras letras da tarefa, trocando espaços por hífens
       const branchName = `${taskId}-${taskTitle.toLowerCase().replace(/\s+/g, '-').substring(0, 50)}`;
       await this.exec('git', ['checkout', '-b', branchName], projectPath);
-
+      console.log(`🌿 Criada branch: ${branchName}`);
 
       // Fazer commit
-      /*
       await this.exec('git', ['add', '.'], projectPath);
-      const commitMessage = `${taskId}: ${taskTitle}`;
+      const commitMessage = `[Tarefa ${taskId}] ${taskTitle}`;
       await this.exec('git', ['commit', '-m', commitMessage], projectPath);
-      */
+      console.log(`✅ Commit realizado: ${commitMessage}`);
+      
       return true;
     } catch (error) {
-      console.error(`Git commit failed for ${projectPath}:`, error.message);
+      console.error(`❌ Git commit failed for ${projectPath}:`, error.message);
       return false;
     }
   }

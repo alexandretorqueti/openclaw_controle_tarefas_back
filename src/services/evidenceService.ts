@@ -5,6 +5,48 @@
 import * as path from 'path';
 import { mergeUniquePaths, uniquePaths } from '../utils/pathUtils';
 import { inferReadOnlyEvidenceFromCommand } from '../utils/commandUtils';
+import { isEphemeralArtifact } from '../utils/fileUtils';
+
+// Type definition for execution evidence
+interface ToolResult {
+  filesRead?: string[];
+  filesWritten?: string[];
+  modifiedFiles?: string[];
+  touchedFiles?: string[];
+  commandsExecuted?: string[];
+  executionDiagnostics?: {
+    noOpMutation?: boolean;
+    candidateFiles?: string[];
+  };
+  contractFulfilled?: boolean;
+}
+
+interface ToolCall {
+  name?: string;
+  arguments?: {
+    file_path?: string;
+    path?: string;
+    filePath?: string;
+    command?: string;
+  };
+}
+
+interface ExecutionEvidence {
+  toolsUsed: string[];
+  filesRead: string[];
+  filesWritten: string[];
+  modifiedFiles: string[];
+  touchedFiles: string[];
+  commandsExecuted: string[];
+  noOpMutations: Array<{
+    command: string | null;
+    candidateFiles: string[];
+  }>;
+}
+
+interface ApplyOptions {
+  executionDirectory?: string;
+}
 
 // Validação de import em desenvolvimento
 if (process.env.NODE_ENV !== 'production') {
@@ -12,13 +54,12 @@ if (process.env.NODE_ENV !== 'production') {
     console.error('❌ evidenceService: inferReadOnlyEvidenceFromCommand não é uma função');
   }
 }
-import { isEphemeralArtifact } from '../utils/fileUtils';
 
 class EvidenceService {
   /**
    * Cria um objeto de evidências vazio.
    */
-  static createEmptyEvidence() {
+  static createEmptyEvidence(): ExecutionEvidence {
     return {
       toolsUsed: [],
       filesRead: [],
@@ -33,7 +74,7 @@ class EvidenceService {
   /**
    * Ignora arquivos de backup comuns criados por ferramentas como sed (-i.bak, etc)
    */
-  static isBackupFile(filePath) {
+  static isBackupFile(filePath: string | undefined | null): boolean {
     if (!filePath) return false;
     const lowerPath = filePath.toLowerCase();
     return lowerPath.endsWith('.bak') || lowerPath.endsWith('~') || lowerPath.endsWith('.orig');
@@ -44,7 +85,12 @@ class EvidenceService {
    * Modificado para inferir as intenções da IA diretamente do JSON, garantindo 
    * que arquivos editados sejam rastreados mesmo se o executor falhar em reportá-los.
    */
-  static applyExecutionEvidence(executionEvidence, toolCall, toolResult = {}, options = {}) {
+  static applyExecutionEvidence(
+    executionEvidence: ExecutionEvidence,
+    toolCall: ToolCall | string,
+    toolResult: ToolResult = {},
+    options: ApplyOptions = {}
+  ): ExecutionEvidence {
     const executionDirectory = options.executionDirectory || process.cwd();
     
     // Suporte retroativo caso venha apenas a string do nome (para compatibilidade)
@@ -116,7 +162,7 @@ class EvidenceService {
         executionEvidence.noOpMutations = [
           ...(executionEvidence.noOpMutations || []),
           {
-            command: toolResult.commandsExecuted?.[0] || (toolCall && toolCall.arguments ? toolCall.arguments.command : null),
+            command: toolResult.commandsExecuted?.[0] || (toolCall && typeof toolCall === 'object' && toolCall.arguments ? toolCall.arguments.command : null),
             candidateFiles: uniquePaths(toolResult.executionDiagnostics.candidateFiles || []),
           },
         ];
@@ -129,9 +175,19 @@ class EvidenceService {
   /**
    * Calcula o progresso do turno atual, filtrando artefatos efêmeros.
    */
-  static computeTurnProgress(toolResult = {}, contractResult = {}, cwd = process.cwd()) {
-    let allInferredReads = [];
-    let allInferredMutations = [];
+  static computeTurnProgress(
+    toolResult: ToolResult = {},
+    contractResult: { contractFulfilled?: boolean } = {},
+    cwd: string = process.cwd()
+  ): {
+    meaningfulReads: string[];
+    meaningfulMutations: string[];
+    touchedFiles: string[];
+    noOpMutation: boolean;
+    hasMeaningfulProgress: boolean;
+  } {
+    let allInferredReads: string[] = [];
+    let allInferredMutations: string[] = [];
     
     const commandsExecuted = Array.isArray(toolResult.commandsExecuted) ? toolResult.commandsExecuted : [];
     
@@ -182,4 +238,3 @@ class EvidenceService {
 }
 
 export default EvidenceService;
-
