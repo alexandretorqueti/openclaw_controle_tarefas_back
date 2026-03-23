@@ -1,5 +1,5 @@
-// src/routes/taskHistoryRoutes.jsimport express from 'express');
-const taskHistoryController = require('../controllers/taskHistoryController';
+// src/routes/taskHistoryRoutes.jsimport express from 'express';
+const taskHistoryController = require('../controllers/taskHistoryController';');
 
 const router = express.Router();
 

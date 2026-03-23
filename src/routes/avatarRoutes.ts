@@ -1,7 +1,7 @@
-// src/routes/avatarRoutes.jsimport express from 'express');
+// src/routes/avatarRoutes.jsimport express from 'express';
 const router = express.Router();
 const AvatarController = require('../controllers/avatarController');
-const avatarUploadMiddleware = require('../middlewares/avatarUploadMiddleware';
+const avatarUploadMiddleware = require('../middlewares/avatarUploadMiddleware';');
 
 /**
  * @route   POST /api/agents/:id/avatar

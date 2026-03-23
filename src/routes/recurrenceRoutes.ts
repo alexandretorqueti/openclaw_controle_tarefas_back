@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const recurrenceController = require('../controllers/recurrenceController';
+const recurrenceController = require('../controllers/recurrenceController';');
 
 // Get recurring tasks that are due for execution
 router.get('/due', recurrenceController.getRecurringTasksDue);

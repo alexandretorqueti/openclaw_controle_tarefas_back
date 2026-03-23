@@ -1,7 +1,7 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
 const userController = require('../controllers/userController');
-const uploadMiddleware = require('../middlewares/uploadMiddleware';
+const uploadMiddleware = require('../middlewares/uploadMiddleware';');
 
 // GET /api/users - Get all users
 router.get('/', userController.getAllUsers);

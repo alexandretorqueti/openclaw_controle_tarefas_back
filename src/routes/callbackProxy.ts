@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const { passport } = require('../middlewares/authMiddleware';
+const { passport } = require('../middlewares/authMiddleware';');
 
 // Único callback endpoint que o Google conhece
 router.get('/google/callback', 

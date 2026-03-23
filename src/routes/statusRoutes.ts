@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const statusController = require('../controllers/statusController';
+const statusController = require('../controllers/statusController';');
 
 // GET /api/statuses - Get all statuses
 router.get('/', statusController.getAllStatuses);

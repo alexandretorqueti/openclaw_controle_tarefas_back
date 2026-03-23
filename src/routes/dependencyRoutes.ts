@@ -1,6 +1,6 @@
-// src/routes/dependencyRoutes.jsimport express from 'express');
+// src/routes/dependencyRoutes.jsimport express from 'express';
 const router = express.Router();
-const dependencyController = require('../controllers/dependencyController';
+const dependencyController = require('../controllers/dependencyController';');
 
 // Create a new dependency
 router.post('/', dependencyController.createDependency);

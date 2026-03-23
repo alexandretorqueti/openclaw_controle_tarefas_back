@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const agentController = require('../controllers/agentController';
+const agentController = require('../controllers/agentController');
 
 /**
  * @route   GET /api/agents

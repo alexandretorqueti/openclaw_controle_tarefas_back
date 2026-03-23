@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const stageController = require('../controllers/stageController';
+const stageController = require('../controllers/stageController');
 
 router.get('/', stageController.getAll);
 router.get('/:id', stageController.getById);

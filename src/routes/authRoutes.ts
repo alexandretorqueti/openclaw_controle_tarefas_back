@@ -2,10 +2,10 @@
  * Rotas de Autenticação Simplificadas
  * 
  * Sistema simplificado para uso local. Apenas login por nickname.
- */import express from 'express');
+ */import express from 'express';
 const router = express.Router();
 const authController = require('../controllers/authController');
-const prisma = require('../services/prismaService';
+const prisma = require('../services/prismaService';');
 
 // POST /api/auth/login - Login por nickname (sem senha)
 router.post('/login', authController.login);

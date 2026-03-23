@@ -1,4 +1,4 @@
-// src/middlewares/avatarUploadMiddleware.jsimport multer from 'multer');
+// src/middlewares/avatarUploadMiddleware.jsimport multer from 'multer';
 const path = require('path');
 const fs = require('fs');
 
@@ -42,7 +42,7 @@ const upload = multer({
 });
 
 // Middleware para upload único
-const uploadAvatar = upload.single('avatar';
+const uploadAvatar = upload.single('avatar');
 
 // Wrapper com tratamento de erros
 const handleAvatarUpload = (req, res, next) => {

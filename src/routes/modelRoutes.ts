@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();import { exec } from 'child_process';
-const { promisify } = require('util';
+const { promisify } = require('util';');
 const execAsync = promisify(exec);
 
 /**

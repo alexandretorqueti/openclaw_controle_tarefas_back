@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const priorityController = require('../controllers/priorityController';
+const priorityController = require('../controllers/priorityController';');
 
 // GET /api/priorities - Get all priorities
 router.get('/', priorityController.getAllPriorities);

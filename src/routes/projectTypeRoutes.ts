@@ -1,6 +1,6 @@
-import express from 'express');
+import express from 'express';
 const router = express.Router();
-const projectTypeController = require('../controllers/projectTypeController';
+const projectTypeController = require('../controllers/projectTypeController';');
 
 // GET /api/project-types - Get all project types
 router.get('/', projectTypeController.getAllProjectTypes);

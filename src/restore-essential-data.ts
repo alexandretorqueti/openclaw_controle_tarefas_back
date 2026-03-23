@@ -10,7 +10,8 @@
  * - MAIN_PROJECT_NAME, MAIN_PROJECT_DESCRIPTION, MAIN_PROJECT_RULES
  */
 
-require('dotenv').config();import { PrismaClient } from '@prisma/client');
+require('dotenv').config();
+import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Configurações do ambiente
@@ -39,7 +40,7 @@ function validateConfig() {
 
 // Buscar IDs dos usuários dinamicamente
 async function getUserIds() {
-  console.log('🔍 Buscando IDs dos usuários...';
+  console.log('🔍 Buscando IDs dos usuários...');
   
   // Buscar Alexandre pelo nickname
   const alexandre = await prisma.user.findFirst({

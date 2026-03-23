@@ -1,4 +1,4 @@
-import cron from 'node-cron');
+import cron from 'node-cron';
 const taskService = require('./services/taskService');
 
 class CronScheduler {
@@ -104,7 +104,7 @@ if (require.main === module) {
   });
   
   process.on('SIGTERM', () => {
-    console.log('\n🛑 Received SIGTERM. Stopping scheduler...';
+    console.log('\n🛑 Received SIGTERM. Stopping scheduler...');
     scheduler.stop();
     process.exit(0);
   });
