@@ -224,7 +224,7 @@ class OpenClawService {
    * Executa uma chamada ao agente via CLI do OpenClaw
    */
   static async execute(
-    taskId, 
+    sessionId, 
     inputMessage, 
     agent, 
     model, 
@@ -286,7 +286,7 @@ class OpenClawService {
       
       // 4. Preparar argumentos otimizados para CLI
       // Usar session-id persistente baseado no agente para manter memória
-      const persistentSessionId = `agent-${agent}-persistent`;
+      const persistentSessionId = sessionId;
       const childArgs = [
         'agent', 
         '--agent', agent, 
@@ -434,7 +434,7 @@ class OpenClawService {
    * Versão melhorada com fallback inteligente e diagnóstico
    */
   static async executeOptimized(
-    taskId, inputMessage, agent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000,
+    sessionId, inputMessage, agent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000,
     options = {}
   ) {
     const {
@@ -456,7 +456,7 @@ class OpenClawService {
         }
         
         const result = await this.execute(
-          taskId, 
+          sessionId, 
           attempt > 1 ? `${inputMessage}\n\n[RETENTATIVA ${attempt}] Por favor, tente novamente com uma abordagem diferente.` : inputMessage,
           agent, 
           model, 
@@ -504,7 +504,7 @@ class OpenClawService {
       const fallbackInput = `${inputMessage}\n\n[SISTEMA - MODO FALLBACK] O agente anterior (${agent}) não conseguiu executar esta tarefa após múltiplas tentativas. Por favor, assuma o controle e tente uma abordagem diferente.`;
       
       return await this.execute(
-        taskId, fallbackInput, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs
+        sessionId, fallbackInput, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs
       );
     }
     
@@ -523,10 +523,10 @@ class OpenClawService {
    * Mantido para compatibilidade
    */
   static async executeWithFallback(
-    taskId, inputMessage, primaryAgent, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000
+    sessionId, inputMessage, primaryAgent, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000
   ) {
     return await this.executeOptimized(
-      taskId, inputMessage, primaryAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs,
+      sessionId, inputMessage, primaryAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs,
       { fallbackAgent, maxRetries: 0 }
     );
   }
