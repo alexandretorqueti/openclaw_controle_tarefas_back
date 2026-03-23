@@ -1,7 +1,7 @@
 // src/controllers/avatarController.ts
 import { Request, Response } from 'express';
 import * as fs from 'fs'; // Import movido para o topo
-import AvatarService from '../services/avatarService';
+import { AvatarService } from '../services/avatarService';
 
 // Extensão rápida para suportar o Multer no req
 interface MulterRequest extends Request {

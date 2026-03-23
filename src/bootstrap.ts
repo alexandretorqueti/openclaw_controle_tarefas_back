@@ -5,7 +5,7 @@
 import container from './container';
 
 // Serviços reais da aplicação
-import OpenClawService from './services/openclawService';
+import { OpenclawService } from './services/openclawService';
 import PromptFactory from './utils/promptFactory';
 import SessionChainUtils from './utils/sessionChainUtils';
 import JsonUtils from './utils/jsonUtils';
@@ -35,7 +35,7 @@ import * as axios from 'axios';
 import * as path from 'path';
 
 // Registra as dependências
-container.register('openClawService', OpenClawService);
+container.register('openClawService', OpenclawService);
 container.register('promptFactory', PromptFactory);
 container.register('sessionChainUtils', SessionChainUtils);
 container.register('jsonUtils', JsonUtils);
