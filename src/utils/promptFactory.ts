@@ -232,12 +232,11 @@ Título: ${task.title}
 Descrição: ${task.description}
 
 # REGRAS DE AVALIAÇÃO E DIVISÃO (CRÍTICO)
-1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é muito complexa. Se for uma tarefa razoavelmente simples, direta ou até indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
+1. AVALIAÇÃO DE COMPLEXIDADE: Verifique se esta tarefa é muito complexa, ou se ela precisará mexer em muitos arquivos. Se for uma tarefa razoavelmente simples, direta ou até indivisível (atômica), VOCÊ NÃO DEVE DIVIDI-LA.
 2. REGRA DE MUTAÇÃO DE CÓDIGO: Toda subtarefa gerada DEVE, obrigatoriamente, resultar na criação ou alteração física de arquivos de código.
 3. PROIBIDO TAREFAS EXPLORATÓRIAS: É estritamente proibido criar tarefas de "leitura", "análise", "verificação" ou "planejamento" (ex: "verifique se a pasta X existe" ou "estude a estrutura"). O sistema de validação quebrará se uma tarefa não gerar alterações de arquivos.
 4. ISOLAMENTO DE DOMÍNIO: Uma subtarefa deve ser inteiramente de um único domínio (BACKEND ou FRONTEND).
 5. NUNCA DIVIDA A TAREFA EM APENAS 1 TAREFA. SE FOR FAZER ISSO, NÃO DIVIDA.
-6. EVITE DIVIDIR A TAREFA SE PUDER.
 
 # REGRAS DE SAÍDA DE DADOS
 1. Retorne EXCLUSIVAMENTE um array JSON puro. 
@@ -272,7 +271,8 @@ O QUE É UMA TAREFA DE TAMANHO IDEAL:
 4. É uma tarefa que leva de algumas horas até um dia de trabalho.
 5. Se uma tarefa é só no front, ou só no back, e ela envolve um módulo, ela deve ser considerada IDEAL.
 6. Se uma tarefa envolve apenas um arquivo, ela deve ser considerada IDEAL.
-7. Tarefas que mexem em apenas uma arquivo não deve ser dividido.
+7. Tarefas que mexem em apenas uma arquivo não devem ser divididas.
+8. Tarefas que precisarão mexer em muitos arquivos podem ser divididas.
 
 O QUE **NÃO** É UMA TAREFA DE TAMANHO IDEAL:
 1. Micro-gerenciamento microscópico. Tarefas do tipo "Abra a pasta X", "Procure a string Y", "Edite a linha 5" NÃO são tarefas reais, são passos de terminal. Se a tarefa é um passo de terminal, ela DEVE ser considerada IDEAL (pois o dev a fará em segundos), mas o ideal é que a tarefa englobe a feature inteira.

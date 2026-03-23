@@ -1,8 +1,6 @@
 // Migrado para TypeScript - Fase: Services
 // Arquivo: taskExecutionService.js
 
-export // src/services/taskExecutionService.js
-
 import fs from 'fs/promises';
 import * as path from 'path';
 import { execSync } from 'child_process';
