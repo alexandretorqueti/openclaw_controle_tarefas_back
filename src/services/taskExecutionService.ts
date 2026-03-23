@@ -12,7 +12,7 @@ import prisma from "./prismaService"; // <-- 1. Usa o Singleton ao invés de 'ne
 import taskService from "./taskService"; // <-- 2. Importa o TaskService
 import agentService from "./agentService";
 import WorkspaceSnapshotService from "./workspaceSnapshotService";
-import OpenClawService from "./openclawService";
+import { OpenclawService } from "./openclawService";
 import ContractVerificationService from "./contractVerificationService";
 import EvidenceService from "./evidenceService";
 import TaskAnalysisService from "./taskAnalysisService";
@@ -187,7 +187,7 @@ class TaskExecutionService {
     await log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
     
     // Roda o Arquiteto com timeout de 10 minutos (600000ms)
-    const architectResult = await OpenClawService.executeWithFallback(
+    const architectResult = await OpenclawService.getInstance().executeWithFallback(
       architectSessionId, // <--- SESSÃO UNIFICADA PARA CADEIAS DE DEPENDÊNCIAS
       architectInput,
       project?.agent || task.agent || 'main',
@@ -671,7 +671,7 @@ class TaskExecutionService {
       await fs.writeFile(developerPromptFile, promptDesteTurno).catch(()=>{});
 
       // 3. CHAMA O OPENCLAW
-      const res = await OpenClawService.executeWithFallback(
+      const res = await OpenclawService.getInstance().executeWithFallback(
         turnSessionId, 
         promptDesteTurno, 
         task.agent || project?.agent || 'main', 

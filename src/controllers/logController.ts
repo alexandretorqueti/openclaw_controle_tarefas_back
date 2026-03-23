@@ -7,7 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LOG_FILE } from '../../aux/config';
 import { ErrorMiddleware } from '../middlewares/errorMiddleware';
-import { Logger } from '../utils/logger';
+import { Logger, LOG_LEVELS } from '../utils/logger';
 
 class LogController {
   // Get monitor logs
@@ -67,9 +67,9 @@ class LogController {
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       const logs = await Logger.getLogs({
-        level: 'ERROR',
-        startDate: startDate || today.toISOString(),
-        endDate: endDate || tomorrow.toISOString(),
+        level: 'ERROR' as LOG_LEVELS,
+        startDate: startDate as string,
+        endDate: endDate as string,
         limit: parseInt(String(limit)),
         offset: parseInt(String(offset))
       });
@@ -105,15 +105,15 @@ class LogController {
       } = req.query;
 
       const logs = await Logger.getLogs({
-        level,
-        endpoint,
-        method,
+        level: level as LOG_LEVELS,
+        endpoint: endpoint as string | undefined,
+        method: method as string | undefined,
         statusCode: statusCode ? parseInt(String(statusCode)) : undefined,
-        errorType,
-        userId,
-        correlationId,
-        startDate,
-        endDate,
+        errorType: errorType as string | undefined,
+        userId: userId as string | undefined,
+        correlationId: correlationId as string | undefined,
+        startDate: startDate as string | undefined,
+        endDate: endDate as string | undefined,
         limit: parseInt(String(limit)),
         offset: parseInt(String(offset))
       });
@@ -134,8 +134,9 @@ class LogController {
   // Get log by ID
   getLogById = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     try {
-      const { id } = req.params;
-      const log = await Logger.getLogById(id);
+      const { id: idValue } = req.params;
+      const id = Array.isArray(idValue) ? idValue[0] : idValue;
+      const log = await Logger.getLogById(id as string);
 
       if (!log) {
         return res.status(404).json({
@@ -158,8 +159,9 @@ class LogController {
   // Get error details with formatted data
   getErrorDetails = ErrorMiddleware.catchAsync(async (req, res, next): Promise<any> => {
     try {
-      const { id } = req.params;
-      const log = await Logger.getLogById(id);
+      const { id: idValue } = req.params;
+      const id = Array.isArray(idValue) ? idValue[0] : idValue;
+      const log = await Logger.getLogById(id as string);
 
       if (!log) {
         return res.status(404).json({

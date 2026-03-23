@@ -1,5 +1,5 @@
 import { AgentConfig } from './agentConfigService';
-import { execSync, ExecSyncError } from 'child_process';
+import { execSync, type ExecSyncOptions, type ExecFileException } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -258,19 +258,44 @@ export class OpenclawService {
     }
   }
 
+  // Método estático para executeWithFallback usado no taskExecutionService
+  public static async executeWithFallback<T>(
+    executeFn: () => Promise<T>,
+    alternativeFn: () => Promise<T>,
+    fallbackMessage = 'Executing with fallback'
+  ): Promise<T> {
+    try {
+      log(fallbackMessage);
+      return await executeFn();
+    } catch (error) {
+      log(`Main execution failed, trying fallback: ${(error as Error).message}`);
+      return await alternativeFn();
+    }
+  }
+
   // --- Command Helper ---
 
   private async executeCommand(
     command: string,
     key: string,
-    options: Record<string, unknown> = {}
+    options: string | Record<string, any> = ''
   ): Promise<string> {
     try {
       const args = [command, `--key "${key}"`];
 
-      for (const [key, value] of Object.entries(options)) {
-        if (value !== undefined && value !== null) {
-          args.push(`--${key} ${String(value)}`);
+      if (typeof options === 'string') {
+        if (options) {
+          args.push(options);
+        }
+      } else if (typeof options === 'object' && Object.keys(options).length > 0) {
+        for (const [key, value] of Object.entries(options)) {
+          if (value !== undefined && value !== null) {
+            if (Array.isArray(value)) {
+              args.push(`--${key} "${value.join(',')}"`);
+            } else {
+              args.push(`--${key} ${typeof value === 'number' ? value : `"${value}"`}`);
+            }
+          }
         }
       }
 
@@ -284,9 +309,9 @@ export class OpenclawService {
 
       return result || '';
     } catch (error) {
-      if (error instanceof ExecSyncError) {
+      if (error instanceof ExecFileException) {
         log(`Command failed: ${error.message}`);
-        log(`Output: ${error.output?.toString() || ''}`);
+        log(`Output: ${error.stderr?.toString() || ''}`);
       } else {
         log(`Error: ${(error as Error).message}`);
       }
