@@ -90,6 +90,7 @@ class TaskFailureStep {
       if (await this.fileUtils.fileExists(terminalLogPath)) {
         terminalOutput = await this.fileSystem.readFile(terminalLogPath, 'utf8');
       }
+      await this.log(`✅ Log do terminal lido com sucesso: ${terminalOutput.substring(0, 1000)}`);
 
       // 2. Adicionar comentário sobre a falha se tivermos userId
       if (userId) {
@@ -103,18 +104,24 @@ class TaskFailureStep {
           await this.log(`❌ Erro ao postar comentário de falha: ${commentError.message}`);
         }
       }
-      
+      await this.log(`✅ Comentário de falha postado com sucesso`);
+
+
       // 3. Tentar reatribuir para o desenvolvedor 'alexandre'
       await this._tryReassignTask(task, apiUrl);
-      
+      await this.log(`🚀 Tarefa ${task.id} reatribuida para o usuário 'alexandre'`);
+
       // 4. Liberar lock e limpar estado de execução
       await this._cleanupExecutionState(task);
-      
+      await this.log(`🔓 Lock liberado e estado de execução limpo`);
+
       // 5. Mover arquivos para pasta de erro
       await this.taskFileService.moveTaskFiles(task.id, TASKS_DIR, ERROR_DIR);
+      await this.log(`✅ Arquivos da tarefa ${task.id} movidos para pasta de erro`);
       
       // 6. Limpar estado interno
       await this.stateService.cleanupTask(task.id);
+      await this.log(`🧹 Estado interno da tarefa ${task.id} limpo`);
       
       await this.log(`✅ Falha da tarefa ${task.id} tratada com sucesso`);
       

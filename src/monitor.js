@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Inicializa o container de injeção de dependências
-require('./src/bootstrap');
+require('./bootstrap');
 
 // monitor.js (Arquitetura Modularizada)
 // Orquestrador de tarefas refatorado com servicos especializados
@@ -10,12 +10,12 @@ const path = require('path');
 axios.defaults.timeout = 180000; // 3 minutos
 
 // Novos imports para roteamento inteligente
-const prisma = require('./src/services/prismaService');
-const validationService = require('./src/services/validationService');
-const decompositionService = require('./src/services/decompositionService');
-const commentService = require('./src/services/commentService');
-const { extractJsonObjects } = require('./src/utils/jsonUtils');
-const taskService = require('./src/services/taskService');
+const prisma = require('./services/prismaService');
+const validationService = require('./services/validationService');
+const decompositionService = require('./services/decompositionService');
+const commentService = require('./services/commentService');
+const { extractJsonObjects } = require('./utils/jsonUtils');
+const taskService = require('./services/taskService');
 
 let UserIdJarbas = null;
 /**
@@ -28,7 +28,7 @@ let UserIdJarbas = null;
  * @returns {Promise<Object|null>} Tarefa ou null se não houver
  */
 async function getNextEligibleTask(nickname) {
-  const { createLegacyGetNextTask } = require('./src/steps/adapters/legacyGetNextTask');
+  const { createLegacyGetNextTask } = require('./steps/adapters/legacyGetNextTask');
   const getNextTask = createLegacyGetNextTask(require('./aux/config').API_URL);
   return await getNextTask(nickname);
 }
@@ -39,7 +39,7 @@ async function getNextEligibleTask(nickname) {
  * @returns {Promise<Object>} Resultado da decomposição
  */
 async function callAnalyst(task) {
-  const { createLegacyCallAnalyst } = require('./src/steps/adapters/legacyCallAnalyst');
+  const { createLegacyCallAnalyst } = require('./steps/adapters/legacyCallAnalyst');
   const legacyCallAnalyst = createLegacyCallAnalyst(UserIdJarbas);
   return await legacyCallAnalyst(task);
 }
@@ -50,7 +50,7 @@ async function callAnalyst(task) {
  * @param {string} content - Conteúdo do comentário
  */
 async function addComment(taskId, content) {
-  const { addComment: legacyAddComment } = require('./src/steps/adapters/legacyAddComment');
+  const { addComment: legacyAddComment } = require('./steps/adapters/legacyAddComment');
   return await legacyAddComment(taskId, content, UserIdJarbas);
 }
 
@@ -59,19 +59,19 @@ async function main() {
   const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
 
   // Servicos modularizados
-  const LockService = require('./src/services/lockService');
-  const MonitorStateService = require('./src/services/monitorStateService');
+  const LockService = require('./services/lockService');
+  const MonitorStateService = require('./services/monitorStateService');
   let TaskExecutionService;
   try {
-    TaskExecutionService = require('./src/services/taskExecutionService');
+    TaskExecutionService = require('./services/taskExecutionService');
   } catch (err) {
     console.error("🔥 ERRO FATAL AO CARREGAR O SERVIÇO:", err);
     debugger; // O seu debug vai PAUSAR AQUI, e você poderá inspecionar a variável 'err'
   }
-  const TaskFileService = require('./src/services/taskFileService');
+  const TaskFileService = require('./services/taskFileService');
 
   // Utilitarios
-  const { segundosToMinutos_Segundos } = require('./src/utils/timeUtils');
+  const { segundosToMinutos_Segundos } = require('./utils/timeUtils');
 
   // Instancias de servicos
   const lockService = new LockService(LOCK_FILE);
@@ -85,7 +85,7 @@ async function main() {
    * @param {number} pid - PID do processo associado ao lock
    */
   async function handleTaskTimeoutCheck(pid) {
-    const { handleTaskTimeoutCheck: legacyHandleTaskTimeoutCheck } = require('./src/steps/adapters/legacyTaskTimeoutCheck');
+    const { handleTaskTimeoutCheck: legacyHandleTaskTimeoutCheck } = require('./steps/adapters/legacyTaskTimeoutCheck');
     return await legacyHandleTaskTimeoutCheck(pid, { TASK_TIMEOUT_MS, TASKS_DIR, ERROR_DIR });
   }
 
@@ -93,7 +93,7 @@ async function main() {
    * Trata falha na execucao de uma tarefa
    */
   async function handleTaskFailure(task, error) {
-    const { handleTaskFailure: legacyHandleTaskFailure } = require('./src/steps/adapters/legacyTaskFailure');
+    const { handleTaskFailure: legacyHandleTaskFailure } = require('./steps/adapters/legacyTaskFailure');
     return await legacyHandleTaskFailure(task, error, MY_USER_ID, { API_URL, TASKS_DIR, ERROR_DIR });
   }
 
@@ -101,7 +101,7 @@ async function main() {
    * Trata sucesso na execucao de uma tarefa
    */
   async function handleTaskSuccess(task, executionResult) {
-    const { handleTaskSuccess: legacyHandleTaskSuccess } = require('./src/steps/adapters/legacyTaskSuccess');
+    const { handleTaskSuccess: legacyHandleTaskSuccess } = require('./steps/adapters/legacyTaskSuccess');
     return await legacyHandleTaskSuccess(task, executionResult, MY_USER_ID, { API_URL, TASKS_DIR, PROCESSED_DIR });
   }
 
@@ -267,7 +267,7 @@ async function main() {
       };
       
       // Executar tarefa
-      const { executeTask: legacyExecuteTask } = require('./src/steps/adapters/legacyExecuteTask');
+      const { executeTask: legacyExecuteTask } = require('./steps/adapters/legacyExecuteTask');
       const executionResult = await legacyExecuteTask(task, MY_USER_ID, config);
       
       // Processar resultado

@@ -43,9 +43,29 @@ class PromptFactory {
     `.trim();
   }
 
-   static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
+ static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
     const path = require('path');
-    const truncatedFiles = fileList.slice(0, 500).join('\n');
+    
+    // 1. O NOVO FILTRO INTELIGENTE (Adeus arquivos inúteis!)
+    const ignorePatterns = [
+      /\/node_modules\//,    // Dependências
+      /\.git\//,             // Histórico do git
+      /\/dist\//,            // Compilados
+      /\/build\//,           // Compilados
+      /backup/i,             // Suas pastas e arquivos de backup (como o tarefas-server-backup-...)
+      /\.lock$/,             // package-lock.json, yarn.lock
+      /\.pdf$/,              // Documentos binários
+      /\.png$/, /\.jpe?g$/, /\.svg$/, /\.gif$/, // Imagens e avatares
+      /\.db$/, /\.sqlite$/   // Bancos de dados locais
+    ];
+
+    // Filtra a lista antes de fatiar
+    const cleanFileList = fileList.filter(file => {
+      return !ignorePatterns.some(pattern => pattern.test(file));
+    });
+
+    // Agora sim, pegamos os primeiros 500 arquivos úteis
+    const truncatedFiles = cleanFileList.slice(0, 500).join('\n');
     
     const frontDir = project?.frontendPath ? path.join(project.pastaBase || '', project.frontendPath) : 'N/A';
     const backDir = project?.backendPath ? path.join(project.pastaBase || '', project.backendPath) : 'N/A';
@@ -110,15 +130,17 @@ Título: ${task?.title}
 Descrição: ${task?.description}${commentsSection}
 
 [REGRAS CRÍTICAS DE SISTEMA]
-- Você NÃO PODE interagir de forma conversacional. Você deve AGIR utilizando as ferramentas JSON fornecidas.
+- EXPLIQUE SEU RACIOCÍNIO PRIMEIRO: Antes de agir, você DEVE explicar brevemente o seu plano de ação para resolver o problema.
+- AÇÃO: Após raciocinar, aja estritamente utilizando as ferramentas JSON fornecidas (ex: ferramenta 'write').
 - Se a ferramenta 'write' falhar, você DEVE imprimir o plano ou relatório completo no seu output de texto, cercado por tags <PLANO> ... </PLANO>.
 
 ${instructions}
 
-Inicie agora o seu fluxo de trabalho estrito.
+Inicie agora o seu fluxo de trabalho estrito. Comece detalhando seu raciocínio.
 `.trim();
   }
- 
+
+
   static buildAgentSystemPrompt(agentContext) {
     return `
       Você é o Agente Jarbas.
@@ -138,31 +160,33 @@ Inicie agora o seu fluxo de trabalho estrito.
      `.trim();
   }
 
-  static buildEngineRulesPrompt(
+static buildEngineRulesPrompt(
     files
   ) {
     return `
-[REGRA DE OURO]
-1. NÃO ADIVINHE CAMINHOS. Use 'find' ou 'ls'.
-2. PROIBIDO FAZER BACKUPS: Edite os arquivos originais DIRETAMENTE.
-3. SÓ FINALIZE criando o arquivo .done QUANDO TUDO ESTIVER CONCLUÍDO.
-4. SE PRECISAR CRIAR ARQUIVOS TEMPORÁRIOS, CRIE NO SEU WORKSPACE, NÃO NO PROJETO.
+[REGRAS DE OURO DA ENGINE]
+1. PENSE ANTES DE AGIR: Antes de invocar qualquer ferramenta de modificação (edit, write, exec), escreva uma breve frase explicando o seu raciocínio.
+2. EXPLORE, NÃO ADIVINHE: Use a ferramenta 'exec' (com 'ls', 'find') para confirmar caminhos antes de editar.
+3. SEM BACKUPS MANUAIS: Edite os arquivos originais DIRETAMENTE. O sistema já possui controle de versão.
+4. ARQUIVOS TEMPORÁRIOS: Se precisar de rascunhos, crie-os apenas dentro do seu próprio diretório de workspace, nunca na árvore do projeto.
 
 [REGRAS CRÍTICAS PARA A FERRAMENTA 'EDIT']
 1. O campo 'old_text' (ou equivalente) DEVE ser uma cópia EXATA, byte por byte, do arquivo original. Isso inclui todos os espaços em branco, tabs e quebras de linha.
 2. NUNCA tente adivinhar a formatação. Sempre use a ferramenta 'read' ou 'exec' (com 'cat') no arquivo ANTES de usar 'edit', e copie o trecho original diretamente do retorno da leitura.
-3. Se o 'edit' continuar falhando por causa de espaços, desista do 'edit' e use a ferramenta 'write' para reescrever o arquivo inteiro com a sua modificação.
+3. FALLBACK DE EDIÇÃO: Se o 'edit' continuar falhando por causa de divergência de espaços, desista do 'edit' e use a ferramenta 'write' para reescrever o arquivo INTEIRO com a sua modificação.
 
-QUANDO TERMINAR A TAREFA, SIGA ESTES 2 PASSOS EXATOS:
+[PROTOCOLO DE ENCERRAMENTO (OBRIGATÓRIO)]
+Quando tiver certeza absoluta de que a tarefa está concluída e o código (TypeScript/JavaScript) não contém erros de sintaxe, siga ESTES 2 PASSOS EXATOS:
 
 PASSO 1: DOCUMENTAÇÃO
-Use a ferramenta "write" para gerar o seu relatório de conclusão.
-- Argumento 'file': ${files.relatorioFile}
-- Argumento 'content': Escreva um resumo técnico das alterações feitas, arquivos modificados e decisões tomadas. (Garanta que o texto esteja em uma única string JSON válida, usando \n para quebras de linha).
+Use a ferramenta 'write' para gerar o seu relatório de conclusão.
+- Arquivo destino: ${files.relatorioFile}
+- Conteúdo: Escreva um resumo técnico das alterações feitas, arquivos modificados e decisões tomadas.
 
-PASSO 2: ENCERRAMENTO
-Use a ferramenta "exec" com o comando touch para avisar o sistema que você finalizou.
-- Exemplo exato: {"name": "exec", "arguments": {"command": "touch ${files.doneFile}"}}
+PASSO 2: SINAL VERDE
+Use a ferramenta 'exec' para rodar o comando de finalização.
+- Comando exato a ser executado: touch ${files.doneFile}
+- (Atenção: Apenas chame a ferramenta, não tente simular a resposta JSON dela).
 `.trim();
   }
 
