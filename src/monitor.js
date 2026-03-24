@@ -17,6 +17,8 @@ const commentService = require('./services/commentService');
 const { extractJsonObjects } = require('./utils/jsonUtils');
 const taskService = require('./services/taskService');
 
+let JaEnvieiMensagemQueEstouAguardando = false; 
+
 let UserIdJarbas = null;
 /**
  * Busca a próxima tarefa elegível para processamento
@@ -152,12 +154,11 @@ async function main() {
       const task = await getNextEligibleTask(MY_USER_NICKNAME);
       
       if (!task) {
-        await log(`🔍 Nenhuma tarefa disponível.`);
         return;
       }
 
       await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
-      
+      JaEnvieiMensagemQueEstouAguardando = false;
       // Adquirir lock passando o taskId - o lockService agora marca isExecuting: true automaticamente
       if (!await lockService.acquireLock(task.id)) {
         await log(`❌ Falha ao adquirir lock.`);
@@ -308,7 +309,10 @@ async function main() {
         await run();
         
         // Aguardar antes da próxima verificação
-        await log(`⏳ Aguardando ${CHECK_INTERVAL_MS/1000} segundos para próxima verificação...`);
+        if (!JaEnvieiMensagemQueEstouAguardando) {
+          await log(`⏳ Aguardando a próxima verificação...`);
+          JaEnvieiMensagemQueEstouAguardando = true;
+        }
         await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
         
       } catch (loopError) {

@@ -254,35 +254,11 @@ class OpenClawService {
         spawnCwd = os.homedir();
       }
       
-      // 3. Carregar contexto completo do agente
-      let enhancedMessage = inputMessage;
-      const agentContext = await AgentConfigService.loadAgentContext(agent);
-      
-      if (agentContext) {
-        // Construir mensagem enriquecida com contexto
-        const contextParts = [];
-        
-        if (agentContext.soul) {
-          contextParts.push(`=== ALMA DO AGENTE (${agent.toUpperCase()}) ===\n${agentContext.soul}`);
-        }
-        
-        if (agentContext.user) {
-          contextParts.push(`=== CONTEXTO DO USUÁRIO ===\n${agentContext.user}`);
-        }
-        
-        if (agentContext.memory) {
-          contextParts.push(`=== MEMÓRIA DE LONGO PRAZO ===\n${agentContext.memory.substring(0, 2000)}...`);
-        }
-        
-        if (agentContext.recentMemory) {
-          contextParts.push(`=== MEMÓRIA RECENTE ===\n${agentContext.recentMemory.substring(0, 1000)}...`);
-        }
-        
-        if (contextParts.length > 0) {
-          enhancedMessage = `${contextParts.join('\n\n')}\n\n=== TAREFA ATUAL ===\n${inputMessage}`;
-          await log(`🧠 [OpenClaw] Contexto do agente carregado: ${contextParts.length} partes, ${enhancedMessage.length} chars`);
-        }
-      }
+      // 3. OTIMIZAÇÃO CRÍTICA: Não concatenar SOUL/USER.md no inputMessage!
+      // O OpenClaw já carrega os arquivos do workspace como System Prompt automaticamente.
+      // Passar isso no -m transforma tudo em User Prompt e confunde o LLM.
+      const cleanMessage = inputMessage; 
+      await log(`🧠 [OpenClaw] Enviando instrução limpa para o agente (${cleanMessage.length} chars)`);
       
       // 4. Preparar argumentos otimizados para CLI
       // Usar session-id persistente baseado no agente para manter memória
@@ -291,7 +267,7 @@ class OpenClawService {
         'agent', 
         '--agent', agent, 
         '--session-id', persistentSessionId, 
-        '-m', enhancedMessage, 
+        '-m', cleanMessage, // Passando apenas a tarefa real
         '--timeout', Math.floor(timeoutMs / 1000).toString(),
         '--thinking', 'medium'  // Habilitar thinking para melhor raciocínio
       ];
@@ -350,16 +326,15 @@ class OpenClawService {
       env.OPENCLAW_EXEC_ASK = 'on-miss';  // Pedir aprovação para comandos não permitidos
       
       // 6. Iniciar processo do OpenClaw com configuração otimizada
+      // REMOVIDO: detached: true (para manter o processo vinculado ao pai e evitar race conditions)
       const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], { 
         cwd: spawnCwd, 
         env, 
         shell: false, 
-        detached: true, // <-- MUDANÇA CRÍTICA
         stdio: ['ignore', 'pipe', 'pipe']
       });
 
-      // Libera o processo pai imediatamente
-      child.unref();
+      // REMOVIDO: child.unref() (para que o Node espere a resolução da Promise corretamente)
 
       let stdout = ''; 
       let stderr = ''; 
@@ -372,13 +347,13 @@ class OpenClawService {
         resolve(result); 
       };
 
-      // 3. Timeout de segurança global
+      // 7. Timeout de segurança global
       const timeoutTimer = setTimeout(() => {
         try { child.kill('SIGKILL'); } catch (_) {}
         settle({ success: false, errorMessage: `Timeout global atingido (${timeoutMs}ms)`, rawOutput: stdout + stderr });
       }, timeoutMs);
 
-      // 4. Captura e processamento otimizado de dados
+      // 8. Captura e processamento otimizado de dados
       const onData = async (data, source) => {
         if (isSettled) return;
         const text = data.toString();
@@ -388,7 +363,9 @@ class OpenClawService {
         log(text);
 
         // Salva no arquivo de log da tarefa
-        fs.appendFile(terminalLogFile, text).catch(() => {});
+        if (terminalLogFile) {
+            fsSync.appendFile(terminalLogFile, text, () => {});
+        }
         
         // ==========================================
         // DETECÇÃO DE FERRAMENTAS E OTIMIZAÇÕES
@@ -408,23 +385,26 @@ class OpenClawService {
         if (text.includes('elevated') || text.includes('sudo') || text.includes('root')) {
           await log(`⚠️ [OpenClaw] Agente ${agent} solicitando permissões elevated...`);
         }
-        
-        // ==========================================
-        // DEIXAR O OPENCLAW EXECUTAR NATIVAMENTE
-        // As ferramentas agora têm acesso completo
-        // ==========================================
       };
 
       child.stdout.on('data', (d) => onData(d, 'stdout'));
       child.stderr.on('data', (d) => onData(d, 'stderr'));
       
-      // 5. O OpenClaw só avisa quando realmente terminar (ou travar)
+      // 9. O OpenClaw só avisa quando realmente terminar (ou travar)
       child.on('close', (code) => { 
         settle({ 
             success: code === 0, 
             rawOutput: stdout + stderr, 
             errorMessage: code === 0 ? null : `Processo encerrado com código ${code}` 
         }); 
+      });
+
+      child.on('error', (err) => {
+        settle({
+            success: false,
+            rawOutput: stdout + stderr,
+            errorMessage: `Erro ao iniciar processo: ${err.message}`
+        });
       });
     });
   }
@@ -448,6 +428,7 @@ class OpenClawService {
     await log(`🚀 [OpenClaw] Execução otimizada iniciada para agente ${agent}`);
     
     let lastError = null;
+    let finalResult = null;
     
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
       try {
@@ -457,7 +438,7 @@ class OpenClawService {
         
         const result = await this.execute(
           sessionId, 
-          attempt > 1 ? `${inputMessage}\n\n[RETENTATIVA ${attempt}] Por favor, tente novamente com uma abordagem diferente.` : inputMessage,
+          attempt > 1 ? `${inputMessage}\n\n[RETENTATIVA ${attempt}] A tentativa anterior falhou. Por favor, analise o erro e tente novamente com uma abordagem diferente.` : inputMessage,
           agent, 
           model, 
           tasksDir, 
@@ -467,13 +448,14 @@ class OpenClawService {
         );
         
         // Analisar resultado para determinar sucesso
-        const success = result.success && !result.errorMessage && !result.exitCode;
+        const success = result.success && !result.errorMessage;
         
         if (success) {
           await log(`✅ [OpenClaw] Execução do agente ${agent} bem-sucedida na tentativa ${attempt}`);
           return { ...result, attempt, success: true };
         } else {
           lastError = result.errorMessage || 'Falha não especificada';
+          finalResult = result;
           await log(`⚠️ [OpenClaw] Agente ${agent} falhou na tentativa ${attempt}: ${lastError}`);
           
           if (attempt <= maxRetries) {
@@ -493,7 +475,6 @@ class OpenClawService {
         }
       }
       
-      // Se chegou aqui, todas as tentativas falharam
       break;
     }
     
@@ -501,7 +482,7 @@ class OpenClawService {
     if (fallbackAgent && fallbackAgent !== agent) {
       await log(`🔄 [OpenClaw] Todas as tentativas com ${agent} falharam. Acionando fallback: ${fallbackAgent}`);
       
-      const fallbackInput = `${inputMessage}\n\n[SISTEMA - MODO FALLBACK] O agente anterior (${agent}) não conseguiu executar esta tarefa após múltiplas tentativas. Por favor, assuma o controle e tente uma abordagem diferente.`;
+      const fallbackInput = `${inputMessage}\n\n[SISTEMA - MODO FALLBACK] O agente anterior (${agent}) falhou ao executar esta tarefa. Assuma o controle.`;
       
       return await this.execute(
         sessionId, fallbackInput, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs
@@ -511,16 +492,14 @@ class OpenClawService {
     return {
       success: false,
       errorMessage: `Falha após ${maxRetries + 1} tentativas: ${lastError}`,
-      rawOutput: '',
+      rawOutput: finalResult ? finalResult.rawOutput : '',
       attempt: maxRetries + 1
     };
   }
   
-  
   /**
    * Executa uma chamada ao agente, mas se ele falhar ou travar, 
    * tenta novamente com um agente de backup (Fallback).
-   * Mantido para compatibilidade
    */
   static async executeWithFallback(
     sessionId, inputMessage, primaryAgent, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000
@@ -531,6 +510,8 @@ class OpenClawService {
     );
   }
 }
+
+module.exports = OpenClawService;
 
 module.exports = OpenClawService;
 

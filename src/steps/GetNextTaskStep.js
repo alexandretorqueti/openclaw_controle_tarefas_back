@@ -41,8 +41,6 @@ class GetNextTaskStep {
     }
 
     try {
-      await this.log(`🔍 Buscando próxima tarefa elegível para usuário "${nickname}"`);
-      
       const response = await this.axios.get(`${apiUrl}/api/users/nickname/${nickname}/next-task`);
 
       // Se a API retornar uma tarefa válida, nós a devolvemos
@@ -63,7 +61,6 @@ class GetNextTaskStep {
       }
 
       // Tarefa não encontrada (mas API retornou 200 com dados vazios)
-      await this.log(`ℹ️ Nenhuma tarefa encontrada para "${nickname}" (API retornou 200 sem tarefa)`);
       
       return {
         ...context,
@@ -79,7 +76,6 @@ class GetNextTaskStep {
       // Se a API retornar 404 (Not Found) ou 204 (No Content), significa que a fila está vazia.
       // Isso é um comportamento esperado, então não precisamos logar como um erro crítico.
       if (error.response && (error.response.status === 404 || error.response.status === 204)) {
-        await this.log(`ℹ️ Nenhuma tarefa disponível para "${nickname}" (API: ${error.response.status})`);
         
         return {
           ...context,

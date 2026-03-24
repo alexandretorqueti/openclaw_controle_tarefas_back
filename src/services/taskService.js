@@ -461,7 +461,9 @@ class TaskService {
     // Get current task to check project context
     const currentTask = await prisma.task.findUnique({
       where: { id },
-      select: { projectId: true }
+      include: {
+        project: true
+      }
     });
     
     if (!currentTask) {
