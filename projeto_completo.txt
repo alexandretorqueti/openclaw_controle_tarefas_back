@@ -2508,7 +2508,7 @@ module.exports = ErrorMiddleware;
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
 const llmService = new LlmService('phi4:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
-const { log } = require('../../aux/logger');
+const { log } = require('../aux/logger');
 
 class TaskAnalysisService {
   static lastAnalysis = null;
@@ -4892,7 +4892,7 @@ const SmartFileFinder = require('../utils/smartFileFinder');
 // Utilitários
 const { fileExists } = require('../utils/fileUtils');
 const { runPipeline } = require('../utils/pipelineUtils'); 
-const { log } = require('../../aux/logger');
+const { log } = require('../aux/logger');
 const { arch } = require('os');
 const projectService = require('./projectService');
 
@@ -5314,7 +5314,7 @@ class TaskExecutionService {
     const { fileExists } = require('../utils/fileUtils');
     const LlmService = require('./llmService');
     const projectService = require('./projectService'); 
-    const { log } = require('../../aux/logger');
+    const { log } = require('../aux/logger');
 
     const domain = task.domain; // FRONTEND, BACKEND ou nulo
     const baseDir = project.pastaBase;
@@ -9649,7 +9649,7 @@ const { spawn } = require('child_process');
 const fs = require('fs').promises;
 const ToolCallService = require('./toolCallService');
 const CommandExecutor = require('./commandExecutor');
-const { log } =  require('../../aux/logger');
+const { log } =  require('../aux/logger');
 
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node';
 const OPENCLAW_MJS = process.env.OPENCLAW_MJS || '/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/mjs';
@@ -14686,7 +14686,7 @@ module.exports = new CommentController();
 
 const fs = require('fs');
 const path = require('path');
-const { LOG_FILE } = require('../../aux/config');
+const { LOG_FILE } = require('../aux/config');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { Logger } = require('../utils/logger');
 
@@ -18058,7 +18058,7 @@ module.exports = { getAbsoluteAvatarUrl };
 // --- ARQUIVO: ./src/utils/pipelineUtils.js ---
 
 // src/utils/pipelineUtils.js
-const { log } = require('../../aux/logger');
+const { log } = require('../aux/logger');
 
 /**
  * Executa uma série de etapas (pipeline) sequencialmente.

@@ -1,5 +1,5 @@
 // src/utils/pipelineUtils.js
-const { log } = require('../../aux/logger');
+const { log } = require('../aux/logger');
 
 /**
  * Executa uma série de etapas (pipeline) sequencialmente.

@@ -301,7 +301,7 @@ async function main() {
     await log("🚀 Iniciando monitor de tarefas (modo daemon)...");
     
     // Intervalo entre verificações (1 minuto)
-    const CHECK_INTERVAL_MS = 5000;
+    const CHECK_INTERVAL_MS = 60000;
     
     while (true) {
       try {
