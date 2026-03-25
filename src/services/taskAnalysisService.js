@@ -14,7 +14,13 @@ class TaskAnalysisService {
     const modelo = project.modeloAuxiliar || 'phi4:latest';
     llmService.model = modelo; // Atualiza o modelo do serviço antes de chamar a análise
     let analysis = await llmService.analyze(prompt);
-    log(`🔍 Análise da IA para a tarefa "${task.title}": ${analysis}`);
+    let analise_texto = '';
+    if (analysis && typeof analysis === 'object') {
+      analise_texto = JSON.stringify(analysis, null, 2);
+    } else if (typeof analysis === 'string') {
+      analise_texto = analysis;
+    }
+    log(`🔍 Análise da IA para a tarefa "${task.title}": ${analise_texto}`);
     // Fallback caso a IA falhe
     if (!analysis) {
       return this.getFallbackScope(task); 

@@ -68,6 +68,16 @@ class SessionChainUtils {
     console.warn(`⚠️ Máximo de iterações atingido. Retornando: ${currentTaskId}`);
     return currentTaskId;
   }
+
+  /**
+   * Gera um ID de sessão que persiste durante o LOOP de uma tarefa,
+   * permitindo que o programador receba feedbacks na mesma conversa.
+   */
+  static generateLoopSessionId(taskId, role, executionTimestamp) {
+    // Se passarmos o mesmo timestamp do INÍCIO da execução, 
+    // o ID será idêntico em todos os turnos do loop.
+    return `${role}-${taskId}-${executionTimestamp}`;
+  }
   
   /**
    * Gera um ID de sessão baseado na primeira tarefa da cadeia
@@ -76,27 +86,19 @@ class SessionChainUtils {
    * @param {number} turnNumber - Número do turno (apenas para sessões de turno)
    * @returns {Promise<string>} ID da sessão unificada
    */
-  static async generateUnifiedSessionId(taskId, sessionType, turnNumber = null) {
-    const firstTaskId = await this.findFirstTaskInChain(taskId);
-    
-    // REGRA PRINCIPAL: Todas as tarefas da mesma cadeia devem ter EXATAMENTE A MESMA SESSÃO
-    // Isso permite compartilhamento total de contexto entre tarefas dependentes
-    
-    if (sessionType === 'arquiteto') {
-      // Sessão do arquiteto: ID da primeira tarefa + "-arquiteto"
-      // Todas as tarefas da cadeia compartilham a MESMA sessão de arquiteto
-      const timestamp = new Date().getTime();
-      return `${firstTaskId}-arquiteto-${timestamp}`;
-    } else if (sessionType === 'turno') {
-      // Sessão do turno: ID da primeira tarefa + "-turno-" + número do turno
-      // Todas as tarefas da cadeia compartilham a MESMA sessão por turno
-      if (turnNumber === null) {
-        throw new Error('Número do turno é obrigatório para sessões de turno');
-      }
-      return `${firstTaskId}-turno-${turnNumber}`;
-    }
-    
-    throw new Error(`Tipo de sessão inválido: ${sessionType}`);
+/**
+   * Gera um ID de sessão ÚNICO e ISOLADO.
+   * Garante que o agente não herde "memória zumbi" de execuções ou tarefas anteriores.
+   * O contexto agora é passado via texto no prompt (Roadmap), e não via sessão do LLM.
+   * * @param {string} taskId - ID da tarefa atual
+   * @param {string} role - Papel do agente ('arquiteto', 'programador-turno-1', etc)
+   * @returns {string} ID da sessão isolada
+   */
+  static generateIsolatedSessionId(taskId, role) {
+    const timestamp = new Date().getTime();
+    // Exemplo: arquiteto-task123-1711382400000
+    // Como usamos o timestamp exato, NUNCA haverá colisão de sessão
+    return `${role}-${taskId}-${timestamp}`;
   }
   
   /**

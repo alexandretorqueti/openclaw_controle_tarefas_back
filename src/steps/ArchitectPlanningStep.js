@@ -67,20 +67,13 @@ class ArchitectPlanningStep {
     try {
       await this.log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
       
-      const fileList = Array.from(initialSnapshot.keys());
-      const architectInput = this.promptFactory.buildArchitectPrompt(
-        task, 
-        project, 
-        fileList, 
-        files.architectPlanFile, 
-        commentsSection, 
-        analysisPlan.taskType
-      );
+      // ✅ CORREÇÃO 1: Removemos o PromptFactory daqui. Usamos direto o que veio do SetupContext
+      const architectInput = currentInput; 
       
       await this.log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
-      
+      const SessionChainUtils = require('../utils/sessionChainUtils');
       // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
-      const architectSessionId = await this.sessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+      const architectSessionId = await this.sessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
       
       await this.log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
       
@@ -201,20 +194,18 @@ class ArchitectPlanningStep {
       let updatedPromptContent;
       
       if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
-        // Arquiteto já executou com alta confiança (E PASSOU NA VALIDAÇÃO) - usar APENAS a análise do arquiteto
         updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
-        await this.log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança + evidências validadas).`);
+        await this.log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto.`);
       } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
-        // Arquiteto gerou plano - SUBSTITUIR pelo plano + adicionar instruções do desenvolvedor
         updatedPromptContent = `=== PLANO DE AÇÃO DO ARQUITETO ===\n${architectPlan}\n\n${developerPrompt}`;
         await this.log(`🔄 [Arquiteto] Fluxo: Substituindo prompt pelo plano + instruções do desenvolvedor.`);
       } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
-        // Arquiteto falhou - manter original
-        updatedPromptContent = currentInput;
-        await this.log(`🔄 [Arquiteto] Fluxo: Mantendo prompt original (análise falhou).`);
+        // AQUI ESTÁ A PROTEÇÃO MÁXIMA: Passa só o developerPrompt, NUNCA o currentInput!
+        updatedPromptContent = developerPrompt;
+        await this.log(`🔄 [Arquiteto] Fluxo: Mantendo APENAS instruções do desenvolvedor (análise falhou).`);
       } else {
-        // Caso padrão (baixa confiança, resposta ambígua)
-        updatedPromptContent = `${currentInput}\n\n=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\nAnalise a resposta acima e execute conforme necessário.`;
+        // Resposta ambígua
+        updatedPromptContent = `=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\n${developerPrompt}\n\nAnalise a resposta acima e execute a tarefa.`;
         await this.log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência.`);
       }
       
@@ -266,3 +257,5 @@ class ArchitectPlanningStep {
 }
 
 module.exports = ArchitectPlanningStep;
+
+

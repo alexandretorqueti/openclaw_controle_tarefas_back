@@ -6,6 +6,7 @@
  * Melhora a lógica original para suportar arrays e parsing automático.
  */
 function extractJsonObjects(text) {
+  const cleanText = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
   const results = [];
   let depth = 0;
   let start = -1;
@@ -16,8 +17,8 @@ function extractJsonObjects(text) {
   // Mapeamento de pares
   const pairs = { '{': '}', '[': ']' };
 
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
+  for (let i = 0; i < cleanText.length; i++) {
+    const char = cleanText[i];
 
     if (escape) {
       escape = false;

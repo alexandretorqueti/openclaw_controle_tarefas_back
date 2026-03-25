@@ -39,9 +39,9 @@ class AnalystStep {
     
     try {
       await this.log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
-
+      const SessionChainUtils = require('../utils/sessionChainUtils');
       // Usar sessão unificada baseada na cadeia de dependências
-      const architectSessionId = await this.sessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+      const architectSessionId = await sessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
       
       await this.log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
       const architectLogFile = this.path.join(this.config.TASKS_DIR, `architect-${task.id}.log`);
@@ -167,3 +167,5 @@ class AnalystStep {
 }
 
 module.exports = AnalystStep;
+
+

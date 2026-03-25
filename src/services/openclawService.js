@@ -504,10 +504,58 @@ class OpenClawService {
   static async executeWithFallback(
     sessionId, inputMessage, primaryAgent, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000
   ) {
+     // Exclui as sessões do agente
+    await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
+    await OpenClawService.wipeAgentAmnesiaCache(fallbackAgent);
     return await this.executeOptimized(
       sessionId, inputMessage, primaryAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs,
       { fallbackAgent, maxRetries: 0 }
     );
+  }
+
+/**
+   * OPÇÃO NUCLEAR DEFINITIVA (Ataque de Precisão)
+   * Limpa fisicamente a pasta de sessões do agente para garantir Amnésia total.
+   * Caminho alvo: ~/.openclaw/agents/[agentId]/sessions/
+   */
+  static async wipeAgentAmnesiaCache(agentId) {
+    const fs = require('fs').promises;
+    const path = require('path');
+    const os = require('os');
+    
+    if (!agentId || agentId === 'main') return;
+    
+    // O caminho exato que você mapeou!
+    const sessionsDir = path.join(os.homedir(), '.openclaw', 'agents', agentId, 'sessions');
+    
+    try {
+      // Verifica se a pasta sessions realmente existe
+      const stats = await fs.stat(sessionsDir).catch(() => null);
+      if (!stats || !stats.isDirectory()) return;
+
+      // Lê todos os arquivos de sessão que estão lá dentro
+      const files = await fs.readdir(sessionsDir);
+      let deletedCount = 0;
+      
+      for (const file of files) {
+        const filePath = path.join(sessionsDir, file);
+        const fileStat = await fs.stat(filePath);
+        
+        // Deleta o arquivo de sessão
+        if (fileStat.isFile()) {
+          await fs.unlink(filePath).catch(()=>{});
+          deletedCount++;
+        }
+      }
+      
+      if (deletedCount > 0) {
+        const { log } = require('../aux/logger');
+        await log(`🧹 [Amnésia] Limpeza Cirúrgica: ${deletedCount} arquivos apagados em ~/.openclaw/agents/${agentId}/sessions/`);
+      }
+    } catch (error) {
+      const { log } = require('../aux/logger');
+      await log(`⚠️ [Amnésia] Falha ao tentar esvaziar a pasta de sessões: ${error.message}`);
+    }
   }
 }
 

@@ -129,7 +129,8 @@ class DeveloperLoopOrchestrator {
       
       const maxTurns = 15;
       const maxTurnsWithoutProgress = 6;
-      
+      const executionTimestamp = new Date().getTime(); 
+
       // 4. LOOP PRINCIPAL
       while (!contractResult.contractFulfilled && turnos < maxTurns) {
         turnos++;
@@ -141,6 +142,7 @@ class DeveloperLoopOrchestrator {
         
         const turnContext = {
           ...context,
+          executionTimestamp,
           basePrompt,
           lastFeedback,
           turnNumber: turnos,
@@ -380,3 +382,5 @@ class DeveloperLoopOrchestrator {
 }
 
 module.exports = DeveloperLoopOrchestrator;
+
+

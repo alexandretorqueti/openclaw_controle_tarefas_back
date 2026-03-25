@@ -23,6 +23,7 @@ class SetupContextStep {
     this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
     this.promptFactory = options.promptFactory || container.resolve('promptFactory');
     this.fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils'); // Injetado para o Roadmap
   }
 
   /**
@@ -92,21 +93,78 @@ class SetupContextStep {
         });
         await this.log(`💬 [Setup] ${task.comments.length} comentários incluídos no contexto`);
       }
+
+      // =====================================================================
+      // 🚀 NOVIDADE 1: CONSTRUÇÃO DO ROADMAP VISUAL (ANTI-AMNÉSIA E ANTI-AFOBAÇÃO)
+      // =====================================================================
+      let roadmapSection = '';
+      try {
+        const taskChain = await this.sessionChainUtils.getTaskChain(task.id);
+        
+        if (taskChain && taskChain.length > 1) {
+          roadmapSection = '\n=== ROADMAP DA FUNCIONALIDADE (EPIC) ===\n';
+          roadmapSection += 'Esta tarefa faz parte de uma sequência estruturada. Respeite ESTREITAMENTE os limites do seu escopo e NÃO tente implementar funcionalidades de passos futuros.\n\n';
+          
+          taskChain.forEach((t, index) => {
+            if (t.id === task.id) {
+              roadmapSection += `[📍 VOCÊ ESTÁ AQUI] Passo ${index + 1}: ${t.title} (FOQUE APENAS NISTO)\n`;
+            } else if (t.status && t.status.isFinalState) {
+              roadmapSection += `[✅ CONCLUÍDO] Passo ${index + 1}: ${t.title} (Já implementado no projeto, apenas integre)\n`;
+            } else {
+              roadmapSection += `[⏳ PENDENTE] Passo ${index + 1}: ${t.title} (NÃO implemente isso agora)\n`;
+            }
+          });
+          roadmapSection += '========================================\n';
+          await this.log(`🗺️ [Escopo] Roadmap de ${taskChain.length} passos gerado com sucesso.`);
+        }
+      } catch (err) {
+        await this.log(`⚠️ [Escopo] Erro ao montar roadmap visual: ${err.message}`);
+      }
+
+      const originalDescription = task.description || 'Sem descrição detalhada.';
+      task.description = roadmapSection ? `${roadmapSection}\n=== DESCRIÇÃO DA TAREFA ATUAL ===\n${originalDescription}` : originalDescription;
+      // =====================================================================
       
       // 5. Tirar snapshot inicial (para obter lista de arquivos para o prompt)
       await this.log(`📸 [Setup] Tirando snapshot inicial do workspace...`);
       const initialSnapshot = await this.workspaceSnapshotService.takeSnapshot(
         project?.pastaBase || TASKS_DIR
       );
-      const fileList = Array.from(initialSnapshot.keys());
-      await this.log(`📁 [Setup] ${fileList.length} arquivos detectados no workspace`);
+      let fileList = Array.from(initialSnapshot.keys());
+      await this.log(`📁 [Setup] ${fileList.length} arquivos detectados no workspace (pré-filtro)`);
+
+      // =====================================================================
+      // 🎯 FILTRO CIRÚRGICO DE DOMÍNIO (CORRIGIDO PARA CAMINHOS ABSOLUTOS)
+      // =====================================================================
+      const domain = task.domain?.toUpperCase();
+      
+      if (domain === 'FRONTEND' && project?.frontendPath) {
+        const originalCount = fileList.length;
+        fileList = fileList.filter(file => 
+          file.includes(project.frontendPath) || // Correção: de startsWith para includes
+          file.includes('shared') || 
+          !file.includes('/') 
+        );
+        await this.log(`🎯 [Escopo] Tarefa FRONTEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+      } else if (domain === 'BACKEND' && project?.backendPath) {
+        const originalCount = fileList.length;
+        fileList = fileList.filter(file => 
+          file.includes(project.backendPath) || // Correção: de startsWith para includes
+          file.includes('prisma') || 
+          file.includes('shared') ||
+          !file.includes('/')
+        );
+        await this.log(`🎯 [Escopo] Tarefa BACKEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+      } else {
+        await this.log(`🌍 [Escopo] Tarefa FULLSTACK ou domínio não especificado: Enviando todos os ${fileList.length} arquivos.`);
+      }
       
       // 6. Gerar Prompt Inteligente do Arquiteto usando PromptFactory
       await this.log(`🧠 [Setup] Gerando prompt do arquiteto...`);
       const architectPrompt = this.promptFactory.buildArchitectPrompt(
         task, 
         project, 
-        fileList, 
+        fileList, // Agora passa a lista otimizada pelo Filtro de Domínio!
         files.architectPlanFile, 
         commentsSection, 
         analysisPlan.taskType
@@ -121,13 +179,11 @@ class SetupContextStep {
       await this.log(`💾 [Setup] Arquivos de prompt salvos: ${files.promptFile}`);
       
       // 8. Gerar Prompt do Desenvolvedor
+      // O roadmap visual já foi injetado na task.description, então o developerPrompt ganha isso de graça.
       const engineRules = this.promptFactory.buildEngineRulesPrompt(files);
       const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
       
-      // 9. Criar log de execução no banco (se necessário)
-      // Nota: A criação do log de execução pode ser movida para um step separado
-      // Por enquanto, retornamos os dados necessários
-      
+      // 9. Retornar os dados necessários
       await this.log(`✅ [Setup] Contexto preparado com sucesso para tarefa ${taskId}`);
       
       return {
@@ -146,11 +202,10 @@ class SetupContextStep {
         currentInput: architectPrompt,
         developerPrompt,
         commentsSection,
-        // Dados para criação de log (pode ser usado por outro step)
         executionLogData: {
           taskId: task.id,
           userId,
-          model: 'deepseek/deepseek-chat', // Default, pode ser sobrescrito
+          model: 'deepseek/deepseek-chat',
           startedAt: new Date()
         }
       };

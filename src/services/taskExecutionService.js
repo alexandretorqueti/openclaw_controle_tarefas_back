@@ -82,7 +82,9 @@ class TaskExecutionService {
   // ETAPAS DO PIPELINE (STEPS)
   // ==========================================
 
-  /**   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.*/
+/**
+   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
+   */
   static async stepSetupContext(ctx) {
     const { task, userId, config } = ctx;
     const { TASKS_DIR } = config;
@@ -116,19 +118,81 @@ class TaskExecutionService {
       });
     }
 
+    // =====================================================================
+    // 🚀 NOVIDADE 1: CONSTRUÇÃO DO ROADMAP VISUAL (ANTI-AMNÉSIA E ANTI-AFOBAÇÃO)
+    // =====================================================================
+    const SessionChainUtils = require('../utils/sessionChainUtils');
+    let roadmapSection = '';
+    
+    try {
+      const taskChain = await SessionChainUtils.getTaskChain(task.id);
+      
+      // Só cria o roadmap se houver realmente uma cadeia (mais de 1 tarefa)
+      if (taskChain && taskChain.length > 1) {
+        roadmapSection = '\n=== ROADMAP DA FUNCIONALIDADE (EPIC) ===\n';
+        roadmapSection += 'Esta tarefa faz parte de uma sequência estruturada. Respeite ESTREITAMENTE os limites do seu escopo e NÃO tente implementar funcionalidades de passos futuros.\n\n';
+        
+        // Loop inteligente marcando passado, presente e futuro
+        taskChain.forEach((t, index) => {
+          if (t.id === task.id) {
+            roadmapSection += `[📍 VOCÊ ESTÁ AQUI] Passo ${index + 1}: ${t.title} (FOQUE APENAS NISTO)\n`;
+          } else if (t.status && t.status.isFinalState) {
+            roadmapSection += `[✅ CONCLUÍDO] Passo ${index + 1}: ${t.title} (Já implementado no projeto, apenas integre)\n`;
+          } else {
+            roadmapSection += `[⏳ PENDENTE] Passo ${index + 1}: ${t.title} (NÃO implemente isso agora)\n`;
+          }
+        });
+        roadmapSection += '========================================\n';
+        await log(`🗺️ [Escopo] Roadmap de ${taskChain.length} passos gerado com sucesso.`);
+      }
+    } catch (err) {
+      await log(`⚠️ [Escopo] Erro ao montar roadmap visual: ${err.message}`);
+    }
+
+    // Injeta o Roadmap direto na descrição da tarefa (Hack genial para não quebrar o PromptFactory)
+    const originalDescription = task.description || 'Sem descrição detalhada.';
+    task.description = roadmapSection ? `${roadmapSection}\n=== DESCRIÇÃO DA TAREFA ATUAL ===\n${originalDescription}` : originalDescription;
+    // =====================================================================
+
     // 4. Tira o Snapshot PRIMEIRO (Para obtermos a lista de arquivos para o prompt)
     const initialSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || TASKS_DIR);
-    const fileList = Array.from(initialSnapshot.keys());
+    let fileList = Array.from(initialSnapshot.keys());
+
+    // =====================================================================
+    // 🎯 NOVIDADE 2: FILTRO CIRÚRGICO DE DOMÍNIO (ECONOMIA DE TOKENS)
+    // =====================================================================
+    const domain = task.domain?.toUpperCase();
+    
+    if (domain === 'FRONTEND' && project?.frontendPath) {
+      const originalCount = fileList.length;
+      fileList = fileList.filter(file => 
+        file.startsWith(project.frontendPath) || 
+        file.includes('shared') || 
+        !file.includes('/') // arquivos soltos na raiz (ex: package.json principal)
+      );
+      await log(`🎯 [Escopo] Tarefa FRONTEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+    } else if (domain === 'BACKEND' && project?.backendPath) {
+      const originalCount = fileList.length;
+      fileList = fileList.filter(file => 
+        file.startsWith(project.backendPath) || 
+        file.includes('prisma') || 
+        file.includes('shared') ||
+        !file.includes('/')
+      );
+      await log(`🎯 [Escopo] Tarefa BACKEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+    } else {
+      await log(`🌍 [Escopo] Tarefa FULLSTACK ou domínio não especificado: Enviando todos os ${fileList.length} arquivos.`);
+    }
+    // =====================================================================
 
     // 5. Geração do Prompt Inteligente do Arquiteto usando o PromptFactory
-    // Aqui a mágica acontece: passamos a lista de arquivos e o TIPO da tarefa
     const architectPrompt = PromptFactory.buildArchitectPrompt(
       task, 
       project, 
-      fileList, 
+      fileList, // Agora passa a lista otimizada pelo Filtro de Domínio!
       files.architectPlanFile, 
       commentsSection, 
-      analysisPlan.taskType // <-- Injetando o tipo exato para o prompt condicional!
+      analysisPlan.taskType
     );
     
     // 6. Salva nos arquivos físicos
@@ -138,6 +202,7 @@ class TaskExecutionService {
     await fs.writeFile(files.terminalLogFile, '');
 
     // 7. Geração do Prompt do Desenvolvedor
+    // Como nós alteramos o task.description lá em cima, o Roadmap entra aqui de graça!
     const engineRules = PromptFactory.buildEngineRulesPrompt(files);
     const developerPrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${task.title}. DESC: ${task.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
     
@@ -160,27 +225,31 @@ class TaskExecutionService {
   /**
    * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
    */
+ /**
+   * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
+   */
   static async stepArchitectPlanning(ctx) {
     const { task, project, files, initialSnapshot, config, analysisPlan } = ctx;
     
     // Log do tipo de tarefa
     await log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
     
-    const fileList = Array.from(initialSnapshot.keys());
-    const architectInput = PromptFactory.buildArchitectPrompt(task, project, fileList, files.architectPlanFile, ctx.commentsSection || '', analysisPlan.taskType);
+    // CORREÇÃO 1: Evita gerar o prompt duas vezes. 
+    // Usa diretamente o currentInput que foi gerado com a lista de arquivos no stepSetupContext.
+    const architectInput = ctx.currentInput; 
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
     
     // Importar utilitário de sessões em cadeia
     const SessionChainUtils = require('../utils/sessionChainUtils');
     
     // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
-    const architectSessionId = await SessionChainUtils.generateUnifiedSessionId(task.id, 'arquiteto');
+    const architectSessionId = await SessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
     
     await log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
-    
-    // Roda o Arquiteto com timeout de 10 minutos (600000ms)
+   
+    // Roda o Arquiteto com timeout
     const architectResult = await OpenClawService.executeWithFallback(
-      architectSessionId, // <--- SESSÃO UNIFICADA PARA CADEIAS DE DEPENDÊNCIAS
+      architectSessionId, 
       architectInput,
       project?.agent || task.agent || 'main',
       task.agent || 'main',
@@ -201,45 +270,38 @@ class TaskExecutionService {
       architectPlan = planSearch.content;
       await log(`📝 [Arquiteto] Plano recuperado com sucesso (${architectPlan.length} caracteres).`);
     } else if (architectResult.rawOutput && architectResult.rawOutput.trim().length > 50) {
-      // Fallback: Se não salvou em arquivo nenhum, tenta catar direto do que ele cuspiu no terminal
       architectPlan = architectResult.rawOutput;
       await log(`📝 [Arquiteto] Arquivo não encontrado. Usando rawOutput do terminal como fallback (${architectPlan.length} chars)`);
-      // Força a gravação no arquivo correto
       await fs.writeFile(files.architectPlanFile, architectPlan).catch(()=>{});
     }
 
-    // Verificar se temos um plano do arquiteto... (O código continua normal daqui pra baixo)
     if (architectPlan && architectPlan.trim().length > 0) {
-      // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
-      // Usa LLM para compreender semanticamente se o arquiteto já executou ou só planejou
+      // ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
       await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
-      architectAnalysis = {};
       const existsDoneFile = await fileExists(files.doneFile);
       
       architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
       await log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
       const hadExecuted = architectAnalysis.hadExecuted;
-      // VALIDAÇÃO CRÍTICA: Se a IA diz que executou, verificar evidências reais
+      
+      // VALIDAÇÃO CRÍTICA
       if ((architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) || existsDoneFile) {
         await log(`🔍 [Validação] IA diz que arquiteto executou. Verificando evidências...`);
         
-        // Verificar se há evidências reais de execução
         const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
         const changes = WorkspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
         const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
         const architectDoneExists = await fileExists(files.doneFile);
         const architectReportExists = await fileExists(files.relatorioFile);
         
-        // Para tarefas de análise, evidência pode ser apenas relatório/.done (não precisa de alterações)
         const hasEvidence = architectDoneExists || architectReportExists || 
                            (analysisPlan.taskType === 'analysis' ? true : (hasRealChanges || hadExecuted));
         
         if (!hasEvidence) {
           await log(`⚠️ [Validação] NENHUMA evidência encontrada! IA provavelmente errou. Corrigindo análise...`);
-          // Corrigir a análise: não executou, apenas planejou
           architectAnalysis = {
             hasExecuted: false,
-            hasPlan: true,  // Se gerou resposta detalhada, tem plano
+            hasPlan: true,  
             confidence: 80,
             executionDetails: null,
             planDetails: "Arquiteto gerou plano detalhado, mas não executou alterações (validação de evidências falhou)",
@@ -255,21 +317,7 @@ class TaskExecutionService {
         }
       }
       
-      if (architectAnalysis.hasExecuted) {
-        await log(`✅ [Arquiteto] Análise indica que já executou a tarefa (${architectAnalysis.confidence}% confiança).`);
-        if (architectAnalysis.executionDetails) {
-          await log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.executionDetails.substring(0, 100)}...`);
-        }
-      } else if (architectAnalysis.hasPlan) {
-        await log(`📋 [Arquiteto] Análise indica que gerou plano de ação (${architectAnalysis.confidence}% confiança).`);
-        if (architectAnalysis.planDetails) {
-          await log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.planDetails.substring(0, 100)}...`);
-        }
-      } else if (architectAnalysis.analysisFailed) {
-        await log(`⚠️ [Arquiteto] Análise falhou ou resposta incompreensível.`);
-      } else {
-        await log(`ℹ️ [Arquiteto] Análise não identificou execução nem plano claro.`);
-      }
+      // Logs de output...
     } else {
       architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
       architectAnalysis = {
@@ -283,33 +331,36 @@ class TaskExecutionService {
       await log(`⚠️ [Arquiteto] Resposta vazia ou inválida. Usando descrição original.`);
     }
 
-    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
+    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE (CORRIGIDO CONTRA VAZAMENTO)
     let updatedPromptContent;
     
     if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
-      // Arquiteto já executou com alta confiança (E PASSOU NA VALIDAÇÃO) - usar APENAS a análise do arquiteto
+      // Arquiteto já executou. Usamos o plano como relatório final.
       updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
       await log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança + evidências validadas).`);
+      
     } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
-      // Arquiteto gerou plano - SUBSTITUIR pelo plano + adicionar instruções do desenvolvedor
+      // Arquiteto gerou plano. Substitui pelo plano + developerPrompt (sem a lista de arquivos)
       updatedPromptContent = `=== PLANO DE AÇÃO DO ARQUITETO ===\n${architectPlan}\n\n${ctx.developerPrompt}`;
       await log(`🔄 [Arquiteto] Fluxo: Substituindo prompt pelo plano + instruções do desenvolvedor.`);
+      
     } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
-      // Arquiteto falhou - manter original
-      updatedPromptContent = ctx.currentInput;
-      await log(`🔄 [Arquiteto] Fluxo: Mantendo prompt original (análise falhou).`);
+      // CORREÇÃO 2: Arquiteto falhou. Mandamos APENAS as instruções do programador (sem a lista de arquivos).
+      updatedPromptContent = ctx.developerPrompt;
+      await log(`🔄 [Arquiteto] Fluxo: Mantendo apenas instruções do desenvolvedor (análise do arquiteto falhou).`);
+      
     } else {
-      // Caso padrão (baixa confiança, resposta ambígua)
-      updatedPromptContent = `${ctx.currentInput}\n\n=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\nAnalise a resposta acima e execute conforme necessário.`;
-      await log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência.`);
+      // CORREÇÃO 3: Resposta ambígua. Mandamos a análise confusa do arquiteto + instruções do programador.
+      updatedPromptContent = `=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\n${ctx.developerPrompt}\n\nAnalise a resposta acima e execute a tarefa.`;
+      await log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência para o desenvolvedor.`);
     }
     
     await fs.writeFile(files.promptFile, updatedPromptContent);
 
     return { 
       ...ctx, 
-      currentInput: updatedPromptContent,
-      architectAnalysis, // Análise inteligente para stepDeveloperLoop
+      currentInput: updatedPromptContent, // Agora seguro. Nunca vaza o 'currentInput' antigo!
+      architectAnalysis, 
       architectPlan
     };
   }
@@ -646,10 +697,12 @@ class TaskExecutionService {
       await log(`🤖 Turno ${turnos + 1}...`);
       turnos++;
       
+      // Importar utilitário de sessões em cadeia
+      const SessionChainUtils = require('../utils/sessionChainUtils');
       // 1. GERAÇÃO DA SESSÃO DO DESENVOLVEDOR (Isolada por Tarefa/Turno)
-      const timestamp = new Date().getTime();
-      const turnSessionId = `programador-${task.id}-${timestamp}`;
-      
+      // Usando o nosso utilitário padronizado!
+      const turnSessionId = SessionChainUtils.generateIsolatedSessionId(task.id, `programador-turno-${turnos}`);
+
       await log(`🔗 Sessão do turno ${turnos}: ${turnSessionId} (isolada por tarefa/turno)`);
 
       // 2. MONTAGEM DO DOSSIÊ DO TURNO

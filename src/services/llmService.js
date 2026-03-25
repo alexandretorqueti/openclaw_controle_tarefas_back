@@ -16,6 +16,8 @@ class LlmService {
         prompt: prompt,
         stream: false,
         format: "json"
+      }, {
+        timeout: 600000 
       });
 
       const rawText = response.data.response || response.data.thinking || '';
