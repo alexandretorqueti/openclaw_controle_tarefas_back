@@ -82,12 +82,7 @@ class TaskExecutionService {
   // ETAPAS DO PIPELINE (STEPS)
   // ==========================================
 
-  /**
-   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
-   */
-/**
-   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.
-   */
+  /**   * Passo 1: Prepara arquivos, banco de dados e analisa o escopo.*/
   static async stepSetupContext(ctx) {
     const { task, userId, config } = ctx;
     const { TASKS_DIR } = config;

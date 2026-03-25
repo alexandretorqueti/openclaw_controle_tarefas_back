@@ -46,22 +46,37 @@ class PromptFactory {
  static buildArchitectPrompt(task, project, fileList, planFilePath, commentsSection = '', taskType = 'development') {
     const path = require('path');
     
-    // 1. O NOVO FILTRO INTELIGENTE (Adeus arquivos inúteis!)
+    // 1. O NOVO FILTRO INTELIGENTE (Foco total em Código Real)
     const ignorePatterns = [
+      /\/prisma\/migrations\//, // Migrações do Prisma
       /\/node_modules\//,    // Dependências
       /\.git\//,             // Histórico do git
-      /\/dist\//,            // Compilados
-      /\/build\//,           // Compilados
-      /backup/i,             // Suas pastas e arquivos de backup (como o tarefas-server-backup-...)
-      /\.lock$/,             // package-lock.json, yarn.lock
-      /\.pdf$/,              // Documentos binários
-      /\.png$/, /\.jpe?g$/, /\.svg$/, /\.gif$/, // Imagens e avatares
-      /\.db$/, /\.sqlite$/   // Bancos de dados locais
+      /\/(dist|build|out)\//, // Pastas de saída/compilação
+      /backup/i,             // Pastas e arquivos de backup
+      /\.(lock|log|md|txt)$/, // Arquivos de metadados e logs (package-lock, yarn.lock, README)
+      /\.(png|jpe?g|svg|gif|ico|pdf|zip|gz)$/, // Binários e Assets
+      /\.(db|sqlite|sqlite3)$/, // Bancos de dados locais
+      /\.map$/,              // Source maps de compilação
+      /\.d\.ts\.map$/,       // Maps de definições de tipos
+      /\.vscode\//,          // Configurações de IDE
+      /coverage\//           // Relatórios de testes
     ];
 
-    // Filtra a lista antes de fatiar
+    // Extensões que realmente nos interessam para análise de código
+    const relevantExtensions = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.json'];
+
+    // Filtra a lista com precisão
     const cleanFileList = fileList.filter(file => {
-      return !ignorePatterns.some(pattern => pattern.test(file));
+      // 1. Deve possuir uma extensão de código relevante
+      const hasRelevantExtension = relevantExtensions.some(ext => file.endsWith(ext));
+      
+      // 2. Não deve bater em nenhum padrão de ignorar
+      const isNotIgnored = !ignorePatterns.some(pattern => pattern.test(file));
+      
+      // 3. Ignora arquivos de configuração de "ferramental" (opcional, mas recomendado)
+      const isNotToolConfig = !file.match(/\.(config|setup|rc|babelrc)\.(js|json|ts)$/);
+
+      return hasRelevantExtension && isNotIgnored && isNotToolConfig;
     });
 
     // Agora sim, pegamos os primeiros 500 arquivos úteis
