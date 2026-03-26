@@ -180,14 +180,19 @@ Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferra
       };
       
     } catch (stepError) {
-      // Log detalhado do erro para debug
-      console.error('\n🔍🔍🔍 ERRO DETALHADO NO DeveloperTurnStep 🔍🔍🔍');
-      console.error('Mensagem:', stepError.message);
-      console.error('Tipo:', typeof stepError);
-      console.error('Construtor:', stepError.constructor?.name);
-      console.error('Stack:', stepError.stack);
-      console.error('Propriedades:', Object.getOwnPropertyNames(stepError));
-      console.error('🔍🔍🔍 FIM DO ERRO DETALHADO 🔍🔍🔍\n');
+      console.log('\n🔍🔍🔍 ERRO COMPLETO NO stepError 🔍🔍🔍');
+      console.log('stepError:', stepError);
+      console.log('\n📝 TIPO:', typeof stepError);
+      console.log('📝 CONSTRUTOR:', stepError.constructor.name);
+      console.log('\n📝 PROPRIEDADES:');
+      Object.getOwnPropertyNames(stepError).forEach(prop => {
+        console.log('  -', prop, ':', typeof stepError[prop] === 'function' ? '[Function]' : stepError[prop]);
+      });
+      console.log('\n📝 MESSAGE:', stepError.message);
+      console.log('📝 STACK:', stepError.stack);
+      console.log('📝 CODE:', stepError.code);
+      console.log('📝 NAME:', stepError.name);
+      console.log('\n🔍🔍🔍 FIM DO ERRO 🔍🔍🔍');
       
       await this.log(`💥 Erro no DeveloperTurnStep para tarefa ${task?.id || 'unknown'}: ${stepError.message}`);
       return {
@@ -197,9 +202,10 @@ Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferra
           error: stepError.message,
           turnNumber: turnNumber || 1,
           sessionId: 'error-session',
-          errorType: stepError.constructor?.name,
-          hasStack: !!stepError.stack
+          fullError: JSON.stringify(stepError, Object.getOwnPropertyNames(stepError))
         }
+      };
+    }
       };
     }
   }
