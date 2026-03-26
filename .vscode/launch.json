@@ -21,7 +21,7 @@
             "type": "node",
             "request": "launch",
             "name": "Debug monitor.js",
-            "program": "${workspaceFolder}/monitor.js",
+            "program": "${workspaceFolder}/src/monitor.js",
             "cwd": "${workspaceFolder}",
             "runtimeExecutable": "/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin/node"
         }

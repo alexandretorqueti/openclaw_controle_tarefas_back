@@ -120,16 +120,22 @@ class DeveloperLoopOrchestrator {
       basePrompt += contextFromPreviousTasks;
       
       // 3. CONFIGURAÇÃO DO LOOP
-      const backupAgent = task.fallbackAgent || project?.fallbackAgent || 'main';
+      const primaryAgent = project?.agent || task.agent || 'main';
+      const fallbackAgent = task.agent || 'main';
+      
+      // =========================================================
+      // 🧹 HIGIENE DE SESSÃO: Limpa a memória ANTES do loop começar
+      // =========================================================
+      const OpenClawService = require('./openclawService'); // Ajuste o path se necessário
+      await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
+      if (primaryAgent !== fallbackAgent) {
+          await OpenClawService.wipeAgentAmnesiaCache(fallbackAgent);
+      }
+      await this.log(`🧹 [Amnésia] Memória limpa. Iniciando loop para a tarefa ${task.id}.`);
+
       let lastFeedback = null;
       let contractResult = { contractFulfilled: false };
       let turnos = 0;
-      let turnosSemProgresso = 0;
-      let finalContractResult = null;
-      
-      const maxTurns = 15;
-      const maxTurnsWithoutProgress = 6;
-      const executionTimestamp = new Date().getTime(); 
 
       // 4. LOOP PRINCIPAL
       while (!contractResult.contractFulfilled && turnos < maxTurns) {
@@ -149,19 +155,50 @@ class DeveloperLoopOrchestrator {
           backupAgent
         };
         
-        const turnResult = await turnStep.execute(turnContext);
+        const updatedContext = await turnStep.execute(turnContext);
+        const { turnResult, evidence, actualDoneFilePath } = updatedContext;
         
-        if (!turnResult.turnResult.success) {
-          await this.log(`💥 [Desenvolvedor] Turno ${turnos} falhou: ${turnResult.turnResult.error}`);
+        // =========================================================
+        // ⚡ DESFIBRILADOR DE SESSÃO: TRATAMENTO DE ENVENENAMENTO
+        // =========================================================
+        const rawOutput = turnResult.openClawResult?.rawOutput || '';
+        const errorMessage = turnResult.openClawResult?.errorMessage || '';
+        
+        const isPoisoned = /\x00/.test(rawOutput) || 
+                           (rawOutput.match(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g)?.length > 20) || 
+                           errorMessage.includes('LIXO BINÁRIO');
+
+        if (isPoisoned) {
+            await this.log(`🚨 [PÂNICO] O Programador leu lixo binário no turno ${turnos}. A sessão está irremediavelmente envenenada.`);
+            await this.log(`⚡ [DESFIBRILADOR] Limpando cache de sessão e reiniciando a memória da IA...`);
+            
+            // 1. Aciona a vassoura para apagar fisicamente a sessão corrompida
+            const OpenClawService = require('../services/openclawService');
+            await OpenClawService.wipeAgentAmnesiaCache(task.agent || project?.agent || 'main');
+            
+            // 2. Muda o timestamp para forçar um ID de sessão novo no próximo turno
+            executionTimestamp = new Date().getTime(); 
+            
+            // 3. Define a bronca colossal que a IA vai ler assim que acordar da amnésia
+            lastFeedback = `[ALERTA CRÍTICO DO SISTEMA]\nSua memória foi resetada por medida de emergência. No turno anterior, você usou uma ferramenta para ler um arquivo binário, banco de dados (ex: .sqlite) ou arquivo compilado gigantesco.\n\nREGRA INQUEBRÁVEL: NUNCA tente ler arquivos de banco de dados diretamente. Se precisar analisar o banco, leia o schema.prisma.\n\nRetome a tarefa a partir de agora com o plano original.`;
+            
+            // 4. Continua o loop ignorando o restante da validação deste turno ruim
+            Object.assign(context, turnResult);
+            continue; 
+        }
+        // =========================================================
+
+        if (!turnResult.success) {
+          await this.log(`💥 [Desenvolvedor] Turno ${turnos} falhou: ${turnResult.turnResult?.error || turnResult.error}`);
           return {
             ...context,
             developerLoopResult: {
               success: false,
-              error: `Turno ${turnos} falhou: ${turnResult.turnResult.error}`,
+              error: `Turno ${turnos} falhou: ${turnResult.error}`,
               turnsExecuted: turnos
             },
             shouldAbort: true,
-            abortReason: `Falha no turno ${turnos}: ${turnResult.turnResult.error}`
+            abortReason: `Falha no turno ${turnos}: ${turnResult.error}`
           };
         }
         
@@ -272,7 +309,20 @@ class DeveloperLoopOrchestrator {
         }
         
         // 7. ANÁLISE DE PROGRESSO E PREPARAÇÃO DO PRÓXIMO TURNO
-        lastFeedback = turnResult.turnResult.feedbackForNextTurn;
+        
+        // Prioriza o feedback da verificação de contrato se ele não foi cumprido
+        if (!contractResult.contractFulfilled && contractResult.missingRequirements && contractResult.missingRequirements.length > 0) {
+          
+          const pendencias = Array.isArray(contractResult.missingRequirements) 
+            ? contractResult.missingRequirements.map(req => `- ${req}`).join('\n')
+            : contractResult.missingRequirements;
+            
+          lastFeedback = `[VERIFICAÇÃO DE CONTRATO] Você ainda não cumpriu todos os requisitos da tarefa. Falta resolver os seguintes pontos:\n${pendencias}\nPor favor, implemente os pontos faltantes para concluir a tarefa.`;
+          
+        } else {
+          // Caso contrário, usa o feedback padrão do turno (terminal, erros de JSON, etc.)
+          lastFeedback = turnResult.feedbackForNextTurn;
+        }
         
         // Calcula progresso
         const progress = this.evidenceService.computeTurnProgress(

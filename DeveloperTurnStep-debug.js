@@ -1,42 +1,18 @@
-// src/steps/DeveloperTurnStep.js
-/**
- * Step responsável por executar um turno individual do desenvolvedor.
- * Inclui geração de sessão, execução via OpenClaw e coleta básica de evidências.
- */
+// Versão DEBUG do DeveloperTurnStep que loga erros
 
-const container = require('../container');
+const container = require('./src/container');
 
-class DeveloperTurnStep {
-  /**
-   * Construtor que obtém dependências do container.
-   * Aceita instâncias opcionais para facilitar testes.
-   */
+class DeveloperTurnStepDebug {
   constructor(options = {}) {
     this.log = options.log || container.resolve('log');
     
-    // Usar instâncias fornecidas ou criar do container
     this.openClawService = options.openClawService || container.resolve('openClawService');
     this.evidenceService = options.evidenceService || container.resolve('evidenceService');
     this.fileSystem = options.fileSystem || container.resolve('fileSystem');
     this.path = options.path || container.resolve('path');
-
-    // ADICIONE ESTA LINHA:
     this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
   }
 
-  /**
-   * Executa um turno do desenvolvedor
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa
-   * @param {Object} context.project - Projeto (pode ser null)
-   * @param {Object} context.files - Arquivos preparados
-   * @param {Object} context.config - Configuração
-   * @param {number} context.turnNumber - Número do turno (1-indexed)
-   * @param {string} context.basePrompt - Prompt base (inclui contexto de dependências)
-   * @param {string} context.lastFeedback - Feedback do turno anterior (pode ser null)
-   * @param {string} context.backupAgent - Agente de fallback
-   * @returns {Promise<Object>} Contexto atualizado com resultado do turno
-   */
   async execute(context) {
     const { 
       task, 
@@ -47,7 +23,7 @@ class DeveloperTurnStep {
       basePrompt = '',
       lastFeedback = null,
       backupAgent = 'main',
-      executionTimestamp // Certifique-se que o Orchestrator passa isso
+      executionTimestamp
     } = context;
     
     const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
@@ -58,10 +34,11 @@ class DeveloperTurnStep {
     }
 
     try {
+      console.log('DEBUG: Início do execute');
       await this.log(`🤖 Turno ${turnNumber} para tarefa ${task.id}...`);
 
-      // 1. GERAÇÃO DA SESSÃO PERSISTENTE (Corrigido para usar o Loop ID)
-      const SessionChainUtils = require('../utils/sessionChainUtils');
+      // 1. GERAÇÃO DA SESSÃO PERSISTENTE
+      const SessionChainUtils = require('./utils/sessionChainUtils');
       const ts = executionTimestamp || new Date().getTime();
       const turnSessionId = SessionChainUtils.generateLoopSessionId(
         task.id, 
@@ -72,17 +49,17 @@ class DeveloperTurnStep {
       await this.log(`🔗 Sessão do loop: ${turnSessionId}`);
 
       // 2. MONTAGEM DO PROMPT
-      // Se não for o primeiro turno e estivermos na mesma sessão, 
-      // podemos mandar apenas o feedback para economizar contexto.
       let promptDesteTurno = (turnNumber === 1) ? basePrompt : ""; 
       if (lastFeedback) {
         promptDesteTurno += `\n\n=== RESULTADO DA SUA ÚLTIMA AÇÃO ===\n${lastFeedback}\n\nContinue a tarefa.`;
       }
 
+      console.log('DEBUG: Antes de writeFile');
       const developerPromptFile = this.path.join(TASKS_DIR, `developer-prompt-${task.id}-turn-${turnNumber}.txt`);
       await this.fileSystem.writeFile(developerPromptFile, promptDesteTurno).catch(() => {});
 
       // 3. EXECUÇÃO VIA OPENCLAW
+      console.log('DEBUG: Antes de executeWithFallback');
       const res = await this.openClawService.executeWithFallback(
         turnSessionId,
         promptDesteTurno,
@@ -95,13 +72,20 @@ class DeveloperTurnStep {
         TASK_TIMEOUT_MS
       );
       
+      console.log('DEBUG: Depois de executeWithFallback, res:', res);
+      
       // 4. EVIDÊNCIAS
+      console.log('DEBUG: Antes de createEmptyEvidence');
       const evidence = this.evidenceService.createEmptyEvidence();
+      console.log('DEBUG: evidence criada:', evidence);
+      
+      console.log('DEBUG: Antes de applyExecutionEvidence');
       this.evidenceService.applyExecutionEvidence(evidence, res.toolCall || {}, res.toolResult || {}, { 
         executionDirectory: project?.pastaBase || TASKS_DIR 
       });
       
       // 5. VERIFICAÇÃO DE .DONE (Rogue File)
+      console.log('DEBUG: Antes de verificação .done');
       let doneExists = false;
       let actualDonePath = files.doneFile;
       const findDynamicDone = async (dir) => {
@@ -117,38 +101,32 @@ class DeveloperTurnStep {
         doneExists = true;
         actualDonePath = rogueDoneFile;
       }
+
+      // 6. ANÁLISE DO RESULTADO
+      console.log('DEBUG: Antes de analyzeArchitectResponse');
+      const analysis = await this.taskAnalysisService.analyzeArchitectResponse(
+        res.rawOutput || '', 
+        task, 
+        project,
+        { doneExists, actualDonePath }
+      );
       
-      // 6. DETECTA TRUNCAMENTO
-      const raw = res.rawOutput || '';
-      let truncatedInfo = { detected: (raw.includes('{') && !raw.includes('}')) };
-      
-      // 7. PREPARA FEEDBACK E ANÁLISE INTELIGENTE DO TURNO
+      console.log('DEBUG: analysis:', analysis);
+
+      // 7. FEEDBACK PARA O PRÓXIMO TURNO
       let feedbackForNextTurn = null;
       let hasMeaningfulProgress = true;
 
-      // Chama a inteligência para avaliar o turno
-      const analysis = await this.taskAnalysisService.analyzeDeveloperTurn({
-        rawOutput: res.rawOutput,
-        task: task,
-        evidence: evidence,
-        doneExists: doneExists
-      });
-
-      // Hierarquia de Feedbacks (quem grita mais alto)
-      
-      // 1. Erro Crítico de Sintaxe (Truncamento)
-      if (truncatedInfo && truncatedInfo.detected) {
-          feedbackForNextTurn = `[ERRO DE SINTAXE] Seu bloco JSON foi cortado. Por favor, reenvie a ferramenta completa.`;
+      // 1. Jarbas criou um .done (ou encontrou um existente)
+      if (doneExists) {
+          feedbackForNextTurn = `[SISTEMA] Arquivo .done encontrado em ${actualDonePath}. A tarefa está concluída.`;
+          hasMeaningfulProgress = true;
+      }
+      // 2. Jarbas não fez nada útil
+      else if (analysis.isMeaningless) {
+          feedbackForNextTurn = `[SISTEMA] Sua resposta não contém ações concretas. Por favor, execute ferramentas JSON para modificar o código.`;
           hasMeaningfulProgress = false;
       }
-      // 2. Jarbas cantou vitória antes da hora
-      else if (analysis.isDeclaringDone && !analysis.hasFulfilledContract) {
-          feedbackForNextTurn = `[SISTEMA] Você indicou que terminou, mas minha análise detectou pendências:
-${analysis.missingRequirements.map(req => `- ${req}`).join('\n')}
-
-Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferramenta 'exec' com 'touch .done'.`;
-          hasMeaningfulProgress = false;
-      } 
       // 3. Jarbas só pensou, não agiu
       else if (analysis.isTalkingWithoutAction) {
           feedbackForNextTurn = `[SISTEMA] Você explicou um plano, mas não executou nenhuma ferramenta JSON. Por favor, aplique as mudanças agora.`;
@@ -159,6 +137,7 @@ Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferra
           feedbackForNextTurn = res.toolFeedback;
       }
 
+      console.log('DEBUG: Retornando resultado final');
       return {
         ...context,
         turnResult: {
@@ -180,31 +159,12 @@ Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferra
       };
       
     } catch (stepError) {
-      await this.log(`💥 Erro no DeveloperTurnStep para tarefa ${task?.id || 'unknown'}: ${stepError.message}`);
-      return {
-        ...context,
-        turnResult: {
-          success: false,
-          error: stepError.message,
-          turnNumber: turnNumber || 1,
-          sessionId: 'error-session'
-        }
-      };
+      console.error('DEBUG: ERRO NO CATCH:', stepError.message);
+      console.error('DEBUG: STACK:', stepError.stack);
+      // ... erro handling
+      throw stepError; // Re-lançar para ver o erro
     }
-  }
-
-  /**
-   * Método estático de conveniência para uso direto
-   * @param {Object} context - Contexto completo
-   * @returns {Promise<Object>} Resultado do turno
-   */
-  static async executeTurn(context) {
-    const step = new DeveloperTurnStep();
-    const result = await step.execute(context);
-    return result.turnResult;
   }
 }
 
-module.exports = DeveloperTurnStep;
-
-
+module.exports = DeveloperTurnStepDebug;

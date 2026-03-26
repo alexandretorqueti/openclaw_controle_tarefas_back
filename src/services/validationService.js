@@ -85,7 +85,7 @@ class ValidationService {
       // Verificar cache (opcional)
       const cacheKey = `${task.id}_${project.id}`;
       const cached = this.cache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < 3600000) { // 1 hora de cache
+      if (cached && Date.now() - cached.timestamp < 600000) { 
         this.logger.logInfo(`Usando cache para validação da tarefa ${task.id}`);
         return cached.result;
       }

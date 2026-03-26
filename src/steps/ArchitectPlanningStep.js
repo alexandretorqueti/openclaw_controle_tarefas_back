@@ -71,7 +71,7 @@ class ArchitectPlanningStep {
       const architectInput = currentInput; 
       
       await this.log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
-      const SessionChainUtils = require('../utils/sessionChainUtils');
+      
       // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
       const architectSessionId = await this.sessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
       
@@ -93,7 +93,9 @@ class ArchitectPlanningStep {
       let architectPlan = "";
       let architectAnalysis = null;
       
-      // Busca inteligente pelo plano do arquiteto
+      // =====================================================================
+      // PASSO 1: Busca inteligente pelo plano do arquiteto
+      // =====================================================================
       const planSearch = await this.smartFileFinder.findRealArchitectPlan(
         files.architectPlanFile, 
         config.TASKS_DIR, 
@@ -110,14 +112,30 @@ class ArchitectPlanningStep {
         // Força a gravação no arquivo correto
         await this.fileSystem.writeFile(files.architectPlanFile, architectPlan).catch(() => {});
       }
-
-      // Verificar se temos um plano do arquiteto
+      
+      // =====================================================================
+      // PASSO 2: Analisar o plano encontrado
+      // =====================================================================
       if (architectPlan && architectPlan.trim().length > 0) {
-        // 1. ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
         await this.log(`🧠 [Arquiteto] Analisando resposta com IA...`);
         const existsDoneFile = await this.fileUtils.fileExists(files.doneFile);
         
-        architectAnalysis = await this.taskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
+        // 🕵️ DETETIVE DE ARQUIVOS: Verifica se houve "mão na massa" antes de perguntar à IA
+        const currentSnapshot = await this.workspaceSnapshotService.takeSnapshot(project?.pastaBase || config.TASKS_DIR);
+        const changes = this.workspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
+        const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+        
+        if (hasRealChanges) {
+            await this.log(`👀 [Arquiteto] DETECTADO: O Arquiteto alterou ${changes.modified.length} e criou ${changes.created.length} arquivos reais. Avisando o avaliador...`);
+        }
+
+        // Agora passamos essas evidências reais como o quarto parâmetro para a IA avaliadora
+        architectAnalysis = await this.taskAnalysisService.analyzeArchitectResponse(
+            architectPlan, 
+            task, 
+            project,
+            { hasRealChanges, existsDoneFile, changes } // <-- Passando as provas!
+        );
         
         await this.log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
         
@@ -127,18 +145,10 @@ class ArchitectPlanningStep {
         if ((architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) || existsDoneFile) {
           await this.log(`🔍 [Validação] IA diz que arquiteto executou. Verificando evidências...`);
           
-          // Verificar se há evidências reais de execução
-          const currentSnapshot = await this.workspaceSnapshotService.takeSnapshot(
-            project?.pastaBase || config.TASKS_DIR
-          );
-          
-          const changes = this.workspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
-          const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
-          const architectDoneExists = await this.fileUtils.fileExists(files.doneFile);
           const architectReportExists = await this.fileUtils.fileExists(files.relatorioFile);
           
           // Para tarefas de análise, evidência pode ser apenas relatório/.done (não precisa de alterações)
-          const hasEvidence = architectDoneExists || architectReportExists || 
+          const hasEvidence = existsDoneFile || architectReportExists || 
                              (analysisPlan.taskType === 'analysis' ? true : (hasRealChanges || hadExecuted));
           
           if (!hasEvidence) {
@@ -164,20 +174,14 @@ class ArchitectPlanningStep {
         
         if (architectAnalysis.hasExecuted) {
           await this.log(`✅ [Arquiteto] Análise indica que já executou a tarefa (${architectAnalysis.confidence}% confiança).`);
-          if (architectAnalysis.executionDetails) {
-            await this.log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.executionDetails.substring(0, 100)}...`);
-          }
         } else if (architectAnalysis.hasPlan) {
           await this.log(`📋 [Arquiteto] Análise indica que gerou plano de ação (${architectAnalysis.confidence}% confiança).`);
-          if (architectAnalysis.planDetails) {
-            await this.log(`📝 [Arquiteto] Detalhes: ${architectAnalysis.planDetails.substring(0, 100)}...`);
-          }
         } else if (architectAnalysis.analysisFailed) {
           await this.log(`⚠️ [Arquiteto] Análise falhou ou resposta incompreensível.`);
-        } else {
-          await this.log(`ℹ️ [Arquiteto] Análise não identificou execução nem plano claro.`);
         }
+        
       } else {
+        // Se o plano chegou vazio ou não foi encontrado em lugar nenhum
         architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
         architectAnalysis = {
           hasExecuted: false,
@@ -190,9 +194,12 @@ class ArchitectPlanningStep {
         await this.log(`⚠️ [Arquiteto] Resposta vazia ou inválida. Usando descrição original.`);
       }
 
-      // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
+      // =====================================================================
+      // 3. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
+      // =====================================================================
       let updatedPromptContent;
       
+      // AGORA É SEGURO ACESSAR architectAnalysis
       if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
         updatedPromptContent = `=== EXECUÇÃO CONCLUÍDA PELO ARQUITETO ===\n${architectPlan}\n\nVerifique se as alterações descritas acima foram realmente implementadas.`;
         await this.log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto.`);
@@ -200,11 +207,9 @@ class ArchitectPlanningStep {
         updatedPromptContent = `=== PLANO DE AÇÃO DO ARQUITETO ===\n${architectPlan}\n\n${developerPrompt}`;
         await this.log(`🔄 [Arquiteto] Fluxo: Substituindo prompt pelo plano + instruções do desenvolvedor.`);
       } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
-        // AQUI ESTÁ A PROTEÇÃO MÁXIMA: Passa só o developerPrompt, NUNCA o currentInput!
         updatedPromptContent = developerPrompt;
         await this.log(`🔄 [Arquiteto] Fluxo: Mantendo APENAS instruções do desenvolvedor (análise falhou).`);
       } else {
-        // Resposta ambígua
         updatedPromptContent = `=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\n${developerPrompt}\n\nAnalise a resposta acima e execute a tarefa.`;
         await this.log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência.`);
       }

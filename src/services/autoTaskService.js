@@ -1,6 +1,8 @@
 const prisma = require('./prismaService');
 const logger = require('../utils/logger');
 const ProcessKiller = require('../utils/processKiller');
+const { writeFileSync, existsSync, mkdirSync, readFileSync } = require('fs');
+const { join } = require('path');
 
 class AutoTaskService {
   // Buscar projeto pelo ID da variável de ambiente
@@ -205,7 +207,7 @@ class AutoTaskService {
       const project = await this.getMonitorProject();
       if (!project) {
         console.error('Não foi possível encontrar o projeto monitor');
-        return null;
+        return { success: false, reason: 'projeto_nao_encontrado', task: null };
       }
       
       // 2. Gerar assinatura do erro
@@ -214,38 +216,47 @@ class AutoTaskService {
       // 3. Verificar se já existe tarefa para este erro
       const existingTask = await this.findExistingErrorTask(project.id, errorSignature);
       if (existingTask) {
-        console.log(`Tarefa já existe para este erro: ${existingTask.id}`);
-        return existingTask;
+        console.log(`⚠️  Tarefa JA existe para este erro: ${existingTask.id}`);
+        // Registrar duplicata na memória
+        this.logDuplicateTask(existingTask.id, error, req, res);
+        // Matrar o processo SEM criar nova tarefa
+        ProcessKiller.killAfterDelay(3000);
+        return { 
+          success: false, 
+          reason: 'duplicate_detected',
+          existingTaskId: existingTask.id,
+          task: null 
+        };
       }
       
       // 4. Buscar status "visível para IA"
       const status = await this.getFirstVisibleStatus();
       if (!status) {
         console.error('Não foi possível encontrar status para a tarefa');
-        return null;
+        return { success: false, reason: 'status_nao_encontrado', task: null };
       }
       
       // 5. Buscar prioridade padrão
       const priorityId = await this.getDefaultPriorityId();
       if (!priorityId) {
         console.error('Não foi possível encontrar prioridade para a tarefa');
-        return null;
+        return { success: false, reason: 'prioridade_nao_encontrada', task: null };
       }
       
       // 6. Buscar usuário sistema
       const createdById = await this.getSystemUserId();
       if (!createdById) {
         console.error('Não foi possível encontrar usuário para a tarefa');
-        return null;
+        return { success: false, reason: 'usuario_nao_encontrado', task: null };
       }
       
       // 7. Gerar descrição detalhada
       const description = this.generateErrorDescription(error, req, res);
       
-      // 8. Criar nova tarefa
+      // 8. Criar NOVA tarefa com título indicando duplicidade automática detectada
       const newTask = await prisma.task.create({
         data: {
-          title: 'Bug automático detectado',
+          title: 'Bug automático detectado (auto-detected duplicate)',
           description: description,
           projectId: project.id,
           statusId: status.id,
@@ -257,21 +268,62 @@ class AutoTaskService {
         }
       });
       
-      console.log(`Tarefa automática criada: ${newTask.id}`);
+      console.log(`✅ Nova tarefa automática criada: ${newTask.id} (duplicidade detectada automaticamente)`);
       
-      // Matar o processo após criar a tarefa
+      // Matar o processo APÓS criar a tarefa de duplicidade
       ProcessKiller.killAfterTaskCreation(newTask, 3000);
       
-      return newTask;
+      return { success: true, task: newTask, wasDuplicate: true };
       
     } catch (error) {
-      console.error(`Erro ao criar tarefa automática: ${error.message}`);
+      console.error(`❌ Erro ao criar tarefa automática: ${error.message}`);
       
       // Matar o processo mesmo se falhar
       ProcessKiller.killAfterDelay(3000);
       
-      return null;
+      return { success: false, reason: 'creation_error', error: error.message, task: null };
     }
+  }
+  
+  // Registrar duplicata em arquivo de memória
+  async logDuplicateTask(taskId, error, req, res) {
+    const { writeFileSync, existsSync, mkdirSync } = require('fs');
+    const { join } = require('path');
+    
+    const memoryDir = join(__dirname, '../../..', 'memory');
+    const duplicatesFile = join(memoryDir, 'error-duplicates.json');
+    
+    // Criar directory se não existir
+    if (!existsSync(memoryDir)) {
+      mkdirSync(memoryDir, { recursive: true });
+    }
+    
+    // Ler ou criar arquivo
+    let duplicates = [];
+    if (existsSync(duplicatesFile)) {
+      try {
+        duplicates = JSON.parse(readFileSync(duplicatesFile, 'utf8'));
+      } catch (e) {
+        duplicates = [];
+      }
+    }
+    
+    // Adicionar nova entrada
+    duplicates.push({
+      taskId: taskId,
+      timestamp: new Date().toISOString(),
+      errorSignature: this.generateErrorSignature(error, req),
+      endpoint: req ? `${req.method} ${req.originalUrl}` : 'Unknown endpoint'
+    });
+    
+    // Limitar a 100 entradas mais recentes
+    if (duplicates.length > 100) {
+      duplicates = duplicates.slice(-100);
+    }
+    
+    // Salvar
+    writeFileSync(duplicatesFile, JSON.stringify(duplicates, null, 2));
+    console.log(`📝 Duplicidade registrada em memory/error-duplicates.json: ${taskId}`);
   }
 }
 

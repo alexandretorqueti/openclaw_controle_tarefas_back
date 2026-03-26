@@ -205,7 +205,24 @@ Use a ferramenta 'exec' para rodar o comando de finalização.
 `.trim();
   }
 
-  static buildArchitectAnalysisPrompt(architectResponse, task, project) {
+static buildArchitectAnalysisPrompt(architectResponse, task, project, evidences = {}) {
+    // Monta o contexto de evidências físicas (O Determinismo do Sistema Operacional)
+    let contextHint = "";
+    if (evidences.hasRealChanges || evidences.existsDoneFile) {
+      const modCount = evidences.changes?.modified?.length || 0;
+      const creCount = evidences.changes?.created?.length || 0;
+      contextHint = `
+      [🚨 ALERTA CRÍTICO DE SISTEMA - LEIA COM ATENÇÃO]
+      O monitoramento físico do sistema de arquivos PROVA INCONTESTAVELMENTE que o Arquiteto ALTEROU CÓDIGO FONTE nesta rodada (modificou ${modCount} arquivos e criou ${creCount} arquivos)${evidences.existsDoneFile ? ' e gerou o arquivo .done' : ''}.
+      Isso significa que é ALTAMENTE PROVÁVEL que ele não tenha apenas planejado, mas sim EXECUTADO a tarefa.
+      Analise o texto dele com um FORTE VIÉS DE EXECUÇÃO CONCLUÍDA. Procure no texto a confirmação do que ele fez.
+      Mesmo que ele use verbos no imperativo para explicar a solução, a prova física indica que ELE JÁ APLICOU as mudanças.`;
+    } else {
+      contextHint = `
+      [INFO DO SISTEMA] 
+      Não houve alterações reais nos arquivos de código. É altamente provável que ele tenha apenas gerado um plano de ação (instruções) para o Desenvolvedor seguir.`;
+    }
+
     const prompt = `
       Você é um analista de respostas de arquitetos de software.
       Analise a resposta abaixo de um arquiteto e determine:
@@ -215,6 +232,8 @@ Use a ferramenta 'exec' para rodar o comando de finalização.
       3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
       4. O arquiteto AFIRMA QUE A TAREFA JÁ FOI EXECUTADA ANTERIORMENTE? (resposta com "hadExecuted": true)
 
+      ${contextHint}
+
       CONTEXTO:
       - Tarefa: ${task.title}
       - Descrição: ${task.description}
@@ -223,12 +242,8 @@ Use a ferramenta 'exec' para rodar o comando de finalização.
       RESPOSTA DO ARQUITETO:
       ${architectResponse}
 
-      Analise PALAVRA POR PALAVRA. Procure por TEMPO VERBAL:
-      - PASSADO = execução
-      - IMPERATIVO/FUTURO = plano
+      Analise PALAVRA POR PALAVRA.
       
-      Se houver DÚVIDA, considere como PLANO (hasPlan: true, hasExecuted: false).
-
       Responda EXCLUSIVAMENTE em JSON:
       {
         "hasExecuted": true/false,
@@ -237,27 +252,24 @@ Use a ferramenta 'exec' para rodar o comando de finalização.
         "executionDetails": "Descrição do que foi executado, se aplicável",
         "planDetails": "Descrição do plano gerado, se aplicável",
         "analysisFailed": true/false,
-        "hadExecuted": true/false // A tarefa já estava pronta?
+        "hadExecuted": true/false
       }
 
       CRITÉRIOS CLAROS E EXCLUSIVOS:
-      1. "hasExecuted": true APENAS SE o arquiteto DESCREVE TER FEITO alterações reais.
-         - Palavras-chave de EXECUÇÃO (PASSADO): "modifiquei", "alterei", "implementei", "adicionei", "removi", "testei e funcionou", "arquivo atualizado", "código executado", "fiz", "concluí", "finalizei"
-         - Evidência de AÇÃO CONCLUÍDA, não de intenção.
-         - EXEMPLO DE EXECUÇÃO: "Já alterei o arquivo X e adicionei o código Y"
+      1. "hasExecuted": true SE o arquiteto descreve a solução E o ALERTA DE SISTEMA confirma que arquivos mudaram.
+         - Palavras-chave do texto: "modifiquei", "alterei", "implementei", "resolvido", "código atualizado", "feito".
          
-      2. "hasPlan": true SE o arquiteto descreve passos FUTUROS, instruções, ou plano de ação.
-         - Palavras-chave de PLANO (FUTURO/IMPERATIVO): "deve", "precisa", "siga", "passo a passo", "modifique", "adicione", "localize", "teste", "faça", "execute", "crie"
-         - Descreve O QUE FAZER, não O QUE FOI FEITO.
-         - EXEMPLO DE PLANO: "Você deve modificar o arquivo X e adicionar o código Y"
+      2. "hasPlan": true SE o arquiteto descreve passos FUTUROS e o ALERTA DE SISTEMA diz que não houve alterações.
+         - Palavras-chave do texto: "deve", "precisa", "siga", "passo a passo", "modifique", "o desenvolvedor deve".
          
       3. "analysisFailed": true SE a resposta for vazia, incompreensível, ou não relacionada.
 
       REGRA DE OURO CRÍTICA: 
-      - Se o arquiteto usa verbos no IMPERATIVO ou FUTURO ("faça", "modifique", "adicione") → É PLANO (hasPlan: true)
-      - Se o arquiteto usa verbos no PASSADO ("fiz", "modifiquei", "alterei") → É EXECUÇÃO (hasExecuted: true)
-      - Plano detalhado NÃO é execução! Um plano com 100 passos ainda é apenas um plano.
+      - A EVIDÊNCIA FÍSICA (Alerta de Sistema) tem PESO MÁXIMO. 
+      - Se o sistema diz que arquivos foram alterados, incline sua análise para "hasExecuted": true e confira se o texto bate com a ação.
+      - Se o sistema diz que NÃO houve alterações, incline para "hasPlan": true (pois ele apenas falou, mas não agiu).
     `.trim();
+    
     return prompt;
   }
 

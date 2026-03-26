@@ -33,10 +33,10 @@ router.post('/frontend-errors', async (
   res: Response
 ): Promise<void> => {
   try {
-    const { message, stack, url, userAgent, type, line, col } = req.body;
+    const { message, stack, url, userAgent, type, line, col, ...meta } = req.body;
 
     // Criamos o erro e fazemos um cast para a nossa interface customizada
-    const frontError = new Error(`[FRONTEND] ${message}`) as FrontendAnnotatedError;
+    const frontError = new FrontendError(message, meta);
     frontError.stack = stack || 'Stack não disponível';
     
     frontError.frontEndMeta = { url, userAgent, type, line, col };
@@ -46,11 +46,20 @@ router.post('/frontend-errors', async (
 
     // Cria a tarefa de forma assíncrona
     autoTaskService.createAutoTask(frontError, req, res)
-      .then(task => {
-        if (task) console.log(`Tarefa do front criada: ${task.id}`);
+      .then(result => {
+        if (result?.success) {
+          // Nova tarefa criada (duplicidade detectada automaticamente)
+          console.log(`✅ Tarefa do front criada: ${result.task.id} (repetição detectada)`);
+        } else if (result?.reason === 'duplicate_detected') {
+          // Duplicidade detectada - processo continuará rodando
+          console.log(`⚠️  Tarefa já existe para este erro: ${result.existingTaskId}. Processo continuará rodando.`);
+        } else {
+          // Falha na criação
+          console.log(`❌ Falha na criação de tarefa: ${result?.reason || 'erro desconhecido'}`);
+        }
       })
       .catch((err: Error) => {
-        console.error('Erro ao criar tarefa do front:', err.message);
+        console.error('Erro fatal ao criar tarefa do front:', err.message);
       });
 
   } catch (error) {
@@ -58,5 +67,14 @@ router.post('/frontend-errors', async (
     res.status(500).json({ error: 'Erro interno ao registrar erro do front' });
   }
 });
+
+class FrontendError extends Error implements FrontendAnnotatedError {
+  frontEndMeta: FrontendAnnotatedError['frontEndMeta'];
+  
+  constructor(message: string, meta: FrontendAnnotatedError['frontEndMeta']) {
+    super(`[FRONTEND] ${message}`);
+    this.frontEndMeta = meta;
+  }
+}
 
 export default router;

@@ -225,16 +225,12 @@ class TaskExecutionService {
   /**
    * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
    */
- /**
-   * Passo 2: O Arquiteto analisa e, se possível, executa a tarefa.
-   */
   static async stepArchitectPlanning(ctx) {
     const { task, project, files, initialSnapshot, config, analysisPlan } = ctx;
     
     // Log do tipo de tarefa
     await log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
     
-    // CORREÇÃO 1: Evita gerar o prompt duas vezes. 
     // Usa diretamente o currentInput que foi gerado com a lista de arquivos no stepSetupContext.
     const architectInput = ctx.currentInput; 
     await log(`🧠 [Arquiteto] Avaliando a tarefa ${task.id} e montando o plano de ação...`);
@@ -244,15 +240,24 @@ class TaskExecutionService {
     
     // Gera um ID de sessão unificado baseado na primeira tarefa da cadeia de dependências
     const architectSessionId = await SessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
-    
-    await log(`🔗 Sessão do arquiteto: ${architectSessionId} (baseada na cadeia de dependências)`);
+    await log(`🔗 Sessão do arquiteto: ${architectSessionId}`);
    
+    // =========================================================
+    // 🧹 HIGIENE DE SESSÃO: Limpa a memória antes de planejar
+    // =========================================================
+    const primaryAgent = project?.agent || task.agent || 'main';
+    const fallbackAgent = task.agent || 'main';
+    await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
+    if (primaryAgent !== fallbackAgent) {
+        await OpenClawService.wipeAgentAmnesiaCache(fallbackAgent);
+    }
+
     // Roda o Arquiteto com timeout
     const architectResult = await OpenClawService.executeWithFallback(
       architectSessionId, 
       architectInput,
-      project?.agent || task.agent || 'main',
-      task.agent || 'main',
+      primaryAgent,
+      fallbackAgent,
       null,
       config.TASKS_DIR,
       files.architectLogFile,
@@ -263,7 +268,7 @@ class TaskExecutionService {
     let architectPlan = "";
     let architectAnalysis = null;
     
-    // === A NOVA INTELIGÊNCIA DE BUSCA ENTRA AQUI ===
+    // === BUSCA DO PLANO DO ARQUITETO ===
     const planSearch = await SmartFileFinder.findRealArchitectPlan(files.architectPlanFile, config.TASKS_DIR, 5);
     
     if (planSearch.content) {
@@ -275,26 +280,66 @@ class TaskExecutionService {
       await fs.writeFile(files.architectPlanFile, architectPlan).catch(()=>{});
     }
 
-    if (architectPlan && architectPlan.trim().length > 0) {
-      // ANÁLISE INTELIGENTE DA RESPOSTA DO ARQUITETO
-      await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
-      const existsDoneFile = await fileExists(files.doneFile);
+    // =====================================================================
+    // 🛡️ CINTO DE SEGURANÇA DO ANALISTA: DETECÇÃO DE LIXO / BINÁRIO
+    // =====================================================================
+    const architectError = architectResult.errorMessage || '';
+    const isPoisoned = /\x00/.test(architectPlan) || 
+                       (architectPlan.match(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g)?.length > 20) || 
+                       architectError.includes('LIXO BINÁRIO') ||
+                       architectPlan.includes('SQLite format');
+
+    if (isPoisoned) {
+      await log(`🚨 [PÂNICO] O Analista/Arquiteto enlouqueceu ao ler um arquivo binário ou banco de dados. Isolando a contaminação!`);
       
-      architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(architectPlan, task, project);
+      // Limpamos a sessão dele para que não afete tarefas futuras
+      await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
+      
+      architectPlan = ""; 
+      architectAnalysis = {
+        hasExecuted: false,
+        hasPlan: false,
+        confidence: 0,
+        executionDetails: null,
+        planDetails: "PLANO DESCARTADO: O Arquiteto tentou ler um arquivo binário e o seu contexto foi corrompido.",
+        analysisFailed: true
+      };
+      
+    } else if (architectPlan && architectPlan.trim().length > 0) {
+      
+      // =====================================================================
+      // 🕵️ DETETIVE DE ARQUIVOS
+      // Tiramos o snapshot ANTES de chamar o analista para passar as provas para ele
+      // =====================================================================
+      const existsDoneFile = await fileExists(files.doneFile);
+      const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
+      const changes = WorkspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
+      const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+      
+      if (hasRealChanges || existsDoneFile) {
+          await log(`👀 [Arquiteto] DETECTADO: O Arquiteto alterou ${changes.modified.length} e criou ${changes.created.length} arquivos reais. Avisando a IA Avaliadora...`);
+      }
+
+      await log(`🧠 [Arquiteto] Analisando resposta com IA...`);
+      
+      // Passamos as evidências físicas como 4º parâmetro (evidences)
+      architectAnalysis = await TaskAnalysisService.analyzeArchitectResponse(
+        architectPlan, 
+        task, 
+        project,
+        { hasRealChanges, existsDoneFile, changes } 
+      );
+      
       await log(`📊 [Arquiteto] Análise inicial: hasExecuted=${architectAnalysis.hasExecuted}, hasPlan=${architectAnalysis.hasPlan}, confidence=${architectAnalysis.confidence}%`);
       const hadExecuted = architectAnalysis.hadExecuted;
       
-      // VALIDAÇÃO CRÍTICA
+      // VALIDAÇÃO CRÍTICA (Verifica se a afirmação da IA bate com a realidade física)
       if ((architectAnalysis.hasExecuted && architectAnalysis.confidence > 70) || existsDoneFile) {
         await log(`🔍 [Validação] IA diz que arquiteto executou. Verificando evidências...`);
         
-        const currentSnapshot = await WorkspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
-        const changes = WorkspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
-        const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
-        const architectDoneExists = await fileExists(files.doneFile);
         const architectReportExists = await fileExists(files.relatorioFile);
         
-        const hasEvidence = architectDoneExists || architectReportExists || 
+        const hasEvidence = existsDoneFile || architectReportExists || 
                            (analysisPlan.taskType === 'analysis' ? true : (hasRealChanges || hadExecuted));
         
         if (!hasEvidence) {
@@ -317,7 +362,6 @@ class TaskExecutionService {
         }
       }
       
-      // Logs de output...
     } else {
       architectPlan = "O arquiteto não conseguiu gerar um plano detalhado. Siga a descrição original da tarefa.";
       architectAnalysis = {
@@ -331,7 +375,9 @@ class TaskExecutionService {
       await log(`⚠️ [Arquiteto] Resposta vazia ou inválida. Usando descrição original.`);
     }
 
-    // 2. DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE (CORRIGIDO CONTRA VAZAMENTO)
+    // =====================================================================
+    // DECIDIR FLUXO COM BASE NA ANÁLISE INTELIGENTE
+    // =====================================================================
     let updatedPromptContent;
     
     if (architectAnalysis.hasExecuted && architectAnalysis.confidence > 70 && architectPlan.trim()) {
@@ -340,17 +386,17 @@ class TaskExecutionService {
       await log(`🔄 [Arquiteto] Fluxo: Usando execução do arquiteto (alta confiança + evidências validadas).`);
       
     } else if (architectAnalysis.hasPlan && architectPlan.trim()) {
-      // Arquiteto gerou plano. Substitui pelo plano + developerPrompt (sem a lista de arquivos)
+      // Arquiteto gerou plano. Substitui pelo plano + developerPrompt
       updatedPromptContent = `=== PLANO DE AÇÃO DO ARQUITETO ===\n${architectPlan}\n\n${ctx.developerPrompt}`;
       await log(`🔄 [Arquiteto] Fluxo: Substituindo prompt pelo plano + instruções do desenvolvedor.`);
       
     } else if (architectAnalysis.analysisFailed || !architectPlan.trim()) {
-      // CORREÇÃO 2: Arquiteto falhou. Mandamos APENAS as instruções do programador (sem a lista de arquivos).
+      // Arquiteto falhou. Mandamos APENAS as instruções do programador.
       updatedPromptContent = ctx.developerPrompt;
       await log(`🔄 [Arquiteto] Fluxo: Mantendo apenas instruções do desenvolvedor (análise do arquiteto falhou).`);
       
     } else {
-      // CORREÇÃO 3: Resposta ambígua. Mandamos a análise confusa do arquiteto + instruções do programador.
+      // Resposta ambígua. Mandamos a análise confusa do arquiteto + instruções do programador.
       updatedPromptContent = `=== ANÁLISE DO ARQUITETO ===\n${architectPlan}\n\n${ctx.developerPrompt}\n\nAnalise a resposta acima e execute a tarefa.`;
       await log(`🔄 [Arquiteto] Fluxo: Resposta ambígua, incluindo análise como referência para o desenvolvedor.`);
     }
@@ -364,7 +410,6 @@ class TaskExecutionService {
       architectPlan
     };
   }
-
   /**
    * Verifica se o arquiteto já executou a tarefa e se está tudo correto
    * @returns {Object|null} Retorna finalResult se arquiteto concluiu, ou null se precisa do desenvolvedor
@@ -944,3 +989,5 @@ class TaskExecutionService {
 }
 
 module.exports = TaskExecutionService;
+
+

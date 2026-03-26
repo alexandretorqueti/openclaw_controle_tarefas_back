@@ -109,7 +109,7 @@ class TaskAnalysisService {
    * @param {Object} project - Projeto
    * @returns {Promise<Object>} Análise estruturada
    */
-  static async analyzeArchitectResponse(architectResponse, task, project) {
+  static async analyzeArchitectResponse(architectResponse, task, project, evidences = {}) {
     if (!architectResponse || architectResponse.trim() === '') {
       return {
         hasExecuted: false,
@@ -121,7 +121,7 @@ class TaskAnalysisService {
       };
     }
 
-    const prompt = promptFactory.buildArchitectAnalysisPrompt(architectResponse, task, project);
+    const prompt = promptFactory.buildArchitectAnalysisPrompt(architectResponse, task, project, evidences);
 
     try {
       let analysis = await llmService.analyze(prompt);
@@ -189,6 +189,91 @@ class TaskAnalysisService {
       planDetails: hasPlan ? "Detectado por padrões de texto (fallback)" : null,
       analysisFailed
     };
+  }
+
+
+  /**
+   * Analisa a resposta do desenvolvedor (Jarbas) para entender suas intenções
+   * e verificar o cumprimento do protocolo (ex: arquivo .done e relatório).
+   */
+  static async analyzeDeveloperTurn({ rawOutput, task, evidence, doneExists }) {
+    // 1. Proteção contra retornos vazios
+    if (!rawOutput || rawOutput.trim() === '') {
+      return {
+        isDeclaringDone: false,
+        hasFulfilledContract: false,
+        missingRequirements: [],
+        isTalkingWithoutAction: false
+      };
+    }
+
+    // 2. Construção do Prompt de Auditoria
+    // Dica: limitamos o tamanho do rawOutput para economizar tokens e tempo
+    const prompt = `
+    Você é um sistema de auditoria avaliando a resposta de um Agente de IA de programação.
+    
+    === DADOS DA TAREFA ===
+    Título: ${task?.title || 'Tarefa Desconhecida'}
+    
+    === CONTEXTO DO SISTEMA ===
+    Arquivo .done existe no disco? ${doneExists ? 'SIM' : 'NÃO'}
+    
+    === RESPOSTA DO AGENTE ===
+    ${rawOutput.substring(0, 2500)}
+    
+    === SUA TAREFA ===
+    Analise a resposta do agente e retorne EXATAMENTE UM JSON com os seguintes campos:
+    {
+      "isDeclaringDone": booleano, // true se o agente afirmou explicitamente que terminou a tarefa (ex: "concluído", "terminei", "pronto").
+      "isTalkingWithoutAction": booleano, // true se o agente APENAS conversou/planejou e NÃO utilizou nenhum bloco JSON de ferramenta.
+      "hasFulfilledContract": booleano, // true APENAS SE isDeclaringDone for true E o "Arquivo .done existe no disco?" for SIM.
+      "missingRequirements": [] // Array de strings. Se isDeclaringDone for true mas o contrato não foi cumprido, liste o que falta (Ex: "Falta criar o arquivo .done usando a ferramenta exec").
+    }
+    
+    Responda APENAS com o JSON válido. Não inclua blocos de código markdown (\`\`\`json).
+    `;
+
+    try {
+      // Chama o seu serviço de LLM (ajuste 'llmService' para o nome exato que você usa na sua classe)
+      let analysis = await llmService.analyze(prompt);
+      
+      if (!analysis) {
+        throw new Error("LLM retornou vazio");
+      }
+
+      // Tratamento de parse (se o LLM for teimoso e mandar markdown)
+      if (typeof analysis === 'string') {
+        let cleanJson = analysis.replace(/```json/gi, '').replace(/```/g, '').trim();
+        analysis = JSON.parse(cleanJson);
+      }
+
+      // Garante que a estrutura de retorno seja sólida
+      return {
+        isDeclaringDone: !!analysis.isDeclaringDone,
+        hasFulfilledContract: !!analysis.hasFulfilledContract,
+        missingRequirements: Array.isArray(analysis.missingRequirements) ? analysis.missingRequirements : [],
+        isTalkingWithoutAction: !!analysis.isTalkingWithoutAction
+      };
+
+    } catch (error) {
+      console.warn("⚠️ Falha ao analisar turno do desenvolvedor via LLM, ativando fallback de segurança:", error.message);
+      
+      // FALLBACK (O velho e bom if/else salva a pátria se a IA falhar)
+      const isDeclaringDone = /(concluíd[oa]|pronto|finalizad[oa]|terminei|resolvido|feito|entregue)/i.test(rawOutput);
+      const isTalkingWithoutAction = !rawOutput.includes('"tool":') && rawOutput.trim().length > 50;
+      
+      let missingReqs = [];
+      if (isDeclaringDone && !doneExists) {
+        missingReqs.push("Falta criar o arquivo .done usando a ferramenta 'exec' (touch .done).");
+      }
+
+      return {
+        isDeclaringDone,
+        hasFulfilledContract: isDeclaringDone && doneExists,
+        missingRequirements: missingReqs,
+        isTalkingWithoutAction
+      };
+    }
   }
 }
 

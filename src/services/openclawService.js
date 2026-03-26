@@ -1,5 +1,3 @@
-
-
 // src/services/openclawService.js
 const { spawn } = require('child_process');
 const fs = require('fs').promises;
@@ -353,12 +351,34 @@ class OpenClawService {
         settle({ success: false, errorMessage: `Timeout global atingido (${timeoutMs}ms)`, rawOutput: stdout + stderr });
       }, timeoutMs);
 
+      // Limite de segurança: ~500KB. Nenhum texto útil do LLM passa disso.
+      const MAX_SAFE_OUTPUT_LENGTH = 500000; 
+
       // 8. Captura e processamento otimizado de dados
       const onData = async (data, source) => {
         if (isSettled) return;
         const text = data.toString();
         source === 'stdout' ? (stdout += text) : (stderr += text);
         
+        // =========================================================
+        // 🚨 KILL SWITCH: DETECÇÃO DE LIXO BINÁRIO NA FONTE
+        // =========================================================
+        const currentLength = stdout.length + stderr.length;
+        const isBinary = /\x00/.test(text); // Detecta Null Bytes
+
+        if (isBinary || currentLength > MAX_SAFE_OUTPUT_LENGTH) {
+            await log(`🚨 [PÂNICO DE STREAM] Arquivo binário ou massivo (>${Math.round(currentLength/1024)}KB) detectado. Matando o processo do agente ${agent}!`);
+            try { child.kill('SIGKILL'); } catch (_) {}
+            
+            settle({ 
+                success: false, 
+                errorMessage: `[SISTEMA] Falha de leitura. O comando retornou lixo binário ou dados excessivos. NÃO TENTE LER ESTE ARQUIVO NOVAMENTE.`, 
+                rawOutput: (stdout + stderr).substring(0, 1000) + "\n\n...[TRUNCADO PELO SISTEMA: LIXO BINÁRIO DETECTADO]..."
+            });
+            return;
+        }
+        // =========================================================
+
         // Imprime no console para acompanhamento ao vivo
         log(text);
 
@@ -505,8 +525,6 @@ class OpenClawService {
     sessionId, inputMessage, primaryAgent, fallbackAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs = 14400000
   ) {
      // Exclui as sessões do agente
-    await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
-    await OpenClawService.wipeAgentAmnesiaCache(fallbackAgent);
     return await this.executeOptimized(
       sessionId, inputMessage, primaryAgent, model, tasksDir, terminalLogFile, projectPath, timeoutMs,
       { fallbackAgent, maxRetries: 0 }

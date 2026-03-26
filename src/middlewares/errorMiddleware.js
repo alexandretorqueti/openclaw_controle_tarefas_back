@@ -226,14 +226,21 @@ class ErrorMiddleware {
         // Criar tarefa automática de forma assíncrona (não bloquear resposta)
         try {
           autoTaskService.createAutoTask(error, req, res)
-            .then(task => {
-              if (task) {
-                console.log(`Tarefa automática ${task.id} criada para erro: ${error.message}`);
+            .then(result => {
+              if (result.success) {
+                // Nova tarefa criada (duplicidade detectada automaticamente)
+                console.log(`✅ Tarefa automática ${result.task.id} criada para erro (${result.wasDuplicate ? 'repetição' : 'novo'})`);
+              } else if (result.reason === 'duplicate_detected') {
+                // Duplicidade detectada - processo será morto automaticamente
+                console.log(`⚠️  Tarefa já existe para este erro: ${result.existingTaskId}. Processo será terminador automaticamente.`);
+              } else {
+                // Falha na criação - erro registrado, processo será terminador
+                console.log(`❌ Falha na criação de tarefa automática: ${result.reason || result.error}`);
               }
             })
             .catch(taskError => {
-              // Não falhar se a criação da tarefa falhar
-              console.error('Erro ao criar tarefa automática:', taskError.message);
+              // Erro ao tentar criar tarefa - erro registrado, processo seguirá rodando
+              console.error('Erro fatal ao criar tarefa automática:', taskError.message);
             });
         } catch (taskError) {
           console.error('Erro ao iniciar criação de tarefa automática:', taskError.message);
