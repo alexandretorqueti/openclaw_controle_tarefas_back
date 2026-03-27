@@ -1,11 +1,11 @@
 // test/unit/steps/AddCommentStep.test.js
 
-const container = require('../../../src/container');
-const AddCommentStep = require('../../../src/steps/AddCommentStep');
+const container = require('../../src/container');
+const AddCommentStep = require('../../src/steps/AddCommentStep');
 
 // Importar factories de mocks
-const { createCommentServiceMock } = require('../../mocks/commentService.mock');
-const { createLoggerMock } = require('../../mocks/logger.mock');
+const { createCommentServiceMock } = require('../mocks/commentService.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
 
 describe('AddCommentStep', () => {
   let step;

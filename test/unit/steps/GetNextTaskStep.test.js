@@ -1,11 +1,11 @@
 // test/unit/steps/GetNextTaskStep.test.js
 
-const container = require('../../../src/container');
-const GetNextTaskStep = require('../../../src/steps/GetNextTaskStep');
+const container = require('../../src/container');
+const GetNextTaskStep = require('../../src/steps/GetNextTaskStep');
 
 // Importar factories de mocks
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createAxiosMock } = require('../../mocks/axios.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createAxiosMock } = require('../mocks/axios.mock');
 
 describe('GetNextTaskStep', () => {
   let step;

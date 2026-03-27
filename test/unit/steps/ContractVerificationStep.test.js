@@ -1,6 +1,6 @@
-const ContractVerificationStep = require('../../../src/steps/ContractVerificationStep');
-const { createContractVerificationServiceMock } = require('../../mocks/contractVerificationService.mock');
-const { createEvidenceServiceMock } = require('../../mocks/evidenceService.mock');
+const ContractVerificationStep = require('../../src/steps/ContractVerificationStep');
+const { createContractVerificationServiceMock } = require('../mocks/contractVerificationService.mock');
+const { createEvidenceServiceMock } = require('../mocks/evidenceService.mock');
 
 describe('ContractVerificationStep', () => {
   let step;

@@ -1,6 +1,6 @@
-const DeveloperLoopOrchestrator = require('../../../src/steps/DeveloperLoopOrchestrator');
-const { createTaskExecutionServiceMock } = require('../../mocks/taskExecutionService.mock');
-const { createEvidenceServiceMock } = require('../../mocks/evidenceService.mock');
+const DeveloperLoopOrchestrator = require('../../src/steps/DeveloperLoopOrchestrator');
+const { createTaskExecutionServiceMock } = require('../mocks/taskExecutionService.mock');
+const { createEvidenceServiceMock } = require('../mocks/evidenceService.mock');
 
 jest.mock('../../../src/steps/DeveloperTurnStep', () => {
   return jest.fn().mockImplementation(() => {

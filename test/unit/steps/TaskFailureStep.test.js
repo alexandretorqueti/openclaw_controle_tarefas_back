@@ -1,16 +1,16 @@
 // test/unit/steps/TaskFailureStep.test.js
 
-const container = require('../../../src/container');
-const TaskFailureStep = require('../../../src/steps/TaskFailureStep');
+const container = require('../../src/container');
+const TaskFailureStep = require('../../src/steps/TaskFailureStep');
 
 // Importar factories de mocks
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createAxiosMock } = require('../../mocks/axios.mock');
-const { createFileUtilsMock } = require('../../mocks/fileUtils.mock');
-const { createLockServiceMock } = require('../../mocks/lockService.mock');
-const { createMonitorStateServiceMock } = require('../../mocks/monitorStateService.mock');
-const { createTaskFileServiceMock } = require('../../mocks/taskFileService.mock');
-const { createFileSystemMock } = require('../../mocks/fileSystem.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createAxiosMock } = require('../mocks/axios.mock');
+const { createFileUtilsMock } = require('../mocks/fileUtils.mock');
+const { createLockServiceMock } = require('../mocks/lockService.mock');
+const { createMonitorStateServiceMock } = require('../mocks/monitorStateService.mock');
+const { createTaskFileServiceMock } = require('../mocks/taskFileService.mock');
+const { createFileSystemMock } = require('../mocks/fileSystem.mock');
 
 describe('TaskFailureStep', () => {
   let step;

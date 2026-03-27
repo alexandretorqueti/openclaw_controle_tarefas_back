@@ -126,7 +126,7 @@ class DeveloperLoopOrchestrator {
       // =========================================================
       // 🧹 HIGIENE DE SESSÃO: Limpa a memória ANTES do loop começar
       // =========================================================
-      const OpenClawService = require('./openclawService'); // Ajuste o path se necessário
+      const OpenClawService = require('../services/openclawService'); // Ajuste o path se necessário
       await OpenClawService.wipeAgentAmnesiaCache(primaryAgent);
       if (primaryAgent !== fallbackAgent) {
           await OpenClawService.wipeAgentAmnesiaCache(fallbackAgent);
@@ -136,7 +136,7 @@ class DeveloperLoopOrchestrator {
       let lastFeedback = null;
       let contractResult = { contractFulfilled: false };
       let turnos = 0;
-
+      const maxTurns = 15;
       // 4. LOOP PRINCIPAL
       while (!contractResult.contractFulfilled && turnos < maxTurns) {
         turnos++;
@@ -177,7 +177,7 @@ class DeveloperLoopOrchestrator {
             await OpenClawService.wipeAgentAmnesiaCache(task.agent || project?.agent || 'main');
             
             // 2. Muda o timestamp para forçar um ID de sessão novo no próximo turno
-            executionTimestamp = new Date().getTime(); 
+            const executionTimestamp = new Date().getTime(); 
             
             // 3. Define a bronca colossal que a IA vai ler assim que acordar da amnésia
             lastFeedback = `[ALERTA CRÍTICO DO SISTEMA]\nSua memória foi resetada por medida de emergência. No turno anterior, você usou uma ferramenta para ler um arquivo binário, banco de dados (ex: .sqlite) ou arquivo compilado gigantesco.\n\nREGRA INQUEBRÁVEL: NUNCA tente ler arquivos de banco de dados diretamente. Se precisar analisar o banco, leia o schema.prisma.\n\nRetome a tarefa a partir de agora com o plano original.`;

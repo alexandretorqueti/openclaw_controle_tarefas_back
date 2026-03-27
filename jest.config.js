@@ -21,8 +21,8 @@ module.exports = {
   resetMocks: true,
   restoreMocks: true,
   
-  // Configurações para lidar com módulos ES6
-  transform: {},
+  // REMOVIDO: transform: {} - estava causando SyntaxError
+  // O Jest precisa transformar módulos ES6 para CommonJS
   
   // Ignorar node_modules
   testPathIgnorePatterns: ['/node_modules/'],

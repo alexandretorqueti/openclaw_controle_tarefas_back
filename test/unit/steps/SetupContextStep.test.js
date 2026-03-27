@@ -1,15 +1,15 @@
 // test/unit/steps/SetupContextStep.test.js
 
-const container = require('../../../src/container');
-const SetupContextStep = require('../../../src/steps/SetupContextStep');
+const container = require('../../src/container');
+const SetupContextStep = require('../../src/steps/SetupContextStep');
 
 // Importar factories de mocks
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createPrismaServiceMock } = require('../../mocks/prismaService.mock');
-const { createTaskAnalysisServiceMock } = require('../../mocks/taskAnalysisService.mock');
-const { createWorkspaceSnapshotServiceMock } = require('../../mocks/workspaceSnapshotService.mock');
-const { createPromptFactoryMock } = require('../../mocks/promptFactory.mock');
-const { createFileUtilsMock } = require('../../mocks/fileUtils.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createPrismaServiceMock } = require('../mocks/prismaService.mock');
+const { createTaskAnalysisServiceMock } = require('../mocks/taskAnalysisService.mock');
+const { createWorkspaceSnapshotServiceMock } = require('../mocks/workspaceSnapshotService.mock');
+const { createPromptFactoryMock } = require('../mocks/promptFactory.mock');
+const { createFileUtilsMock } = require('../mocks/fileUtils.mock');
 
 describe('SetupContextStep', () => {
   let step;

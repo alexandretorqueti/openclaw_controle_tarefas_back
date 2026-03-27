@@ -1,17 +1,17 @@
 // test/unit/steps/ArchitectPlanningStep.test.js
 
-const container = require('../../../src/container');
-const ArchitectPlanningStep = require('../../../src/steps/ArchitectPlanningStep');
+const container = require('../../src/container');
+const ArchitectPlanningStep = require('../../src/steps/ArchitectPlanningStep');
 
 // Importar factories de mocks
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createOpenClawServiceMock } = require('../../mocks/openClawService.mock');
-const { createSessionChainUtilsMock } = require('../../mocks/sessionChainUtils.mock');
-const { createSmartFileFinderMock } = require('../../mocks/smartFileFinder.mock');
-const { createTaskAnalysisServiceMock } = require('../../mocks/taskAnalysisService.mock');
-const { createWorkspaceSnapshotServiceMock } = require('../../mocks/workspaceSnapshotService.mock');
-const { createFileUtilsMock } = require('../../mocks/fileUtils.mock');
-const { createPromptFactoryMock } = require('../../mocks/promptFactory.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createOpenClawServiceMock } = require('../mocks/openClawService.mock');
+const { createSessionChainUtilsMock } = require('../mocks/sessionChainUtils.mock');
+const { createSmartFileFinderMock } = require('../mocks/smartFileFinder.mock');
+const { createTaskAnalysisServiceMock } = require('../mocks/taskAnalysisService.mock');
+const { createWorkspaceSnapshotServiceMock } = require('../mocks/workspaceSnapshotService.mock');
+const { createFileUtilsMock } = require('../mocks/fileUtils.mock');
+const { createPromptFactoryMock } = require('../mocks/promptFactory.mock');
 
 describe('ArchitectPlanningStep', () => {
   let step;

@@ -1,14 +1,14 @@
 // test/unit/steps/TaskTimeoutCheckStep.test.js
 
-const container = require('../../../src/container');
-const TaskTimeoutCheckStep = require('../../../src/steps/TaskTimeoutCheckStep');
+const container = require('../../src/container');
+const TaskTimeoutCheckStep = require('../../src/steps/TaskTimeoutCheckStep');
 
 // Importar factories de mocks
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createTimeUtilsMock } = require('../../mocks/timeUtils.mock');
-const { createLockServiceMock } = require('../../mocks/lockService.mock');
-const { createMonitorStateServiceMock } = require('../../mocks/monitorStateService.mock');
-const { createTaskFileServiceMock } = require('../../mocks/taskFileService.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createTimeUtilsMock } = require('../mocks/timeUtils.mock');
+const { createLockServiceMock } = require('../mocks/lockService.mock');
+const { createMonitorStateServiceMock } = require('../mocks/monitorStateService.mock');
+const { createTaskFileServiceMock } = require('../mocks/taskFileService.mock');
 
 describe('TaskTimeoutCheckStep', () => {
   let step;

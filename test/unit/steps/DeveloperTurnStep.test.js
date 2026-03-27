@@ -1,6 +1,6 @@
-const DeveloperTurnStep = require('../../../src/steps/DeveloperTurnStep');
-const { createOpenClawServiceMock } = require('../../mocks/openClawService.mock');
-const { createEvidenceServiceMock } = require('../../mocks/evidenceService.mock');
+const DeveloperTurnStep = require('../../src/steps/DeveloperTurnStep');
+const { createOpenClawServiceMock } = require('../mocks/openClawService.mock');
+const { createEvidenceServiceMock } = require('../mocks/evidenceService.mock');
 
 describe('DeveloperTurnStep', () => {
   let step;

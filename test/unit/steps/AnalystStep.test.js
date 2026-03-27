@@ -1,18 +1,18 @@
 // test/unit/steps/AnalystStep.test.js
 
-const container = require('../../../src/container');
-const AnalystStep = require('../../../src/steps/AnalystStep');
+const container = require('../../src/container');
+const AnalystStep = require('../../src/steps/AnalystStep');
 
 // Importar factories de mocks
-const { createOpenClawServiceMock } = require('../../mocks/openClawService.mock');
-const { createPromptFactoryMock } = require('../../mocks/promptFactory.mock');
-const { createSessionChainUtilsMock } = require('../../mocks/sessionChainUtils.mock');
-const { createJsonUtilsMock } = require('../../mocks/jsonUtils.mock');
-const { createTaskServiceMock } = require('../../mocks/taskService.mock');
-const { createDecompositionServiceMock } = require('../../mocks/decompositionService.mock');
-const { createCommentServiceMock } = require('../../mocks/commentService.mock');
-const { createLoggerMock } = require('../../mocks/logger.mock');
-const { createFileSystemMock } = require('../../mocks/fileSystem.mock');
+const { createOpenClawServiceMock } = require('../mocks/openClawService.mock');
+const { createPromptFactoryMock } = require('../mocks/promptFactory.mock');
+const { createSessionChainUtilsMock } = require('../mocks/sessionChainUtils.mock');
+const { createJsonUtilsMock } = require('../mocks/jsonUtils.mock');
+const { createTaskServiceMock } = require('../mocks/taskService.mock');
+const { createDecompositionServiceMock } = require('../mocks/decompositionService.mock');
+const { createCommentServiceMock } = require('../mocks/commentService.mock');
+const { createLoggerMock } = require('../mocks/logger.mock');
+const { createFileSystemMock } = require('../mocks/fileSystem.mock');
 
 describe('AnalystStep', () => {
   let step;
