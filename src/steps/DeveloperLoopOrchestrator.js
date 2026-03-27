@@ -138,6 +138,10 @@ class DeveloperLoopOrchestrator {
       let turnos = 0;
       const maxTurns = 15;
       const executionTimestamp = Date.now();
+
+      let finalContractResult = null; 
+      let turnosSemProgresso = 0;
+      const maxTurnsWithoutProgress = 5; // Ajuste este limite de estagnação pro valor que achar melhor (ex: 3, 5)
       // 4. LOOP PRINCIPAL
       while (!contractResult.contractFulfilled && turnos < maxTurns) {
         turnos++;
