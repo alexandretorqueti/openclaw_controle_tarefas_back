@@ -538,7 +538,6 @@ class TaskExecutionService {
     const nodeBinDir = path.dirname(process.execPath);
 
     // --- FUNÇÃO AUXILIAR DE EXECUÇÃO (O "Coração" do Teste) ---
-// --- FUNÇÃO AUXILIAR DE EXECUÇÃO ---
     const tryExecutingCommand = async (cmd, appName, appPath, port) => {
       try {
           await log(`⏳ [Sistema 1] Validando [${appName}] na porta ${port}: ${cmd}`);

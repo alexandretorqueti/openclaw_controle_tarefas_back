@@ -25,7 +25,9 @@ class ProjectService {
         programadorBack: data.programadorBack || null,
         modeloAuxiliar: data.modeloAuxiliar || null,
         frontendBuildCmd: data.frontendBuildCmd || null,
-        backendBuildCmd: data.backendBuildCmd || null
+        backendBuildCmd: data.backendBuildCmd || null,
+        frontendTestCommand: data.frontendTestCommand || null,  // NOVO
+        backendTestCommand: data.backendTestCommand || null     // NOVO
       },
       include: {
         createdBy: {
@@ -179,11 +181,12 @@ class ProjectService {
     if (data.pastaBase !== undefined) updateData.pastaBase = data.pastaBase || null;
     if (data.agent !== undefined) updateData.agent = data.agent || null;
     if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
-    if (data.programadorFront !== undefined) updateData.programadorFront = data.programadorFront || null;
     if (data.programadorBack !== undefined) updateData.programadorBack = data.programadorBack || null;
     if (data.modeloAuxiliar !== undefined) updateData.modeloAuxiliar = data.modeloAuxiliar || null;
     if (data.frontendBuildCmd !== undefined) updateData.frontendBuildCmd = data.frontendBuildCmd || null;
     if (data.backendBuildCmd !== undefined) updateData.backendBuildCmd = data.backendBuildCmd || null;
+    if (data.frontendTestCommand !== undefined) updateData.frontendTestCommand = data.frontendTestCommand || null;  // NOVO
+    if (data.backendTestCommand !== undefined) updateData.backendTestCommand = data.backendTestCommand || null;    // NOVO
     
     const updatedProject = await prisma.project.update({
       where: { id },

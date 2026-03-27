@@ -29,6 +29,8 @@ const projectSchema = z.object({
   modeloAuxiliar: z.string().max(100).optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
+  frontendTestCommand: z.string().optional().nullable(),  // NOVO
+  backendTestCommand: z.string().optional().nullable(),   // NOVO
 });
 
 const updateProjectSchema = z.object({
@@ -59,6 +61,8 @@ const updateProjectSchema = z.object({
   modeloAuxiliar: z.string().max(100).optional().nullable(),
   frontendBuildCmd: z.string().optional().nullable(),
   backendBuildCmd: z.string().optional().nullable(),
+  frontendTestCommand: z.string().optional().nullable(),  // NOVO
+  backendTestCommand: z.string().optional().nullable(),   // NOVO
 });
 
 const validateProject = (data) => {
