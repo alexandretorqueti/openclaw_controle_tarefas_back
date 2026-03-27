@@ -1,12 +1,10 @@
-import { Router, Request, Response } from 'express';
-// Assumindo que você já converteu esses arquivos, ou pelo menos importou os tipos corretamente
+import { Router } from 'express';
 import autoTaskService from '../services/autoTaskService'; 
-import { Logger, ERROR_TYPES } from '../utils/logger';
 
 const router = Router();
 
-// 1. Definimos o que exatamente o frontend vai nos enviar
-export interface FrontendErrorBody {
+// Definimos o que exatamente o frontend vai nos enviar
+interface FrontendErrorBody {
   message: string;
   stack?: string;
   url: string;
@@ -16,8 +14,8 @@ export interface FrontendErrorBody {
   col?: number;
 }
 
-// 2. Estendemos a classe Error nativa para incluir nossos metadados customizados
-export interface FrontendAnnotatedError extends Error {
+// Estendemos a classe Error nativa para incluir nossos metadados customizados
+interface FrontendAnnotatedError extends Error {
   frontEndMeta?: {
     url: string;
     userAgent: string;
@@ -28,10 +26,7 @@ export interface FrontendAnnotatedError extends Error {
 }
 
 // Passamos a nossa interface FrontendErrorBody para o Request do Express
-router.post('/frontend-errors', async (
-  req: Request<{}, {}, FrontendErrorBody>, 
-  res: Response
-): Promise<void> => {
+router.post('/frontend-errors', async (req, res) => {
   try {
     const { message, stack, url, userAgent, type, line, col, ...meta } = req.body;
 
