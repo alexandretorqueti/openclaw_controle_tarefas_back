@@ -10,9 +10,9 @@ class AddCommentStep {
   /**
    * Construtor que obtém todas as dependências do container.
    */
-  constructor() {
-    this.commentService = container.resolve('commentService');
-    this.log = container.resolve('log');
+  constructor(options = {}) {
+    this.log = options.log || container.resolve('log');
+    this.commentService = options.commentService || container.resolve('commentService');
   }
 
   /**

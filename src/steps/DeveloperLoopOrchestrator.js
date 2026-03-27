@@ -40,8 +40,6 @@ class DeveloperLoopOrchestrator {
       initialSnapshot
     } = context;
     
-    const { TASKS_DIR } = config;
-    
     if (!task || !files || !config) {
       await this.log(`⚠️ DeveloperLoopOrchestrator: contexto incompleto`);
       return {
@@ -52,7 +50,7 @@ class DeveloperLoopOrchestrator {
         }
       };
     }
-
+    const { TASKS_DIR } = config;
     try {
       await this.log(`🔄 [Desenvolvedor] Iniciando loop de execução (Modo Stateless)...`);
       
@@ -137,7 +135,7 @@ class DeveloperLoopOrchestrator {
       let contractResult = { contractFulfilled: false };
       let turnos = 0;
       const maxTurns = 15;
-      const executionTimestamp = Date.now();
+      let executionTimestamp = Date.now();
 
       let finalContractResult = null; 
       let turnosSemProgresso = 0;
@@ -220,15 +218,16 @@ class DeveloperLoopOrchestrator {
           actualDoneFilePath: turnResult.actualDoneFilePath
         };
         
-        const contractVerificationResult = await contractStep.execute(contractContext);
-        
-        if (!contractVerificationResult.contractVerificationResult.success) {
+        const stepResult = await contractStep.execute(contractContext);
+        const verificationData = stepResult.contractVerificationResult;
+
+        if (!verificationData || !verificationData.success) {
           await this.log(`💥 [Desenvolvedor] Verificação de contrato falhou no turno ${turnos}`);
           return {
             ...context,
             developerLoopResult: {
               success: false,
-              error: `Verificação de contrato falhou: ${contractVerificationResult.contractVerificationResult.error}`,
+              error: `Verificação de contrato falhou: ${verificationData?.error || 'Erro desconhecido'}`,
               turnsExecuted: turnos
             },
             shouldAbort: true,
@@ -236,8 +235,7 @@ class DeveloperLoopOrchestrator {
           };
         }
         
-        contractResult = contractVerificationResult.contractResult || 
-                        { contractFulfilled: false };
+        contractResult = verificationData || { contractFulfilled: false };
         
         // 6. SE CONTRATO CUMPRIDO, VALIDA ECOSSISTEMA
         if (contractResult.contractFulfilled) {

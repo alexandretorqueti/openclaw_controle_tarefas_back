@@ -11,38 +11,36 @@ class AnalystStep {
    * Construtor que obtém todas as dependências do container.
    * Para testes, o container deve ser previamente configurado com mocks.
    */
-  constructor() {
-    this.openClawService = container.resolve('openClawService');
-    this.promptFactory = container.resolve('promptFactory');
-    this.sessionChainUtils = container.resolve('sessionChainUtils');
-    this.jsonUtils = container.resolve('jsonUtils');
-    this.taskService = container.resolve('taskService');
-    this.decompositionService = container.resolve('decompositionService');
-    this.commentService = container.resolve('commentService');
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.fileSystem = container.resolve('fileSystem');
+  constructor(options = {}) {
+    this.openClawService = options.openClawService || container.resolve('openClawService');
+    this.promptFactory = options.promptFactory || container.resolve('promptFactory');
+    this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
+    this.jsonUtils = options.jsonUtils || container.resolve('jsonUtils');
+    this.taskService = options.taskService || container.resolve('taskService');
+    this.decompositionService = options.decompositionService || container.resolve('decompositionService');
+    this.commentService = options.commentService || container.resolve('commentService');
+    this.log = options.log || container.resolve('log');
+    this.config = options.config || container.resolve('config');
+    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
     
-    // Dependências built-in (não injetadas por padrão, mas podem ser mockadas)
-    this.path = require('path');
+    // Dependências built-in
+    this.path = options.path || require('path');
   }
 
-  /**
-   * Executa o step de análise para uma tarefa
-   * @param {Object} context - Contexto do pipeline
-   * @param {Object} context.task - Tarefa a ser analisada
-   * @param {Object} context.project - Projeto relacionado (opcional)
-   * @returns {Promise<Object>} Contexto atualizado com resultado da análise
-   */
   async execute(context) {
-    const { task } = context;
+    const { task, userId } = context; // userId extraído para os comentários
+    
+    // Verificação de segurança crucial
+    if (!task) {
+      await this.log(`⚠️ AnalystStep: contexto incompleto (task faltando)`);
+      return { ...context, analysisResult: { success: false, error: 'task não fornecida' } };
+    }
     
     try {
       await this.log(`🔍 Chamando Arquiteto (OpenClaw) para decompor tarefa ${task.id}: ${task.title}`);
-      const SessionChainUtils = require('../utils/sessionChainUtils');
-      // Usar sessão unificada baseada na cadeia de dependências
-      const architectSessionId = await sessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');
       
+      // Correção do Bug de Referência: Usando a dependência do construtor
+      const architectSessionId = await this.sessionChainUtils.generateIsolatedSessionId(task.id, 'arquiteto');      
       await this.log(`🔗 Sessão do arquiteto (decomposição): ${architectSessionId}`);
       const architectLogFile = this.path.join(this.config.TASKS_DIR, `architect-${task.id}.log`);
 

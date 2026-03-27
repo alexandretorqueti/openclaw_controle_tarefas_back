@@ -13,7 +13,7 @@ class ArchitectPlanningStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
+    this.log = options.log || container.resolve('log');
     
     // Usar instâncias fornecidas ou criar do container
     this.openClawService = options.openClawService || container.resolve('openClawService');
@@ -223,7 +223,7 @@ class ArchitectPlanningStep {
         architectPlanningResult: {
           success: true,
           taskId: task.id,
-          hasArchitectPlan: !!architectPlan.trim(),
+          hasArchitectPlan: architectAnalysis.hasPlan,
           hasArchitectExecution: architectAnalysis.hasExecuted,
           confidence: architectAnalysis.confidence,
           promptUpdated: true

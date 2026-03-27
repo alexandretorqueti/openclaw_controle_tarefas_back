@@ -11,13 +11,13 @@ class TaskFailureStep {
    * Construtor que obtém dependências do container.
    * Aceita instâncias opcionais para facilitar testes.
    */
-  constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.axios = container.resolve('axios');
-    this.path = container.resolve('path');
-    this.fileUtils = container.resolve('fileUtils');
-    this.fileSystem = container.resolve('fileSystem');
+ constructor(options = {}) {
+    this.log = options.log || container.resolve('log');
+    this.config = options.config || container.resolve('config');
+    this.axios = options.axios || container.resolve('axios');
+    this.path = options.path || container.resolve('path');
+    this.fileUtils = options.fileUtils || container.resolve('fileUtils');
+    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
     
     // Usar instâncias fornecidas ou criar do container
     this.lockService = options.lockService || this._createLockService();

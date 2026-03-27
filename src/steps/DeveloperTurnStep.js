@@ -19,6 +19,7 @@ class DeveloperTurnStep {
     this.evidenceService = options.evidenceService || container.resolve('evidenceService');
     this.fileSystem = options.fileSystem || container.resolve('fileSystem');
     this.path = options.path || container.resolve('path');
+    this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
 
     // ADICIONE ESTA LINHA:
     this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
@@ -49,21 +50,18 @@ class DeveloperTurnStep {
       backupAgent = 'main',
       executionTimestamp // Certifique-se que o Orchestrator passa isso
     } = context;
-    
-    const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
-    
     if (!task || !files || !config) {
       await this.log(`⚠️ DeveloperTurnStep: contexto incompleto`);
       return { ...context, turnResult: { success: false, error: 'contexto incompleto' } };
     }
-
+    const { TASKS_DIR, TASK_TIMEOUT_MS } = config;
     try {
       await this.log(`🤖 Turno ${turnNumber} para tarefa ${task.id}...`);
 
       // 1. GERAÇÃO DA SESSÃO PERSISTENTE (Corrigido para usar o Loop ID)
-      const SessionChainUtils = require('../utils/sessionChainUtils');
+
       const ts = executionTimestamp || new Date().getTime();
-      const turnSessionId = SessionChainUtils.generateLoopSessionId(
+      const turnSessionId = this.sessionChainUtils.generateLoopSessionId(
         task.id, 
         'programador-main-loop', 
         ts

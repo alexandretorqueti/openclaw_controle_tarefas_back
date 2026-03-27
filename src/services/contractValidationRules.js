@@ -1,6 +1,6 @@
 // src/services/contractValidationRules.js
-
-const politeEmptyReportMessage = "[VALIDAÇÃO] Olá! Notei que você criou o arquivo de relatório com sucesso, muito obrigado! Porém, ele parece estar vazio (ou muito curto). Por gentileza, use a ferramenta 'write' ou 'edit' para preencher o conteúdo dele com o seu resumo antes de concluirmos a tarefa.";
+const { TASKS_DIR } = require('../aux/config');
+const politeEmptyReportMessage = `[VALIDAÇÃO] Olá! Notei que você criou o arquivo de relatório com sucesso, muito obrigado! Porém, ele parece estar vazio (ou muito curto). Por gentileza, use a ferramenta 'write' ou 'edit' para preencher o conteúdo dele com o seu resumo antes de concluirmos a tarefa, na pasta ${TASKS_DIR}.`;
 
 const validationRules = {
   // ==========================================
@@ -14,7 +14,7 @@ const validationRules = {
         executionNotes: ctx.relatorioVazio ? 'Relatório vazio.' : 'Aguardando relatorio valido.',
         feedbackToAgent: ctx.relatorioVazio
           ? politeEmptyReportMessage
-          : '[VALIDACAO] Esta e uma tarefa de analise/documentacao. Gere um relatorio final consistente no arquivo de relatorio antes de concluir.'
+          : `[VALIDACAO] Esta e uma tarefa de analise/documentacao. Gere um relatorio final consistente no arquivo de relatorio antes de concluir, na pasta ${TASKS_DIR}.`
       })
     },
     {
@@ -22,7 +22,7 @@ const validationRules = {
       getError: () => ({
         contractFulfilled: false,
         executionNotes: 'Aguardando arquivo .done.',
-        feedbackToAgent: '[VALIDACAO] Gere o relatorio e finalize criando o arquivo .done obrigatorio.'
+        feedbackToAgent: `[VALIDACAO] Gere o relatorio e finalize criando o arquivo .done obrigatorio, na pasta ${TASKS_DIR}.`
       })
     },
     {
@@ -46,7 +46,7 @@ const validationRules = {
         executionNotes: ctx.relatorioVazio ? 'Relatório vazio.' : 'Aguardando relatorio valido.',
         feedbackToAgent: ctx.relatorioVazio
           ? politeEmptyReportMessage
-          : '[VALIDACAO] Esta e uma tarefa de desenvolvimento. Gere um relatorio final valido no arquivo de relatorio.'
+          : `[VALIDACAO] Esta e uma tarefa de desenvolvimento. Gere um relatorio final valido, na pasta ${TASKS_DIR}.`
       })
     },
     {
@@ -54,7 +54,7 @@ const validationRules = {
       getError: () => ({
         contractFulfilled: false,
         executionNotes: 'Aguardando arquivo .done.',
-        feedbackToAgent: '[VALIDACAO] Apos implementar as alteracoes, crie o arquivo .done obrigatorio.'
+        feedbackToAgent: `[VALIDACAO] Apos implementar as alteracoes, crie o arquivo .done obrigatorio, na pasta ${TASKS_DIR}.`
       })
     },
     {
@@ -62,7 +62,7 @@ const validationRules = {
       getError: () => ({
         contractFulfilled: false,
         executionNotes: 'Nenhuma alteracao real detectada.',
-        feedbackToAgent: '[FALHA DE VALIDAÇÃO CRÍTICA] Você tentou finalizar a tarefa, mas NENHUM arquivo do código-fonte foi modificado no disco. A sua última tentativa de alteração falhou ou foi ignorada pelo sistema. PARE de tentar concluir. PASSO A PASSO OBRIGATÓRIO AGORA: 1. Use a ferramenta "read" para ler o arquivo que você precisa alterar. 2. Use a ferramenta "edit" (ou "write") para injetar o código correto. 3. SÓ crie o .done depois de ter uma confirmação de sucesso na edição.'
+        feedbackToAgent: `[FALHA DE VALIDAÇÃO CRÍTICA] Você tentou finalizar a tarefa, mas NENHUM arquivo do código-fonte foi modificado no disco. A sua última tentativa de alteração falhou ou foi ignorada pelo sistema. PARE de tentar concluir. PASSO A PASSO OBRIGATÓRIO AGORA: 1. Use a ferramenta "read" para ler o arquivo que você precisa alterar. 2. Use a ferramenta "edit" (ou "write") para injetar o código correto. 3. SÓ crie o .done (na pasta ${TASKS_DIR}), depois de ter uma confirmação de sucesso na edição.`
       })
     },
     {
@@ -110,15 +110,15 @@ const validationRules = {
         executionNotes: ctx.relatorioVazio ? 'Relatório vazio.' : 'Aguardando relatorio valido.',
         feedbackToAgent: ctx.relatorioVazio
           ? politeEmptyReportMessage
-          : '[VALIDACAO] Esta tarefa exige relatorio final. Escreva o resultado no arquivo de relatorio antes de concluir.'
+          : `[VALIDACAO] Esta tarefa exige relatorio final. Escreva o resultado no arquivo de relatorio (na pasta ${TASKS_DIR}) antes de concluir.`
       })
     },
     {
       hasError: (ctx) => !ctx.doneExists,
       getError: () => ({
         contractFulfilled: false,
-        executionNotes: 'Aguardando arquivo .done.',
-        feedbackToAgent: '[VALIDACAO] Finalize a tarefa criando o arquivo .done obrigatorio.'
+        executionNotes: `Aguardando arquivo .done, na pasta ${TASKS_DIR}.`,
+        feedbackToAgent: `[VALIDACAO] Finalize a tarefa criando o arquivo .done (na pasta ${TASKS_DIR}) obrigatorio.`
       })
     },
     {

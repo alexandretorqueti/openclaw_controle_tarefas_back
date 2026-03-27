@@ -12,12 +12,11 @@ class SetupContextStep {
    * Aceita instâncias opcionais para facilitar testes.
    */
   constructor(options = {}) {
-    this.log = container.resolve('log');
-    this.config = container.resolve('config');
-    this.fileSystem = container.resolve('fileSystem');
-    this.path = container.resolve('path');
+    this.log = options.log || container.resolve('log');
+    this.config = options.config || container.resolve('config');
+    this.fileSystem = options.fileSystem || container.resolve('fileSystem');
+    this.path = options.path || container.resolve('path');
     
-    // Usar instâncias fornecidas ou criar do container
     this.prisma = options.prisma || container.resolve('prisma');
     this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
     this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');

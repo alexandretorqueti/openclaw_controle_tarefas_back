@@ -113,8 +113,7 @@ class ContractVerificationStep {
           feedbackToAgent: contractResult.feedbackToAgent,
           missingRequirements: contractResult.missingRequirements || [],
           evidence: contractResult.evidence || {}
-        },
-        contractResult // Mantém compatibilidade com código existente
+        }
       };
       
     } catch (stepError) {
