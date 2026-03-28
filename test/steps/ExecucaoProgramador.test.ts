@@ -1,6 +1,11 @@
 // test/steps/ExecucaoProgramador.test.ts
 
 import { passoExecucaoProgramador } from '../../src/steps/ExecucaoProgramador';
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 
 describe('Passo: Execução Programador (Alocação de Agente)', () => {
     let mockContexto: any;
@@ -65,4 +70,8 @@ describe('Passo: Execução Programador (Alocação de Agente)', () => {
         
         await expect(passoExecucaoProgramador.func(mockContexto)).resolves.not.toThrow();
     });
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

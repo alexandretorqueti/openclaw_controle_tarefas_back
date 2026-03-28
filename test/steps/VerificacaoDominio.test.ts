@@ -5,7 +5,11 @@ import { handleTaskFailure as legacyHandleTaskFailure } from '../../src/steps/ad
 
 // Mock do adaptador legado
 jest.mock('../../src/steps/adapters/legacyTaskFailure');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Verificação de Domínio', () => {
     let mockContexto: any;
 
@@ -63,4 +67,8 @@ describe('Passo: Verificação de Domínio', () => {
         // A flag de falha não deve existir
         expect(mockContexto.tarefaAtual.falhaDeDominio).toBeUndefined();
     });
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

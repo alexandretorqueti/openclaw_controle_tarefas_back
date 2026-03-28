@@ -4,7 +4,11 @@ import { passoExecutaOpenClaw } from '../../src/steps/ExecutaOpenClaw';
 import container from '../../src/container';
 
 jest.mock('../../src/container');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Executa OpenClaw', () => {
     let mockContexto: any;
     let mockOpenClawService: any;
@@ -95,4 +99,7 @@ describe('Passo: Executa OpenClaw', () => {
         // Deve sinalizar erro para a esteira ejetar a tarefa
         expect(mockContexto.tarefaAtual.erroFatalIA).toBe(true);
     });
+});
+afterAll(() => {
+  jest.restoreAllMocks();
 });

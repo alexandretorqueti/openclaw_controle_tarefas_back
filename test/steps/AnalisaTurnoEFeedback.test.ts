@@ -5,6 +5,13 @@ import container from '../../src/container';
 
 jest.mock('../../src/container');
 
+
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
+
 describe('Passo: Analisa Turno e Feedback', () => {
     let mockContexto: any;
     const mockAnalysisService = {
@@ -58,4 +65,8 @@ describe('Passo: Analisa Turno e Feedback', () => {
 
         expect(mockContexto.tarefaAtual.feedbackForNextTurn).toBeNull();
     });
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

@@ -6,6 +6,11 @@ import { handleTaskFailure as legacyHandleTaskFailure } from '../../src/steps/ad
 
 jest.mock('../../src/container');
 jest.mock('../../src/steps/adapters/legacyTaskFailure');
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 
 describe('Passo: Super Validação', () => {
     let mockContexto: any;
@@ -96,4 +101,8 @@ describe('Passo: Super Validação', () => {
         // Verifica a migalha pro mapa abortar a missão
         expect(mockContexto.tarefaAtual.erroValidacao).toBe(true);
     });
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

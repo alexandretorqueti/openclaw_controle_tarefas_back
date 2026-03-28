@@ -20,6 +20,7 @@ import { passoInspecionaWorkspace } from "./steps/InspecionaWorkspace";
 import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; // <--- ADICIONADO
 import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
 import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             // <--- ADICIONADO
+import { passoExecucaoProgramador } from "./steps/ExecucaoProgramador";
 
 import container from './container';
 
@@ -54,6 +55,9 @@ export class monitor {
         
         // Finalização
         this.addPasso(passoFinalizaTarefa);         // <--- REGISTRADO
+        
+        // Loop do Programador
+        this.addPasso(passoExecucaoProgramador);
     }
 
     addPasso(passo: Passo) {
@@ -96,7 +100,7 @@ export class monitor {
             },
             config: config
         };
-
+        const passosExecutads: string[] = [];
         try {
             // PONTO DE PARTIDA: Deve bater com o .name do primeiro passo
             let stepAtualNome: string | null = 'Verifica Lock';
@@ -111,6 +115,13 @@ export class monitor {
 
                 // 1. Executa a lógica do passo
                 await passoAtual.func(contexto);
+                passosExecutads.push(stepAtualNome);
+
+                // Verifica Lock
+                if (contexto.lockAtivo) {
+                    await log(`🔒 Lock ativo detectado durante o ciclo. Interrompendo para evitar conflitos.`);
+                    break;
+                }
 
                 // 2. Busca as rotas no mapa
                 const rotasDisponiveis = mapaDeTransicoes[stepAtualNome];
@@ -132,7 +143,7 @@ export class monitor {
                     stepAtualNome = null;
                 }
             }
-            
+            console.log(`Ciclo finalizado. Passos executados: ${passosExecutads.join(' -> ')}`);
             if (contexto.tarefaAtual) {
                 this.jaEnvieiMensagemQueEstouAguardando = false;
             }

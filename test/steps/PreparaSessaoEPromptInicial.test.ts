@@ -4,7 +4,11 @@ import { passoPreparaSessaoEPromptInicial } from '../../src/steps/PreparaSessaoE
 import container from '../../src/container';
 
 jest.mock('../../src/container');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Prepara Sessão e Prompt Inicial', () => {
     let mockContexto: any;
     let mockFileSystem: any;
@@ -91,4 +95,9 @@ describe('Passo: Prepara Sessão e Prompt Inicial', () => {
         expect(mockContexto.tarefaAtual.promptVez).toBeDefined();
         expect(mockContexto.tarefaAtual.promptVez).toContain('=== TAREFA [123] ===');
     });
+});
+
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

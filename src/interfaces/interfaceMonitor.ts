@@ -8,7 +8,8 @@ export interface ContextoExecucao {
         lockService: any;
         stateService: any;
         [key: string]: any; // Para futuros serviços
-    };                 
+    };
+    lockAtivo?: boolean;              // Indica se o lock estava ativo no início do ciclo
 }
 
 export interface Passo {

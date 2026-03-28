@@ -9,10 +9,12 @@ export const passoVerificaLock: Passo = {
     name: 'Verifica Lock',
     func: async (ctx: ContextoExecucao) => {
         const { lockService, stateService } = ctx.services;
+        ctx.lockAtivo = false;
         const lockCheck = await lockService.checkLock(ctx.config.TASK_TIMEOUT_MS);
 
         if (lockCheck.locked) {
             if (lockCheck.ageRecent) {
+                ctx.lockAtivo = true;
                 await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
             } else {
                 await log(`🔒 Lock antigo/ativo detectado. PID ${lockCheck.pid}.`);

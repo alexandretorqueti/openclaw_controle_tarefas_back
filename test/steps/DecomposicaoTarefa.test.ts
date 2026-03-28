@@ -5,7 +5,11 @@ import { createLegacyCallAnalyst } from '../../src/steps/adapters/legacyCallAnal
 
 // Mockamos a fábrica do adaptador
 jest.mock('../../src/steps/adapters/legacyCallAnalyst');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Decomposição de Tarefa', () => {
     let mockContexto: any;
     let mockCallAnalyst: jest.Mock;
@@ -74,4 +78,9 @@ describe('Passo: Decomposição de Tarefa', () => {
         // O adaptador nem deve ser chamado
         expect(createLegacyCallAnalyst).not.toHaveBeenCalled();
     });
+});
+
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

@@ -4,7 +4,11 @@ import { passoPreparaPromptDeCorrecao } from '../../src/steps/PreparaPromptDeCor
 import container from '../../src/container';
 
 jest.mock('../../src/container');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Prepara Prompt de Correção', () => {
     let mockContexto: any;
     let mockFileSystem: any;
@@ -74,4 +78,8 @@ describe('Passo: Prepara Prompt de Correção', () => {
         // A IA ainda deve receber o prompt mesmo que o log do disco falhe
         expect(mockContexto.tarefaAtual.promptVez).toBeDefined();
     });
+});
+
+afterAll(() => {
+  jest.restoreAllMocks();
 });

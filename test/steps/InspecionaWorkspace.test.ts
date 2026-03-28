@@ -4,7 +4,11 @@ import { passoInspecionaWorkspace } from '../../src/steps/InspecionaWorkspace';
 import container from '../../src/container';
 
 jest.mock('../../src/container');
-
+beforeAll(() => {
+  // Faz o console.error não fazer nada durante o teste 
+  // (ou apenas imprimir a mensagem sem o rastro do Jest)
+  jest.spyOn(console, 'error').mockImplementation(() => {});
+});
 describe('Passo: Inspeciona Workspace', () => {
     let mockContexto: any;
     let mockFileSystem: any;
@@ -116,4 +120,7 @@ describe('Passo: Inspeciona Workspace', () => {
         );
         expect(mockContexto.tarefaAtual.evidence).toBeDefined();
     });
+});
+afterAll(() => {
+  jest.restoreAllMocks();
 });

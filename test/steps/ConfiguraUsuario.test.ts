@@ -2,12 +2,16 @@
 
 import { passoConfiguraUsuario } from '../../src/steps/ConfiguraUsuario';
 import axios from 'axios';
+import container from '../../src/container'; // <-- IMPORTA O CONTAINER
 
+// Mocks
 jest.mock('axios');
+jest.mock('../../src/container'); // <-- MOCKA O CONTAINER
+
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
 beforeAll(() => {
   // Faz o console.error não fazer nada durante o teste 
-  // (ou apenas imprimir a mensagem sem o rastro do Jest)
   jest.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -16,6 +20,13 @@ describe('Passo: Configura Usuário', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+
+        // <-- ENSINA O CONTAINER A DEVOLVER O AXIOS FALSO
+        (container.resolve as jest.Mock).mockImplementation((name) => {
+            if (name === 'apiService') return mockedAxios;
+            return undefined;
+        });
+
         mockContexto = {
             config: {
                 API_URL: 'http://localhost:3000',
@@ -52,7 +63,6 @@ describe('Passo: Configura Usuário', () => {
     it('deve tratar erros de rede graciosamente', async () => {
         mockedAxios.get.mockRejectedValue(new Error('Network Error'));
 
-        // Não deve explodir o processo, apenas logar (o que o func faz internamente)
         await expect(passoConfiguraUsuario.func(mockContexto)).resolves.not.toThrow();
         expect(mockContexto.UserId).toBeNull();
     });
