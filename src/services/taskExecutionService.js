@@ -481,9 +481,10 @@ class TaskExecutionService {
       );
       
       if (!qa.passed) {
-        await log(`❌ QA Reprovado. Build falhou: ${qa.message}`);
+        const errorType = qa.isTestFailure ? 'Testes' : 'Build';
+        await log(`❌ QA Reprovado. ${errorType} falhou: ${qa.message}`);
         await fs.unlink(files.doneFile).catch(()=>{});
-        return { needsDeveloper: true, message: `O arquiteto fez alterações, mas a validação de ecossistema falhou:\n\n${qa.message}\n\nCorrija o código e finalize novamente com .done.` };
+        return { needsDeveloper: true, message: `O arquiteto fez alterações, mas a validação de ecossistema falhou (${errorType}):\n\n${qa.message}\n\nCorrija o código e finalize novamente com .done.` };
       }
       
       await log(`✅ [Verificação] Ecossistema verificado com sucesso!`);
@@ -538,9 +539,10 @@ class TaskExecutionService {
     const nodeBinDir = path.dirname(process.execPath);
 
     // --- FUNÇÃO AUXILIAR DE EXECUÇÃO (O "Coração" do Teste) ---
-    const tryExecutingCommand = async (cmd, appName, appPath, port) => {
+    const tryExecutingCommand = async (cmd, appName, appPath, port, isTestCommand = false) => {
       try {
-          await log(`⏳ [Sistema 1] Validando [${appName}] na porta ${port}: ${cmd}`);
+          const logPrefix = isTestCommand ? '[Teste]' : '[Build]';
+          await log(`⏳ [Sistema 1] ${logPrefix} Validando [${appName}] na porta ${port}: ${cmd}`);
           
           // --- ATUALIZAÇÃO CIRÚRGICA DO .ENV (Preservando outras variáveis) ---
           const envPath = path.join(appPath, '.env');
@@ -572,27 +574,71 @@ class TaskExecutionService {
                   PATH: `${nodeBinDir}:${process.env.PATH || ''}`
               } 
           });
+          await log(`✅ [Sistema 1] ${logPrefix} [${appName}] executado com sucesso.`);
           return { passed: true }; 
       } catch (e) {
           const errorLog = (e.stderr?.toString() || e.stdout?.toString() || e.message);
           if (e.signal === 'SIGTERM' || e.code === 'ETIMEDOUT' || errorLog.includes('ETIMEDOUT')) {
-              await log(`✅ [Sistema 1] [${appName}] operacional (Server vivo).`);
+              await log(`✅ [Sistema 1] ${logPrefix} [${appName}] operacional (Server vivo).`);
               return { passed: true };
           }
-          return { passed: false, message: `Falha em [${appName}]: ${errorLog.substring(0, 1000)}` };
+          
+          const errorType = isTestCommand ? 'Teste' : 'Build';
+          return { 
+            passed: false, 
+            message: `Falha no ${errorType} de [${appName}]: ${errorLog.substring(0, 1000)}`,
+            isTestFailure: isTestCommand
+          };
       }
+    };
+
+    // --- FUNÇÃO AUXILIAR PARA EXECUTAR TESTES SE DEFINIDOS ---
+    const executeTestIfDefined = async (project, appName, appPath, port, isFrontend) => {
+      const testCommand = isFrontend ? project.frontendTestCommand : project.backendTestCommand;
+      
+      if (!testCommand || testCommand.trim() === '') {
+        await log(`ℹ️ [Sistema 1] Nenhum comando de teste definido para [${appName}].`);
+        return { passed: true, skipped: true };
+      }
+      
+      await log(`🧪 [Sistema 1] Executando testes para [${appName}]: ${testCommand}`);
+      return await tryExecutingCommand(testCommand, appName, appPath, port, true);
     };
 
     // --- 1. O SEU ATALHO (Fast Path) ---
     // Se a tarefa já diz o domínio e o banco tem os dados, não perdemos tempo escaneando pastas.
     if (domain === 'FRONTEND' && project.frontendBuildCmd && project.frontendPath && project.frontendPort) {
         const pasta = path.join(baseDir, project.frontendPath);
-        return await tryExecutingCommand(project.frontendBuildCmd, 'FRONTEND', pasta, project.frontendPort || 7000);
+        const buildResult = await tryExecutingCommand(project.frontendBuildCmd, 'FRONTEND', pasta, project.frontendPort || 7000);
+        
+        if (!buildResult.passed) {
+          return buildResult;
+        }
+        
+        // EXECUTAR TESTES APÓS BUILD BEM-SUCEDIDO
+        const testResult = await executeTestIfDefined(project, 'FRONTEND', pasta, project.frontendPort || 7000, true);
+        if (!testResult.passed) {
+          return testResult; // Retorna erro dos testes
+        }
+        
+        return { passed: true };
     } 
     
     if (domain === 'BACKEND' && project.backendBuildCmd && project.backendPath && project.backendPort) {
         const pasta = path.join(baseDir, project.backendPath);
-        return await tryExecutingCommand(project.backendBuildCmd, 'BACKEND', pasta, project.backendPort || 7001);
+        const buildResult = await tryExecutingCommand(project.backendBuildCmd, 'BACKEND', pasta, project.backendPort || 7001);
+        
+        if (!buildResult.passed) {
+          return buildResult;
+        }
+        
+        // EXECUTAR TESTES APÓS BUILD BEM-SUCEDIDO
+        const testResult = await executeTestIfDefined(project, 'BACKEND', pasta, project.backendPort || 7001, false);
+        if (!testResult.passed) {
+          return testResult; // Retorna erro dos testes
+        }
+        
+        return { passed: true };
     }
 
     // --- 2. DESCOBERTA E SINCRONIZAÇÃO (Discovery Path) ---
@@ -651,9 +697,16 @@ class TaskExecutionService {
             await fs.writeFile(envPath, `PORT=${finalPort}`);
         }
 
-        // 5. EXECUÇÃO (O "Fast Path" e o "Discovery Path" se encontram aqui)
+        // 5. EXECUÇÃO DO BUILD (O "Fast Path" e o "Discovery Path" se encontram aqui)
         const result = await tryExecutingCommand(cmd, app.name, app.path, finalPort);
         if (!result.passed) return result;
+
+        // 6. EXECUÇÃO DOS TESTES (NOVO)
+        const isFrontendApp = project.frontendPath === app.name;
+        const testResult = await executeTestIfDefined(project, app.name, app.path, finalPort, isFrontendApp);
+        if (!testResult.passed) {
+          return testResult; // Retorna erro dos testes
+        }
     }
 
     await log(`✅ [Sistema 1] Todos os módulos operacionais.`);
@@ -792,8 +845,11 @@ class TaskExecutionService {
         
         if (!qa.passed) {
           await fs.unlink(files.doneFile).catch(()=>{});
-          lastFeedback = `Validação de Ecossistema falhou:\n\n${qa.message}\n\nCorrija o código no módulo indicado e finalize novamente.`;
-          await log(`❌ QA Reprovado. Retornando erro para o agente: ${qa.message}`);
+          
+          // Mensagem diferenciada para falha de teste vs build
+          const errorType = qa.isTestFailure ? 'Testes' : 'Build';
+          lastFeedback = `Validação de Ecossistema falhou (${errorType}):\n\n${qa.message}\n\nCorrija o código no módulo indicado e finalize novamente.`;
+          await log(`❌ QA Reprovado. ${errorType} falhou: ${qa.message}`);
           contractResult.contractFulfilled = false;
           continue;
         }

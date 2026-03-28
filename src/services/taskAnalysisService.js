@@ -7,6 +7,7 @@ const { log } = require('../aux/logger');
 
 class TaskAnalysisService {
   static lastAnalysis = null;
+
   static async analyzeTaskScope(task, project, preAnalysisFile = null) {
     const prompt = promptFactory.buildTaskAnalysisPrompt(task, project, preAnalysisFile);
 
@@ -197,6 +198,9 @@ class TaskAnalysisService {
    * e verificar o cumprimento do protocolo (ex: arquivo .done e relatório).
    */
   static async analyzeDeveloperTurn({ rawOutput, task, evidence, doneExists }) {
+    const { TASKS_DIR } = require('../aux/config');
+
+
     // 1. Proteção contra retornos vazios
     if (!rawOutput || rawOutput.trim() === '') {
       return {
@@ -218,6 +222,9 @@ class TaskAnalysisService {
     === CONTEXTO DO SISTEMA ===
     Arquivo .done existe no disco? ${doneExists ? 'SIM' : 'NÃO'}
     
+    === PASTA PARA SALVAR OS ARQUIVOS ===
+    ${TASKS_DIR}
+
     === RESPOSTA DO AGENTE ===
     ${rawOutput.substring(0, 2500)}
     
@@ -227,7 +234,7 @@ class TaskAnalysisService {
       "isDeclaringDone": booleano, // true se o agente afirmou explicitamente que terminou a tarefa (ex: "concluído", "terminei", "pronto").
       "isTalkingWithoutAction": booleano, // true se o agente APENAS conversou/planejou e NÃO utilizou nenhum bloco JSON de ferramenta.
       "hasFulfilledContract": booleano, // true APENAS SE isDeclaringDone for true E o "Arquivo .done existe no disco?" for SIM.
-      "missingRequirements": [] // Array de strings. Se isDeclaringDone for true mas o contrato não foi cumprido, liste o que falta (Ex: "Falta criar o arquivo .done usando a ferramenta exec").
+      "missingRequirements": [] // Array de strings. Se isDeclaringDone for true mas o contrato não foi cumprido, liste o que falta (Ex: "Falta criar o arquivo .done na pasta ${TASKS_DIR} usando a ferramenta exec").
     }
     
     Responda APENAS com o JSON válido. Não inclua blocos de código markdown (\`\`\`json).

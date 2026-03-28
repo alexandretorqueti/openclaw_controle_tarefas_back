@@ -154,64 +154,89 @@ class TaskService {
     if (data.isRecurring && data.recurrenceType) {
       nextExecutionAt = this.calculateNextExecution(data);
     }
-    const newTask = await prisma.task.create({
-      data: {
-        title: data.title,
-        description: data.description,
-        deadline: new Date(data.deadline),
-        position: data.position || 0,
-        isCompleted: data.isCompleted || false,
-        
-        // Recurrence fields
-        isRecurring: data.isRecurring || false,
-        recurrenceType: data.recurrenceType || null,
-        recurrenceTimes: recurrenceTimes,
-        recurrenceDays: recurrenceDays,
-        lastExecutedAt: null,
-        nextExecutionAt: nextExecutionAt,
-        
-        projectId: data.projectId,
-        statusId: data.statusId,
-        priorityId: data.priorityId,
-        createdById: data.createdById,
-        assignedToId: data.assignedToId,
-        agent: data.agent || null,
-        
-        parentTaskId: data.parentTaskId || null
-      },
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true
-          }
+    // Criar a tarefa e atualizar totalSubtasks do pai se necessário
+    const transaction = [];
+    
+    // 1. Criar a nova tarefa
+    transaction.push(
+      prisma.task.create({
+        data: {
+          title: data.title,
+          description: data.description,
+          deadline: new Date(data.deadline),
+          position: data.position || 0,
+          isCompleted: data.isCompleted || false,
+          
+          // Recurrence fields
+          isRecurring: data.isRecurring || false,
+          recurrenceType: data.recurrenceType || null,
+          recurrenceTimes: recurrenceTimes,
+          recurrenceDays: recurrenceDays,
+          lastExecutedAt: null,
+          nextExecutionAt: nextExecutionAt,
+          
+          projectId: data.projectId,
+          statusId: data.statusId,
+          priorityId: data.priorityId,
+          createdById: data.createdById,
+          assignedToId: data.assignedToId,
+          agent: data.agent || null,
+          
+          parentTaskId: data.parentTaskId || null,
+          totalSubtasks: 0 // Nova tarefa começa com 0 subtasks
         },
-        status: true,
-        priority: true,
-        createdBy: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        },
-        assignedTo: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            avatarUrl: true
-          }
-        },
-        parentTask: {
-          select: {
-            id: true,
-            title: true
+        include: {
+          project: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+          status: true,
+          priority: true,
+          createdBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true
+            }
+          },
+          assignedTo: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatarUrl: true
+            }
+          },
+          parentTask: {
+            select: {
+              id: true,
+              title: true
+            }
           }
         }
-      }
-    });
+      })
+    );
+    
+    // 2. Se houver parentTaskId, incrementar totalSubtasks da tarefa pai
+    if (data.parentTaskId) {
+      transaction.push(
+        prisma.task.update({
+          where: { id: data.parentTaskId },
+          data: {
+            totalSubtasks: {
+              increment: 1
+            }
+          }
+        })
+      );
+    }
+    
+    // Executar transação
+    const results = await prisma.$transaction(transaction);
+    const newTask = results[0];
     
     // Emitir evento SSE para criação em tempo real
     try {
@@ -551,7 +576,7 @@ class TaskService {
     // Check if status is changing to record history
     const oldTask = await prisma.task.findUnique({
       where: { id },
-      select: { statusId: true, createdById: true, isExecuting: true }
+      select: { statusId: true, createdById: true, isExecuting: true, parentTaskId: true }
     });
 
     if (!oldTask) {
@@ -655,6 +680,41 @@ class TaskService {
     );
 
     const transaction = [];
+
+    // Verificar se parentTaskId está sendo modificado
+    const oldParentTaskId = oldTask.parentTaskId;
+    const newParentTaskId = data.parentTaskId !== undefined ? data.parentTaskId : oldParentTaskId;
+    
+    // Se houve mudança no parentTaskId, ajustar totalSubtasks dos pais
+    if (oldParentTaskId !== newParentTaskId) {
+      // Se tinha um pai anterior, decrementar totalSubtasks
+      if (oldParentTaskId) {
+        transaction.push(
+          prisma.task.update({
+            where: { id: oldParentTaskId },
+            data: {
+              totalSubtasks: {
+                decrement: 1
+              }
+            }
+          })
+        );
+      }
+      
+      // Se tem um novo pai, incrementar totalSubtasks
+      if (newParentTaskId) {
+        transaction.push(
+          prisma.task.update({
+            where: { id: newParentTaskId },
+            data: {
+              totalSubtasks: {
+                increment: 1
+              }
+            }
+          })
+        );
+      }
+    }
 
     // Add task update
     transaction.push(
@@ -760,8 +820,11 @@ class TaskService {
       }
     }
     
-    // First delete dependencies, comments, attachments, history
-    await prisma.$transaction([
+    // Criar transação para deletar dependências, atualizar pai e deletar tarefa
+    const transaction = [];
+    
+    // 1. Deletar dependências, comentários, anexos, histórico
+    transaction.push(
       prisma.dependency.deleteMany({
         where: {
           OR: [
@@ -769,22 +832,48 @@ class TaskService {
             { dependentTaskId: id }
           ]
         }
-      }),
+      })
+    );
+    transaction.push(
       prisma.comment.deleteMany({
         where: { taskId: id }
-      }),
+      })
+    );
+    transaction.push(
       prisma.attachment.deleteMany({
         where: { taskId: id }
-      }),
+      })
+    );
+    transaction.push(
       prisma.taskHistory.deleteMany({
         where: { taskId: id }
       })
-    ]);
-
-    // Then delete the task
-    const deletedTask = await prisma.task.delete({
-      where: { id }
-    });
+    );
+    
+    // 2. Se a tarefa tem um pai, decrementar totalSubtasks do pai
+    if (taskToDelete && taskToDelete.parentTaskId) {
+      transaction.push(
+        prisma.task.update({
+          where: { id: taskToDelete.parentTaskId },
+          data: {
+            totalSubtasks: {
+              decrement: 1
+            }
+          }
+        })
+      );
+    }
+    
+    // 3. Deletar a tarefa
+    transaction.push(
+      prisma.task.delete({
+        where: { id }
+      })
+    );
+    
+    // Executar transação
+    const results = await prisma.$transaction(transaction);
+    const deletedTask = results[results.length - 1]; // A última operação é a deleção da tarefa
     
     // Emitir evento SSE para deleção em tempo real
     sseService.broadcast('task_deleted', { id: deletedTask.id });

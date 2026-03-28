@@ -20,6 +20,7 @@ class DeveloperTurnStep {
     this.fileSystem = options.fileSystem || container.resolve('fileSystem');
     this.path = options.path || container.resolve('path');
     this.sessionChainUtils = options.sessionChainUtils || container.resolve('sessionChainUtils');
+    this.workspaceSnapshotService = options.workspaceSnapshotService || container.resolve('workspaceSnapshotService');
 
     // ADICIONE ESTA LINHA:
     this.taskAnalysisService = options.taskAnalysisService || container.resolve('taskAnalysisService');
@@ -115,7 +116,12 @@ class DeveloperTurnStep {
         doneExists = true;
         actualDonePath = rogueDoneFile;
       }
-      
+
+      // 6. VERIFICA SE HOUVE ALTERAÇÃO NOS ARQUIVOS DO PROJETO
+      const currentSnapshot = await this.workspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
+      const changes = this.workspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
+      const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
+
       // 6. DETECTA TRUNCAMENTO
       const raw = res.rawOutput || '';
       let truncatedInfo = { detected: (raw.includes('{') && !raw.includes('}')) };
@@ -125,13 +131,21 @@ class DeveloperTurnStep {
       let hasMeaningfulProgress = true;
 
       // Chama a inteligência para avaliar o turno
-      const analysis = await this.taskAnalysisService.analyzeDeveloperTurn({
-        rawOutput: res.rawOutput,
-        task: task,
-        evidence: evidence,
-        doneExists: doneExists
-      });
-
+      let analysis = {
+        isDeclaringDone: true,
+        hasFulfilledContract: true,
+        missingRequirements: [],
+        isTalkingWithoutAction: false
+      }
+      
+      if (!doneExists && !hasRealChanges) {
+        analysis = await this.taskAnalysisService.analyzeDeveloperTurn({
+          rawOutput: res.rawOutput,
+          task: task,
+          evidence: evidence,
+          doneExists: doneExists
+        });
+      }
       // Hierarquia de Feedbacks (quem grita mais alto)
       
       // 1. Erro Crítico de Sintaxe (Truncamento)
@@ -144,7 +158,7 @@ class DeveloperTurnStep {
           feedbackForNextTurn = `[SISTEMA] Você indicou que terminou, mas minha análise detectou pendências:
 ${analysis.missingRequirements.map(req => `- ${req}`).join('\n')}
 
-Por favor, complete o que falta na mesma sessão. Se faltar o .done, use a ferramenta 'exec' com 'touch .done'.`;
+Por favor, complete o que falta na mesma sessão. Se faltar o .done na pasta ${TASKS_DIR}, use a ferramenta 'exec' com 'touch .done'.`;
           hasMeaningfulProgress = false;
       } 
       // 3. Jarbas só pensou, não agiu

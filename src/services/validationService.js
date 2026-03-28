@@ -10,7 +10,7 @@ class ValidationService {
   constructor() {
     this.cache = new Map(); // Cache simples para validações
     this.defaultModel = 'phi4:latest';
-    this.timeoutMs = 5 * 60 * 1000; // 5 minutos
+    this.timeoutMs = 10 * 60 * 1000; // 5 minutos
     this.logger = this.createLogger();
   }
 

@@ -120,6 +120,7 @@ model Task {
   priorityId      String
   createdById     String
   assignedToId          String
+  totalSubtasks         Int                @default(0)
   arquitetosPromptContent String?
   arquitetosAnalysisContent String?
   arquitetosTerminalContent String?
