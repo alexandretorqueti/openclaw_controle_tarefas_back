@@ -1,41 +1,69 @@
 // monitor.ts
 import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor";
-import LockService from './services/lockService';
-import MonitorStateService from './services/monitorStateService';
 import config from './aux/config';
 import { log } from './aux/logger';
 import { mapaDeTransicoes } from "./aux/workflowMap"; 
 
-// Seus passos importados
+// --- IMPORTS DOS PASSOS ---
 import { passoVerificaLock } from "./steps/VerificaLock";
 import { passoConfiguraUsuario } from "./steps/ConfiguraUsuario";
 import { passoBuscaTarefa } from "./steps/BuscaTarefa";
 import { passoInicializaTarefa } from "./steps/InicializaTarefa";
+import { passoSuperValidacao } from "./steps/SuperValidacao";
+import { passoDecomposicaoTarefa } from "./steps/DecomposicaoTarefa"; // Verifique se o .name é igual no map
+import { passoVerificacaoDominio } from "./steps/VerificacaoDominio";
+
+// Passos do Ciclo do Programador (OS QUE FALTAVAM)
+import { passoPreparaSessaoEPromptInicial } from "./steps/PreparaSessaoEPromptInicial";
+import { passoExecutaOpenClaw } from "./steps/ExecutaOpenClaw";           // <--- ADICIONADO
+import { passoInspecionaWorkspace } from "./steps/InspecionaWorkspace";
+import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; // <--- ADICIONADO
+import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
+import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             // <--- ADICIONADO
+
+import container from './container';
 
 export class monitor {
-    // ⚠️ MUDANÇA: Sai o array, entra o dicionário (catálogo)
     catalogo_de_passos: Record<string, Passo> = {};
-    
     jaEnvieiMensagemQueEstouAguardando: boolean = false;
-    
     lockService: any;
     stateService: any;
+
+    constructor() {
+        this.lockService = container.resolve('lockService');
+        this.stateService = container.resolve('monitorStateService');
+        this.inicializaPassos();
+    }
+
+    inicializaPassos() {
+        // Registro de todos os "trabalhadores" no catálogo
+        this.addPasso(passoVerificaLock);
+        this.addPasso(passoConfiguraUsuario);
+        this.addPasso(passoBuscaTarefa);
+        this.addPasso(passoInicializaTarefa);
+        this.addPasso(passoSuperValidacao);
+        this.addPasso(passoDecomposicaoTarefa);
+        this.addPasso(passoVerificacaoDominio);
+        
+        // Loop do Desenvolvedor
+        this.addPasso(passoPreparaSessaoEPromptInicial);
+        this.addPasso(passoExecutaOpenClaw);        // <--- REGISTRADO
+        this.addPasso(passoInspecionaWorkspace);
+        this.addPasso(passoAnalisaTurnoEFeedback);  // <--- REGISTRADO
+        this.addPasso(passoPreparaPromptDeCorrecao);
+        
+        // Finalização
+        this.addPasso(passoFinalizaTarefa);         // <--- REGISTRADO
+    }
+
+    addPasso(passo: Passo) {
+        this.catalogo_de_passos[passo.name] = passo;
+    }
 
     static async main() {
         console.log('🚀 Monitor de tarefas iniciado (Workflow Engine)');
         const instancia = new monitor();
         await instancia.daemonLoop();
-    }
-
-    constructor() {
-        this.lockService = new LockService(config.LOCK_FILE);
-        this.stateService = new MonitorStateService(config.TASKS_DIR);
-        this.inicializaPassos();
-    }
-
-    addPasso(passo: Passo) {
-        // ⚠️ MUDANÇA: Registramos o passo no catálogo usando o nome dele como chave
-        this.catalogo_de_passos[passo.name] = passo;
     }
 
     async daemonLoop() {
@@ -59,7 +87,6 @@ export class monitor {
     }
 
     async executaCiclo() {
-        // 1. Cria o contexto limpo para este ciclo
         const contexto: ContextoExecucao = {
             tarefaAtual: null,
             UserId: null, 
@@ -71,44 +98,41 @@ export class monitor {
         };
 
         try {
-            // 2. ⚠️ O PONTO DE PARTIDA DA ESTEIRA
+            // PONTO DE PARTIDA: Deve bater com o .name do primeiro passo
             let stepAtualNome: string | null = 'Verifica Lock';
 
-            // 3. ⚠️ O MOTOR DE TRANSIÇÃO DE ESTADOS
             while (stepAtualNome !== null) {
                 const passoAtual = this.catalogo_de_passos[stepAtualNome];
                 
                 if (!passoAtual) {
-                    await log(`⚠️ ERRO CRÍTICO: Passo '${stepAtualNome}' está no mapa, mas não foi implementado/adicionado! Abortando ciclo.`);
+                    await log(`⚠️ ERRO CRÍTICO: Passo '${stepAtualNome}' não encontrado no catálogo!`);
                     break;
                 }
 
-                // -> A. Executa o trabalho pesado (O Músculo)
-                // Opcional: await log(`▶️ Executando: ${passoAtual.name}`);
+                // 1. Executa a lógica do passo
                 await passoAtual.func(contexto);
 
-                // -> B. Consulta o mapa para saber qual o próximo destino
+                // 2. Busca as rotas no mapa
                 const rotasDisponiveis = mapaDeTransicoes[stepAtualNome];
                 
                 if (!rotasDisponiveis || rotasDisponiveis.length === 0) {
-                    stepAtualNome = null; // Fim da linha (sem rotas saindo daqui)
+                    stepAtualNome = null;
                     break;
                 }
 
-                // -> C. A Inteligência: Avalia qual rota seguir baseado no contexto
+                // 3. Decide o próximo destino
                 const rotaEscolhida = rotasDisponiveis.find(
                     (rota) => !rota.condition || rota.condition(contexto)
                 );
 
                 if (rotaEscolhida) {
-                    stepAtualNome = rotaEscolhida.to; // Gira a engrenagem para o próximo
+                    stepAtualNome = rotaEscolhida.to; 
                 } else {
-                    await log(`⚠️ Sem rota válida saindo de '${stepAtualNome}'. Encerrando ciclo.`);
+                    await log(`⚠️ Nenhuma condição de rota atendida em '${stepAtualNome}'.`);
                     stepAtualNome = null;
                 }
             }
             
-            // Se processou algo até o fim, reseta o log de aguardando
             if (contexto.tarefaAtual) {
                 this.jaEnvieiMensagemQueEstouAguardando = false;
             }
@@ -116,17 +140,9 @@ export class monitor {
         } catch (error: any) {
             await log(`💥 Erro Fatal no ciclo: ${error.message}`);
         } finally {
+            // Libera o lock de arquivo para que o próximo ciclo possa rodar
             await contexto.services.lockService.releaseLock();
         }
-    }
-
-    inicializaPassos() {
-        // A ordem aqui já não importa mais para a execução! 
-        // Estamos apenas "cadastrando" os trabalhadores na fábrica.
-        this.addPasso(passoVerificaLock);
-        this.addPasso(passoConfiguraUsuario);
-        this.addPasso(passoBuscaTarefa);
-        this.addPasso(passoInicializaTarefa);
     }
 }
 

@@ -3,47 +3,67 @@
 import axios from 'axios';
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
 import { log } from '../aux/logger';
+import container from '../container';
 
 export const passoInicializaTarefa: Passo = {
-    name: 'Trava Tarefa e Status',
+    // ⚠️ CORREÇÃO CRÍTICA: O nome deve bater exatamente com o workflowMap.ts
+    name: 'Inicializa Tarefa', 
     func: async (ctx: ContextoExecucao) => {
-        // 1. Extraímos o que precisamos do contexto
         const { tarefaAtual, services, config } = ctx;
         const { lockService, stateService } = services;
 
-        // Se por algum motivo bizarro a tarefa não estiver no contexto, ignoramos
         if (!tarefaAtual) return;
 
-        // 2. Tenta adquirir o lock específico para o ID desta tarefa
+        await log(`⚙️ Inicializando ambiente para a tarefa ${tarefaAtual.id}...`);
+
+        // 1. LOCK: Tenta adquirir o lock específico
         const lockAdquirido = await lockService.acquireLock(tarefaAtual.id);
         if (!lockAdquirido) {
-            await log(`❌ Falha ao adquirir lock para a tarefa ${tarefaAtual.id}.`);
+            await log(`❌ Tarefa ${tarefaAtual.id} já está em processamento por outro worker.`);
+            tarefaAtual.erroInicializacao = true; // Migalha para o Mapa abortar
             return;
         }
         
-        // 3. Registra a tarefa como ativa no sistema de arquivos/estado
+        // 2. ESTADO: Registra a tarefa como ativa
         await stateService.registerActiveTask(tarefaAtual.id);
         
-        // 4. Busca os status disponíveis na API para descobrir o ID do "Em Andamento"
+        // 3. DISCO: Prepara o diretório de trabalho da tarefa (NOVO)
         try {
-            const statusResponse = await axios.get(`${config.API_URL}/api/statuses`);
+            const fileSystem = container.resolve('fileSystem');
+            const path = container.resolve('path');
+            
+            // Ex: /tmp/tasks/123
+            const taskDir = path.join(config.TASKS_DIR, tarefaAtual.id.toString());
+            await fileSystem.mkdir(taskDir, { recursive: true });
+            
+            tarefaAtual.taskDir = taskDir; // Salva para o OpenClaw saber onde trabalhar
+            await log(`📁 Diretório de trabalho isolado criado.`);
+        } catch (fsError: any) {
+            await log(`⚠️ Erro fatal ao criar diretório de trabalho: ${fsError.message}`);
+            tarefaAtual.erroInicializacao = true;
+            return; // Sem disco, não dá pra continuar
+        }
+
+        // 4. COMUNICAÇÃO: Atualiza o status na API
+        try {
+            const api = container.resolve('apiService') || axios;
+            
+            const statusResponse = await api.get(`${config.API_URL}/api/statuses`);
             const inProgressStatus = statusResponse.data?.statuses?.find(
-                (s: any) => s.name === config.STATUS.IN_PROGRESS
+                (s: any) => s.name === config.STATUS?.IN_PROGRESS || s.name === 'Em Andamento'
             );
             
-            // 5. Atualiza a tarefa no banco com o novo status
             if (inProgressStatus) {
-                await axios.put(`${config.API_URL}/api/tasks/${tarefaAtual.id}`, { 
+                await api.put(`${config.API_URL}/api/tasks/${tarefaAtual.id}`, { 
                     statusId: inProgressStatus.id 
                 });
-                await log(`✅ Status da tarefa ${tarefaAtual.id} atualizado para "${config.STATUS.IN_PROGRESS}".`);
+                await log(`✅ Status atualizado para "Em Andamento".`);
             } else {
-                await log(`⚠️ Status "${config.STATUS.IN_PROGRESS}" não encontrado na API.`);
+                await log(`⚠️ Status "Em Andamento" não encontrado na API.`);
             }
         } catch (error: any) {
-            await log(`⚠️ Erro ao buscar ou atualizar status: ${error.message}`);
-            // Nota: Aqui não estamos abortando o ciclo se falhar apenas a atualização visual do status,
-            // mas você pode alterar para `ctx.deveAbortarCiclo = true` se for um requisito rigoroso.
+            await log(`⚠️ Erro ao atualizar status na API: ${error.message} (Ignorando...)`);
+            // Degradação graciosa: Se só a UI falhar, continuamos o trabalho técnico.
         }
     }
 };
