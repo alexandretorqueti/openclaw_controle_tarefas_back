@@ -4,8 +4,8 @@
   "description": "Backend API para Sistema de Gestão de Tarefas",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js",
+    "start": "npx tsx src/server.js",
+    "dev": "npx tsx src/server.js --serve",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",

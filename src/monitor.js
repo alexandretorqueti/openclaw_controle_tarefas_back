@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+
+// src/monitor.js
+
 // Inicializa o container de injeção de dependências
 require('./bootstrap');
 

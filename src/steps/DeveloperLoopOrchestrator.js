@@ -155,7 +155,8 @@ class DeveloperLoopOrchestrator {
           basePrompt,
           lastFeedback,
           turnNumber: turnos,
-          fallbackAgent
+          fallbackAgent,
+          initialSnapshot
         };
         
         const updatedContext = await turnStep.execute(turnContext);

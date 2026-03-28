@@ -49,6 +49,7 @@ class DeveloperTurnStep {
       basePrompt = '',
       lastFeedback = null,
       backupAgent = 'main',
+      initialSnapshot,
       executionTimestamp // Certifique-se que o Orchestrator passa isso
     } = context;
     if (!task || !files || !config) {
@@ -119,7 +120,7 @@ class DeveloperTurnStep {
 
       // 6. VERIFICA SE HOUVE ALTERAÇÃO NOS ARQUIVOS DO PROJETO
       const currentSnapshot = await this.workspaceSnapshotService.takeSnapshot(project?.pastaBase || ctx.config.TASKS_DIR);
-      const changes = this.workspaceSnapshotService.compareSnapshots(ctx.initialSnapshot, currentSnapshot);
+      const changes = this.workspaceSnapshotService.compareSnapshots(initialSnapshot, currentSnapshot);
       const hasRealChanges = changes.modified.length > 0 || changes.created.length > 0;
 
       // 6. DETECTA TRUNCAMENTO

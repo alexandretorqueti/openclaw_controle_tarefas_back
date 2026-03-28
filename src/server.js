@@ -64,9 +64,9 @@ if (process.env.CORS_ORIGIN) {
 
 app.use(cors(corsOptions));
 
-// Static files
-app.use(express.static("public"));
-app.use("/logs", express.static("public"));
+// Static files - COMENTADO: Causa interceptação de rotas da API
+// app.use(express.static("public"));
+// app.use("/logs", express.static("public"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -239,13 +239,15 @@ app.use(ErrorMiddleware.handler());
 // 2. CONFIGURAÇÃO PARA PRODUÇÃO (O segredo das rotas no navegador)
 // Servir os arquivos estáticos da pasta build do React
 // Certifique-se de que a pasta 'build' está na raiz do seu projeto back-end
-app.use(express.static(path.join(__dirname, 'build')));
+// COMENTADO: Diretório 'build' não existe e causa interceptação de rotas da API
+// app.use(express.static(path.join(__dirname, 'build')));
 
 // 3. O CATCH-ALL: Se não for rota de API ou arquivo físico, entrega o index.html
 // IMPORTANTE: Esta rota '*' tem que ser a última de todas!
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'build', 'index.html'));
-});
+// COMENTADO: Serve index.html para QUALQUER rota, incluindo /api/tasks
+// app.get('*', (req, res) => {
+//   res.sendFile(path.join(__dirname, 'build', 'index.html'));
+// });
 
 // 4. Iniciar o servidor (Apenas UM listen)
 app.listen(PORT, () => {

@@ -220,7 +220,7 @@ class AutoTaskService {
         // Registrar duplicata na memória
         this.logDuplicateTask(existingTask.id, error, req, res);
         // Matrar o processo SEM criar nova tarefa
-        ProcessKiller.killAfterDelay(3000);
+        
         return { 
           success: false, 
           reason: 'duplicate_detected',
@@ -253,10 +253,10 @@ class AutoTaskService {
       // 7. Gerar descrição detalhada
       const description = this.generateErrorDescription(error, req, res);
       
-      // 8. Criar NOVA tarefa com título indicando duplicidade automática detectada
+      
       const newTask = await prisma.task.create({
         data: {
-          title: 'Bug automático detectado (auto-detected duplicate)',
+          title: 'Bug automático detectado.',
           description: description,
           projectId: project.id,
           statusId: status.id,
@@ -270,16 +270,10 @@ class AutoTaskService {
       
       console.log(`✅ Nova tarefa automática criada: ${newTask.id} (duplicidade detectada automaticamente)`);
       
-      // Matar o processo APÓS criar a tarefa de duplicidade
-      ProcessKiller.killAfterTaskCreation(newTask, 3000);
-      
       return { success: true, task: newTask, wasDuplicate: true };
       
     } catch (error) {
       console.error(`❌ Erro ao criar tarefa automática: ${error.message}`);
-      
-      // Matar o processo mesmo se falhar
-      ProcessKiller.killAfterDelay(3000);
       
       return { success: false, reason: 'creation_error', error: error.message, task: null };
     }
