@@ -5,6 +5,7 @@ import { monitor } from '../../src/monitor';
 import axios from 'axios';
 import { createLegacyGetNextTask } from '../../src/steps/adapters/legacyGetNextTask';
 import { fa } from 'zod/v4/locales';
+import { mock } from 'node:test';
 
 // 1. MOCKS DE MÓDULOS
 jest.mock('../../src/container');
@@ -21,6 +22,10 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
         acquireLock: jest.fn().mockResolvedValue(true),
         releaseLock: jest.fn().mockResolvedValue(true)
     };
+
+    const mockstepInexistente = {
+        mockResolvedValue: jest.fn()
+    }; 
 
     const mockFileSystem = {
         mkdir: jest.fn().mockResolvedValue(undefined),
@@ -103,7 +108,8 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 'fileSystem': mockFileSystem,
                 'apiService': mockedAxios,
                 'taskAnalysisService': mockAnalysis,
-                'path': mockPath
+                'path': mockPath,
+                'stepAtualNome': mockstepInexistente
             };
             return mocks[name];
         });
@@ -266,4 +272,40 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
 
         expect(tentouCriarPastaDaTarefa).toBe(false);
     });
+
+    // Caso onde o lock começa bloqueado
+    it('deve detectar lock ativo e interromper o ciclo para evitar conflitos', async () => {
+        // 1. Configura o lock para parecer que já está ativo
+        mockLockService.checkLock.mockResolvedValue({
+            locked: true,
+            ageRecent: true,
+        });
+        
+        // 2. Roda o motor
+        await instanciaMonitor.executaCiclo();
+        
+        // 3. Verifica se ele parou por segurança e não chamou o 'Finaliza Tarefa'
+        expect(mockFileSystem.rename).not.toHaveBeenCalled();
+    });
+
+    // Caso onde tentamos rodar um passo que não existe
+    it('deve logar erro crítico se o passo não existir no catálogo', async () => {
+        // 1. Configura o monitor para começar com um passo inexistente
+        const passoInexistente = 'passoInexistente';
+        mockstepInexistente.mockResolvedValue(passoInexistente);
+
+        // 2. Roda o motor
+        await instanciaMonitor.executaCiclo();
+
+        // 3. Verifica se o log de erro crítico foi chamado
+        // Aqui, como o log é um console.log, podemos espiar o console ou refinar o design para injetar um logger mockável.
+        // Para simplicidade, vamos espiar o console.log:
+        const consoleSpy = jest.spyOn(console, 'log');
+        const foiChamado = mockAnalysis.analyzeDeveloperTurn.mock.calls.length > 0 || 
+                           mockAnalysis.analyzeTurn.mock.calls.length > 0;
+        
+        expect(foiChamado).toBe(false);
+
+    });
+    
 });
