@@ -33,7 +33,12 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
     
     const mockPath = { join: jest.fn((...args) => args.join('/')) };
     const mockStateService = { registerActiveTask: jest.fn() };
-    const mockTaskService = { updateTask: jest.fn().mockResolvedValue(true) };
+    const mockTaskService = 
+        { 
+            updateTask: jest.fn().mockResolvedValue(true),
+            getNextTask: jest.fn(), // ✨ Adicione esta linha!
+            getTasks: jest.fn(),    // Por garantia, se o seu código usar este nom
+        };
     
     const mockValidationService = {
         validateWithAuxModel: jest.fn().mockResolvedValue({ isAtomic: true, domain: 'BACKEND' })
@@ -225,5 +230,40 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
         
         // A tarefa eventualmente finalizou após o loop
         expect(mockFileSystem.rename).toHaveBeenCalled();
+    });
+
+
+    it('deve interromper a execução se exceder 5 loops de correção', async () => {
+        // Setup: O mock da IA sempre retorna erro de sintaxe
+        mockOpenClaw.executeWithFallback.mockResolvedValue({ rawOutput: '{ erro' });
+        
+        await instanciaMonitor.executaCiclo();
+        
+        // Verifique se ele parou por segurança e não chamou o 'Finaliza Tarefa'
+        expect(mockFileSystem.rename).not.toHaveBeenCalled();
+        // Verifique se o log de "Limite de tentativas" apareceu
+    });
+
+    it('deve encerrar silenciosamente se não houver tarefas na fila', async () => {
+        // 1. FORÇA o serviço de busca a dizer que NÃO tem nada
+        // Se você usa o 'taskService' no container:
+        mockTaskService.getNextTask.mockResolvedValue(null);
+        (createLegacyGetNextTask as jest.Mock).mockReturnValue(
+            jest.fn().mockResolvedValue(null) // Retorna null em vez do objeto da tarefa
+        );
+        // Se você usa o 'apiService' (Axios) para buscar:
+        mockedAxios.get.mockResolvedValue({ data: { tasks: [] } });
+
+        // 2. Roda o motor
+        await instanciaMonitor.executaCiclo();
+
+        // 3. A VERIFICAÇÃO INTELIGENTE:
+        // Em vez de checar se mkdir NUNCA foi chamado (pois o monitor pode criar pastas base no init),
+        // vamos checar se ele NÃO tentou criar a pasta específica da 'task-100'.
+        
+        const chamadasMkdir = mockFileSystem.mkdir.mock.calls.map(call => call[0]);
+        const tentouCriarPastaDaTarefa = chamadasMkdir.some(path => path.includes('task-100'));
+
+        expect(tentouCriarPastaDaTarefa).toBe(false);
     });
 });
