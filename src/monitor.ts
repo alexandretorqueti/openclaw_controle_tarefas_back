@@ -21,7 +21,7 @@ import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; // <
 import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
 import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             // <--- ADICIONADO
 import { passoExecucaoProgramador } from "./steps/ExecucaoProgramador";
-
+import './bootstrap';
 import container from './container';
 
 export class monitor {
@@ -32,7 +32,7 @@ export class monitor {
 
     constructor() {
         this.lockService = container.resolve('lockService');
-        this.stateService = container.resolve('monitorStateService');
+        this.stateService = container.resolve('MonitorStateServiceClass');
         this.inicializaPassos();
     }
 

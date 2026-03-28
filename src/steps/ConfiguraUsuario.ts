@@ -12,18 +12,11 @@ export const passoConfiguraUsuario: Passo = {
 
         try {
             // Tenta usar um serviço injetado, ou cai no axios direto se ainda não migrou
-            const api = container.resolve('apiService') || axios;
+            const api = container.resolve('userService') || axios;
             
             await log(`🔍 Buscando ID para o usuário: ${config.MY_USER_NICKNAME}...`);
 
-            const usersRes = await api.get(`${config.API_URL}/api/users`);
-            
-            // Tratativa para diferentes estruturas de retorno da API
-            const listaUsuarios = usersRes.data?.users || usersRes.data || [];
-            
-            const user = listaUsuarios.find(
-                (u: any) => u.nickname === config.MY_USER_NICKNAME
-            );
+            const user = await api.getUserByNickname(`${config.MY_USER_NICKNAME}`);
 
             if (user) {
                 ctx.UserId = user.id;
