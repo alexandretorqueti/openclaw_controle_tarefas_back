@@ -1,5 +1,4 @@
 // src/steps/VerificacaoDominio.ts
-
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
 import { log } from '../aux/logger';
 import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/legacyTaskFailure';
@@ -7,7 +6,7 @@ import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/
 export const passoVerificacaoDominio: Passo = {
     name: 'Verificação de Domínio',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, UserId, config } = ctx;
+        const { tarefaAtual, UserId, config, controleExecucao } = ctx;
 
         if (!tarefaAtual) return;
 
@@ -32,7 +31,7 @@ export const passoVerificacaoDominio: Passo = {
             }
 
             // A MIGALHA VITAL: Anotamos a falha garantidamente para a Esteira saber e ejetar a tarefa
-            tarefaAtual.falhaDeDominio = true;
+            controleExecucao.falhaDeDominio = true;
         } else {
             // Se tem domínio, o trabalhador apenas sorri e acena. Tudo certo!
             await log(`✅ Verificação de domínio aprovada: ${tarefaAtual.domain}.`);

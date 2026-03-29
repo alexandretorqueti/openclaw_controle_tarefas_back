@@ -13,7 +13,7 @@ class ValidationService {
     this.timeoutMs = 10 * 60 * 1000; // 5 minutos
     this.logger = this.createLogger();
   }
-
+  
   /**
    * Cria logger compatível (usa console se logger não estiver disponível)
    */

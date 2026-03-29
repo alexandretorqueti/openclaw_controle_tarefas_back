@@ -1,344 +1,144 @@
-#!/usr/bin/env node
-
-// src/monitor.js
-
-// Inicializa o container de injeção de dependências
-require('./bootstrap');
-
-// monitor.js (Arquitetura Modularizada)
-// Orquestrador de tarefas refatorado com servicos especializados
-const  { log } = require('./aux/logger');
-const axios = require('axios');
-const path = require('path');
-axios.defaults.timeout = 180000; // 3 minutos
-
-// Novos imports para roteamento inteligente
-const prisma = require('./services/prismaService');
-const validationService = require('./services/validationService');
-const decompositionService = require('./services/decompositionService');
-const commentService = require('./services/commentService');
-const { extractJsonObjects } = require('./utils/jsonUtils');
-const taskService = require('./services/taskService');
-
-let JaEnvieiMensagemQueEstouAguardando = false; 
-
-let UserIdJarbas = null;
-/**
- * Busca a próxima tarefa elegível para processamento
- * @returns {Promise<Object|null>} Tarefa ou null se não houver
- */
-/**
- * Busca a próxima tarefa elegível para processamento via API
- * @param {string} nickname - Nickname do usuário (ex: 'alexandre')
- * @returns {Promise<Object|null>} Tarefa ou null se não houver
- */
-async function getNextEligibleTask(nickname) {
-  const { createLegacyGetNextTask } = require('./steps/adapters/legacyGetNextTask');
-  const getNextTask = createLegacyGetNextTask(require('./aux/config').API_URL);
-  return await getNextTask(nickname);
-}
-
-/**
- * Chama o analista (via OpenClaw) para decompor uma tarefa complexa em micro-tarefas
- * @param {Object} task - Tarefa mãe a ser decomposta
- * @returns {Promise<Object>} Resultado da decomposição
- */
-async function callAnalyst(task) {
-  const { createLegacyCallAnalyst } = require('./steps/adapters/legacyCallAnalyst');
-  const legacyCallAnalyst = createLegacyCallAnalyst(UserIdJarbas);
-  return await legacyCallAnalyst(task);
-}
-
-/**
- * Adiciona um comentário a uma tarefa
- * @param {string} taskId - ID da tarefa
- * @param {string} content - Conteúdo do comentário
- */
-async function addComment(taskId, content) {
-  const { addComment: legacyAddComment } = require('./steps/adapters/legacyAddComment');
-  return await legacyAddComment(taskId, content, UserIdJarbas);
-}
-
-async function main() {
-  // Configuracoes
-  const { API_URL, STATUS, TASKS_DIR, PROCESSED_DIR, ERROR_DIR, LOCK_FILE, MY_USER_NICKNAME, TASK_TIMEOUT_MS } = require('./aux/config');
-
-  // Servicos modularizados
-  const LockService = require('./services/lockService');
-  const MonitorStateService = require('./services/monitorStateService');
-  let TaskExecutionService;
-  try {
-    TaskExecutionService = require('./services/taskExecutionService');
-  } catch (err) {
-    console.error("🔥 ERRO FATAL AO CARREGAR O SERVIÇO:", err);
-    debugger; // O seu debug vai PAUSAR AQUI, e você poderá inspecionar a variável 'err'
-  }
-  const TaskFileService = require('./services/taskFileService');
-
-  // Utilitarios
-  const { segundosToMinutos_Segundos } = require('./utils/timeUtils');
-
-  // Instancias de servicos
-  const lockService = new LockService(LOCK_FILE);
-  const stateService = new MonitorStateService(TASKS_DIR);
-  
-  // Variavel de escopo global para as funcoes auxiliares acessarem
-  let MY_USER_ID = null;
-
-/**
-   * Verifica timeout de tarefas ativas e executa acao de recuperacao (Kill + Move)
-   * @param {number} pid - PID do processo associado ao lock
-   */
-  async function handleTaskTimeoutCheck(pid) {
-    const { handleTaskTimeoutCheck: legacyHandleTaskTimeoutCheck } = require('./steps/adapters/legacyTaskTimeoutCheck');
-    return await legacyHandleTaskTimeoutCheck(pid, { TASK_TIMEOUT_MS, TASKS_DIR, ERROR_DIR });
-  }
-
-  /**
-   * Trata falha na execucao de uma tarefa
-   */
-  async function handleTaskFailure(task, error) {
-    const { handleTaskFailure: legacyHandleTaskFailure } = require('./steps/adapters/legacyTaskFailure');
-    return await legacyHandleTaskFailure(task, error, MY_USER_ID, { API_URL, TASKS_DIR, ERROR_DIR });
-  }
-
-  /**
-   * Trata sucesso na execucao de uma tarefa
-   */
-  async function handleTaskSuccess(task, executionResult) {
-    const { handleTaskSuccess: legacyHandleTaskSuccess } = require('./steps/adapters/legacyTaskSuccess');
-    return await legacyHandleTaskSuccess(task, executionResult, MY_USER_ID, { API_URL, TASKS_DIR, PROCESSED_DIR });
-  }
-
-  /**
-   * Funcao principal de execucao
-   */
-  async function run() {
-    // 1. Controle de Concorrencia (Passando o threshold para o Requisito 2)
-    const lockCheck = await lockService.checkLock(TASK_TIMEOUT_MS);
-    
-    if (lockCheck.locked) {
-      if (lockCheck.ageRecent) {
-        await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
-        return;
-      }
-      
-      await log(`🔒 Lock antigo/ativo detectado. PID ${lockCheck.pid} está sendo verificado.`);
-      await handleTaskTimeoutCheck(lockCheck.pid);
-      await log(`⏳ Outra instancia ja esta rodando com PID ${lockCheck.pid}. Omitindo execucao.`);
-      return;
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.monitor = void 0;
+const config_1 = __importDefault(require("./aux/config"));
+const logger_1 = require("./aux/logger");
+const workflowMap_1 = require("./aux/workflowMap");
+// --- IMPORTS DOS PASSOS ---
+const VerificaLock_1 = require("./steps/VerificaLock");
+const ConfiguraUsuario_1 = require("./steps/ConfiguraUsuario");
+const BuscaTarefa_1 = require("./steps/BuscaTarefa");
+const InicializaTarefa_1 = require("./steps/InicializaTarefa");
+const SuperValidacao_1 = require("./steps/SuperValidacao");
+const DecomposicaoTarefa_1 = require("./steps/DecomposicaoTarefa"); // Verifique se o .name é igual no map
+const VerificacaoDominio_1 = require("./steps/VerificacaoDominio");
+// Passos do Ciclo do Programador (OS QUE FALTAVAM)
+const PreparaSessaoEPromptInicial_1 = require("./steps/PreparaSessaoEPromptInicial");
+const ExecutaOpenClaw_1 = require("./steps/ExecutaOpenClaw"); // <--- ADICIONADO
+const InspecionaWorkspace_1 = require("./steps/InspecionaWorkspace");
+const AnalisaTurnoEFeedback_1 = require("./steps/AnalisaTurnoEFeedback"); // <--- ADICIONADO
+const PreparaPromptDeCorrecao_1 = require("./steps/PreparaPromptDeCorrecao");
+const FinalizaTarefa_1 = require("./steps/FinalizaTarefa"); // <--- ADICIONADO
+const ExecucaoProgramador_1 = require("./steps/ExecucaoProgramador");
+require("./bootstrap");
+const container_1 = __importDefault(require("./container"));
+class monitor {
+    catalogo_de_passos = {};
+    jaEnvieiMensagemQueEstouAguardando = false;
+    lockService;
+    stateService;
+    constructor() {
+        this.lockService = container_1.default.resolve('lockService');
+        this.stateService = container_1.default.resolve('monitorStateService');
+        this.inicializaPassos();
     }
-
-    if (lockCheck.corrupted) {
-      await log(`⚠️ Lock com PID invalido. Limpando lock corrompido.`);
-      await lockService.forceReleaseLock();
-    } else if (lockCheck.pid && !lockCheck.alive) {
-      await log(`🧹 Lock orfao detectado. PID ${lockCheck.pid} nao existe mais. Limpando lock e estado.`);
-      await lockService.forceReleaseLock();
-      await stateService.clearState();
+    inicializaPassos() {
+        // Registro de todos os "trabalhadores" no catálogo
+        this.addPasso(VerificaLock_1.passoVerificaLock);
+        this.addPasso(ConfiguraUsuario_1.passoConfiguraUsuario);
+        this.addPasso(BuscaTarefa_1.passoBuscaTarefa);
+        this.addPasso(InicializaTarefa_1.passoInicializaTarefa);
+        this.addPasso(SuperValidacao_1.passoSuperValidacao);
+        this.addPasso(DecomposicaoTarefa_1.passoDecomposicaoTarefa);
+        this.addPasso(VerificacaoDominio_1.passoVerificacaoDominio);
+        // Loop do Desenvolvedor
+        this.addPasso(PreparaSessaoEPromptInicial_1.passoPreparaSessaoEPromptInicial);
+        this.addPasso(ExecutaOpenClaw_1.passoExecutaOpenClaw); // <--- REGISTRADO
+        this.addPasso(InspecionaWorkspace_1.passoInspecionaWorkspace);
+        this.addPasso(AnalisaTurnoEFeedback_1.passoAnalisaTurnoEFeedback); // <--- REGISTRADO
+        this.addPasso(PreparaPromptDeCorrecao_1.passoPreparaPromptDeCorrecao);
+        // Finalização
+        this.addPasso(FinalizaTarefa_1.passoFinalizaTarefa); // <--- REGISTRADO
+        // Loop do Programador
+        this.addPasso(ExecucaoProgramador_1.passoExecucaoProgramador);
     }
-    
-    try {
-      // Busca dados do usuario pelo nickname para usar ao longo do ciclo de vida da tarefa
-      try {
-        const usersRes = await axios.get(`${API_URL}/api/users`);
-        const user = (usersRes.data.users || []).find(u => u.nickname === MY_USER_NICKNAME);
-        if (user) {
-          MY_USER_ID = user.id;
-          UserIdJarbas = user.id;
-        } else {
-          await log(`⚠️ Usuario '${MY_USER_NICKNAME}' nao encontrado na API. Operacoes que exigem ID podem falhar.`);
+    addPasso(passo) {
+        this.catalogo_de_passos[passo.name] = passo;
+    }
+    static async main() {
+        console.log('🚀 Monitor de tarefas iniciado (Workflow Engine)');
+        const instancia = new monitor();
+        await instancia.daemonLoop();
+    }
+    async daemonLoop() {
+        const CHECK_INTERVAL_MS = 60000;
+        while (true) {
+            try {
+                await this.executaCiclo();
+                if (!this.jaEnvieiMensagemQueEstouAguardando) {
+                    await (0, logger_1.log)(`⏳ Aguardando a próxima verificação...`);
+                    this.jaEnvieiMensagemQueEstouAguardando = true;
+                }
+                await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
+            }
+            catch (loopError) {
+                await (0, logger_1.log)(`💥 Erro no loop: ${loopError.message}`);
+                await new Promise(resolve => setTimeout(resolve, 30000));
+            }
         }
-      } catch (userError) {
-        await log(`⚠️ Falha ao buscar configuracoes de usuario: ${userError.message}`);
-      }
-
-      // 2. Busca nova tarefa (REFATORADO - Query Prisma)
-      const task = await getNextEligibleTask(MY_USER_NICKNAME);
-      
-      if (!task) {
-        return;
-      }
-
-      await log(`🎯 Tarefa capturada: [${task.id}] ${task.title}`);
-      JaEnvieiMensagemQueEstouAguardando = false;
-      // Adquirir lock passando o taskId - o lockService agora marca isExecuting: true automaticamente
-      if (!await lockService.acquireLock(task.id)) {
-        await log(`❌ Falha ao adquirir lock.`);
-        return;
-      }
-      
-      // Registrar tarefa como ativa
-      await stateService.registerActiveTask(task.id);
-      
-      // Buscar ID do status "Em Andamento"
-      let STATUS_ID = null;
-      try {
-        const statusResponse = await axios.get(`${API_URL}/api/statuses`);
-        if (statusResponse.data && statusResponse.data.statuses) {
-          const inProgressStatus = statusResponse.data.statuses.find(s => s.name === STATUS.IN_PROGRESS);
-          STATUS_ID = inProgressStatus ? inProgressStatus.id : null;
-        }
-      } catch (error) {
-        console.error('Erro ao buscar status:', error.message);
-        STATUS_ID = null;
-      }
-      
-      // Atualizar status para "Em Andamento" se encontrou o ID
-      if (STATUS_ID) {
-        await axios.put(`${API_URL}/api/tasks/${task.id}`, { statusId: STATUS_ID });
-      } else {
-        await log(`⚠️ Não foi possível encontrar o status "${STATUS.IN_PROGRESS}" para atualizar a tarefa ${task.id}`);
-      }
-
-      // 3. LÓGICA DE ROTEAMENTO (REVISADA: Atomicidade First + Inferência de Domínio)
-      
-      // PASSO 1: A Super-Validação (Se falta atomicidade OU falta domínio)
-      if (task.isAtomic !== true || !task.domain) {
-        await log(`⚖️ Verificando complexidade e/ou inferindo domínio da tarefa...`);
+    }
+    async executaCiclo() {
+        const contexto = {
+            tarefaAtual: null,
+            UserId: null,
+            services: {
+                lockService: this.lockService,
+                stateService: this.stateService
+            },
+            config: config_1.default
+        };
+        const passosExecutads = [];
         try {
-          // A validação agora retorna { isAtomic: boolean, domain: 'FRONTEND' | 'BACKEND' | null }
-          const validation = await validationService.validateWithAuxModel(task, task.project);
-          
-          task.isAtomic = validation.isAtomic;
-          
-          // Só preenche o domínio se a tarefa não tinha um e a IA conseguiu inferir
-          if (!task.domain && validation.domain) {
-            task.domain = validation.domain;
-            await log(`🎯 Domínio inferido pela IA: ${task.domain}`);
-          }
-
-          // Atualiza o banco com as duas informações de uma vez só
-          await taskService.updateTask(task.id, { 
-            isAtomic: task.isAtomic,
-            domain: task.domain
-          });
-          
-          await log(`✅ Validação concluída: Atômica? ${task.isAtomic} | Domínio: ${task.domain || 'N/A'}`);
-          
-        } catch (validationError) {
-          await log(`💥 Erro na super-validação: ${validationError.message}`);
-          await handleTaskFailure(task, validationError);
-          return; // Aborta a execução desta tarefa e parte para a próxima da fila
+            // PONTO DE PARTIDA: Deve bater com o .name do primeiro passo
+            let stepAtualNome = 'Verifica Lock';
+            while (stepAtualNome !== null) {
+                const passoAtual = this.catalogo_de_passos[stepAtualNome];
+                if (!passoAtual) {
+                    await (0, logger_1.log)(`⚠️ ERRO CRÍTICO: Passo '${stepAtualNome}' não encontrado no catálogo!`);
+                    break;
+                }
+                // 1. Executa a lógica do passo
+                await passoAtual.func(contexto);
+                passosExecutads.push(stepAtualNome);
+                // Verifica Lock
+                if (contexto.lockAtivo) {
+                    await (0, logger_1.log)(`🔒 Lock ativo detectado durante o ciclo. Interrompendo para evitar conflitos.`);
+                    break;
+                }
+                // 2. Busca as rotas no mapa
+                const rotasDisponiveis = workflowMap_1.mapaDeTransicoes[stepAtualNome];
+                if (!rotasDisponiveis || rotasDisponiveis.length === 0) {
+                    stepAtualNome = null;
+                    break;
+                }
+                // 3. Decide o próximo destino
+                const rotaEscolhida = rotasDisponiveis.find((rota) => !rota.condition || rota.condition(contexto));
+                if (rotaEscolhida) {
+                    stepAtualNome = rotaEscolhida.to;
+                }
+                else {
+                    await (0, logger_1.log)(`⚠️ Nenhuma condição de rota atendida em '${stepAtualNome}'.`);
+                    stepAtualNome = null;
+                }
+            }
+            console.log(`Ciclo finalizado. Passos executados: ${passosExecutads.join(' -> ')}`);
+            if (contexto.tarefaAtual) {
+                this.jaEnvieiMensagemQueEstouAguardando = false;
+            }
         }
-      }
-
-      // PASSO 2: Roteamento baseado na Complexidade (É gigante?)
-      if (!task.isAtomic) {
-        await log(`🔍 Tarefa complexa. Chamando Analista para decomposição...`);
-        const routingResult = await callAnalyst(task);
-        
-        if (routingResult.success && routingResult.subtasksCreated && routingResult.subtasksCreated > 0) {
-          return; // 🛑 ABORTA AQUI. A tarefa mãe cumpriu seu papel e finalizou.
+        catch (error) {
+            await (0, logger_1.log)(`💥 Erro Fatal no ciclo: ${error.message}`);
         }
-      }
-
-      // PASSO 3: Validação final de segurança da fila
-      if (!task.domain) {
-        await log(`❌ Tarefa atômica, mas sem domínio definido (IA não conseguiu inferir).`);
-        await handleTaskFailure(task, new Error(`A tarefa é atômica, mas a IA não conseguiu inferir se é FRONTEND ou BACKEND.`));
-        return; // Aborta
-      }
-
-      // PASSO 4: Caminho Feliz -> Executar com Programador (Gargalo fechado!)
-      await log(`🚀 Tarefa atômica e com domínio. Pronta para o Desenvolvedor...`);
-      
-      // Determinar agente baseado no domínio
-      let agent;
-      if (task.domain === 'BACKEND') {
-        agent = task.project.programadorBack;
-      } else if (task.domain === 'FRONTEND') {
-        agent = task.project.programadorFront;
-      } else {
-        await handleTaskFailure(task, new Error(`Domínio inválido retornado: ${task.domain}`));
-        return; // Aborta
-      }
-      
-      // Fallback se não houver programador configurado no banco
-      if (!agent) {
-        agent = task.domain === 'BACKEND' ? 'default-backend-agent' : 'default-frontend-agent';
-        await log(`⚠️ Usando agente padrão para ${task.domain}: ${agent}`);
-      }
-      
-      await log(`👨‍💻 Executando tarefa ${task.id} com ${agent} (${task.domain})`);
-      
-      // Configuração para execução
-      const config = {
-        TASKS_DIR,
-        TASK_TIMEOUT_MS,
-        MY_USER_ID,
-        agent // Novo parâmetro passado para o serviço
-      };
-      
-      // Executar tarefa
-      const { executeTask: legacyExecuteTask } = require('./steps/adapters/legacyExecuteTask');
-      const executionResult = await legacyExecuteTask(task, MY_USER_ID, config);
-      
-      // Processar resultado
-      if (executionResult.success) {
-        await handleTaskSuccess(task, executionResult);
-      } else {
-        await handleTaskFailure(task, new Error(executionResult.errorMessage || 'Execução falhou'));
-      }
-
-    } catch (error) {
-      const detail = error.response?.data 
-        ? JSON.stringify(error.response.data) 
-        : (error.stack || error.message);
-        
-      const requestInfo = error.config 
-        ? `[${error.config.method.toUpperCase()} ${error.config.url}]` 
-        : '';
-
-      await log(`💥 Erro Fatal no Orquestrador ${requestInfo}: ${detail}`);
-      
-      await lockService.releaseLock();
-      process.exitCode = 1;
-    } finally {
-      await lockService.releaseLock();
+        finally {
+            // Libera o lock de arquivo para que o próximo ciclo possa rodar
+            await contexto.services.lockService.releaseLock();
+        }
     }
-  }
-  
-
-  // Função principal do daemon com loop infinito
-  async function daemonLoop() {
-    await log("🚀 Iniciando monitor de tarefas (modo daemon)...");
-    
-    // Intervalo entre verificações (1 minuto)
-    const CHECK_INTERVAL_MS = 60000;
-    
-    while (true) {
-      try {
-        await run();
-        
-        // Aguardar antes da próxima verificação
-        if (!JaEnvieiMensagemQueEstouAguardando) {
-          await log(`⏳ Aguardando a próxima verificação...`);
-          JaEnvieiMensagemQueEstouAguardando = true;
-        }
-        await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
-        
-      } catch (loopError) {
-        await log(`💥 Erro no loop do daemon: ${loopError.message}`);
-        await log(`🔄 Reiniciando loop em 30 segundos...`);
-        await new Promise(resolve => setTimeout(resolve, 30000));
-      }
-    }
-  }
-
-  // Iniciar o daemon
-  await daemonLoop();
 }
-
-// Exporta para testes
+exports.monitor = monitor;
 if (require.main === module) {
-  main()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error(err);
-      process.exit(1);
-    });
+    monitor.main().catch(err => console.error(err));
 }
-
-module.exports = { main };
-

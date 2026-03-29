@@ -7,7 +7,7 @@ import container from '../container';
 export const passoFinalizaTarefa: Passo = {
     name: 'Finaliza Tarefa',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, UserId, config } = ctx;
+        const { tarefaAtual, UserId, config, controleExecucao } = ctx;
         if (!tarefaAtual) return;
 
         const fileSystem = container.resolve('fileSystem');
@@ -18,8 +18,8 @@ export const passoFinalizaTarefa: Passo = {
 
         try {
             // 1. LIMPEZA: Deleta o arquivo .done para não poluir o repositório final
-            if (tarefaAtual.actualDonePath) {
-                await fileSystem.unlink(tarefaAtual.actualDonePath).catch(() => {});
+            if (controleExecucao.actualDonePath) {
+                await fileSystem.unlink(controleExecucao.actualDonePath).catch(() => {});
             }
 
             // 2. COMUNICAÇÃO: Atualiza a API ANTES de mover os arquivos! (Segurança de Estado)
@@ -41,12 +41,12 @@ export const passoFinalizaTarefa: Passo = {
             await log(`📁 Arquivos da tarefa arquivados em 'processed'.`);
 
             // 4. MIGALHA DE SUCESSO ABSOLUTO
-            tarefaAtual.finalizadaComSucesso = true;
+            controleExecucao.finalizadaComSucesso = true;
 
         } catch (error: any) {
             await log(`⚠️ Erro durante a finalização da tarefa: ${error.message}`);
             // Deixa a migalha de erro para auditoria
-            tarefaAtual.erroFinalizacao = true;
+            controleExecucao.erroFinalizacao = true;
         }
     }
 };

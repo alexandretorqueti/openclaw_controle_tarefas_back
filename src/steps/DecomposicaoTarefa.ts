@@ -7,7 +7,7 @@ import { createLegacyCallAnalyst } from '../steps/adapters/legacyCallAnalyst';
 export const passoDecomposicaoTarefa: Passo = {
     name: 'Decomposição de Tarefa',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, UserId } = ctx;
+        const { tarefaAtual, UserId, controleExecucao } = ctx;
 
         if (!tarefaAtual) return;
 
@@ -21,11 +21,11 @@ export const passoDecomposicaoTarefa: Passo = {
             const routingResult = await callAnalyst(tarefaAtual);
             
             // AS MIGALHAS: Anotamos na prancheta o que o Analista conseguiu fazer
-            tarefaAtual.analiseConcluidaComSucesso = routingResult?.success || false;
-            tarefaAtual.subtasksCreated = routingResult?.subtasksCreated || 0;
+            controleExecucao.analiseConcluidaComSucesso = routingResult?.success || false;
+            controleExecucao.subtasksCreated = routingResult?.subtasksCreated || 0;
 
-            if (tarefaAtual.subtasksCreated > 0) {
-                await log(`✅ Tarefa mãe decomposta em ${tarefaAtual.subtasksCreated} subtarefas.`);
+            if (controleExecucao.subtasksCreated > 0) {
+                await log(`✅ Tarefa mãe decomposta em ${controleExecucao.subtasksCreated} subtarefas.`);
             } else {
                 await log(`⚠️ Analista foi chamado, mas não conseguiu criar nenhuma subtarefa.`);
             }
@@ -33,7 +33,7 @@ export const passoDecomposicaoTarefa: Passo = {
         } catch (error: any) {
             await log(`💥 Erro durante a decomposição da tarefa: ${error.message}`);
             // Deixamos a migalha do erro para a esteira saber que deu ruim
-            tarefaAtual.erroDecomposicao = true;
+            controleExecucao.erroDecomposicao = true;
         }
     }
 };

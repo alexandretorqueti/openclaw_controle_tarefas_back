@@ -6,28 +6,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const autoTaskService_1 = __importDefault(require("../services/autoTaskService"));
 const router = (0, express_1.Router)();
-// Rota GET para informar que apenas POST é suportado
-router.get('/frontend-errors', (req, res) => {
-  res.status(405).json({
-    success: false,
-    message: 'Método não permitido. Use POST para enviar erros do frontend.',
-    allowedMethods: ['POST'],
-    example: {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: {
-        message: 'Erro de exemplo',
-        stack: 'Error: exemplo\n    at ...',
-        url: 'http://localhost:3000/page',
-        userAgent: 'Mozilla/5.0 ...',
-        type: 'Error',
-        line: 10,
-        col: 5
-      }
-    }
-  });
-});
-
 // Passamos a nossa interface FrontendErrorBody para o Request do Express
 router.post('/frontend-errors', async (req, res) => {
     try {

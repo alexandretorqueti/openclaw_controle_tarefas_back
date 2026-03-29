@@ -7,9 +7,9 @@ import container from '../container';
 export const passoPreparaPromptDeCorrecao: Passo = {
     name: 'Prepara Prompt de Correção',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, config } = ctx;
+        const { tarefaAtual, config, controleExecucao } = ctx;
 
-        if (!tarefaAtual || !tarefaAtual.feedbackForNextTurn) return;
+        if (!tarefaAtual || !controleExecucao.feedbackForNextTurn) return;
 
         const fileSystem = container.resolve('fileSystem');
         const path = container.resolve('path');
@@ -21,18 +21,18 @@ export const passoPreparaPromptDeCorrecao: Passo = {
         const feedbackPrompt = `
 === FEEDBACK DO SISTEMA ===
 Ocorreu um problema ou pendência na sua última ação:
-${tarefaAtual.feedbackForNextTurn}
+${controleExecucao.feedbackForNextTurn}
 
 Por favor, analise as evidências acima, corrija o erro e continue a tarefa até concluir os requisitos e gerar o arquivo '.done'.
 `.trim();
 
         // 2. Atualizamos o 'promptVez' na prancheta
         // O próximo passo (Executa OpenClaw) sempre lê 'promptVez'
-        tarefaAtual.promptVez = feedbackPrompt;
+        controleExecucao.promptVez = feedbackPrompt;
 
         // 3. Log em arquivo para auditoria (salvo DENTRO da pasta da tarefa)
-        const currentLoop = tarefaAtual.loopsExecutados || 1;
-        const taskFolder = tarefaAtual.taskDir || path.join(config.TASKS_DIR, tarefaAtual.id.toString());
+        const currentLoop = controleExecucao.loopsExecutados || 1;
+        const taskFolder = controleExecucao.taskDir || path.join(config.TASKS_DIR, tarefaAtual.id.toString());
         const logPath = path.join(taskFolder, `prompt-retry-loop-${currentLoop}.txt`);
         
         try {

@@ -8,7 +8,7 @@ import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/
 export const passoSuperValidacao: Passo = {
     name: 'Super Validação',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, UserId, config } = ctx;
+        const { tarefaAtual, UserId, config, controleExecucao } = ctx;
 
         if (!tarefaAtual) return;
 
@@ -57,7 +57,7 @@ export const passoSuperValidacao: Passo = {
                 }
                 
                 // A MIGALHA NEGATIVA FATAL: Avisamos na prancheta que a validação falhou e o fluxo deve morrer
-                tarefaAtual.erroValidacao = true;
+                controleExecucao.erroValidacao = true;
             }
         } else {
             await log(`⏩ Tarefa ${tarefaAtual.id} já é atômica e possui domínio (${tarefaAtual.domain}). Pulando validação com IA.`);

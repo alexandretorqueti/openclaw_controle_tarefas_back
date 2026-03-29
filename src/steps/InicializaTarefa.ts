@@ -9,7 +9,7 @@ export const passoInicializaTarefa: Passo = {
     // ⚠️ CORREÇÃO CRÍTICA: O nome deve bater exatamente com o workflowMap.ts
     name: 'Inicializa Tarefa', 
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, services, config } = ctx;
+        const { tarefaAtual, services, config, controleExecucao } = ctx;
         const { lockService, stateService } = services;
 
         if (!tarefaAtual) return;
@@ -20,7 +20,7 @@ export const passoInicializaTarefa: Passo = {
         const lockAdquirido = await lockService.acquireLock(tarefaAtual.id);
         if (!lockAdquirido) {
             await log(`❌ Tarefa ${tarefaAtual.id} já está em processamento por outro worker.`);
-            tarefaAtual.erroInicializacao = true; // Migalha para o Mapa abortar
+            controleExecucao.erroInicializacao = true; // Migalha para o Mapa abortar
             return;
         }
         
@@ -36,11 +36,11 @@ export const passoInicializaTarefa: Passo = {
             const taskDir = path.join(config.TASKS_DIR, tarefaAtual.id.toString());
             await fileSystem.mkdir(taskDir, { recursive: true });
             
-            tarefaAtual.taskDir = taskDir; // Salva para o OpenClaw saber onde trabalhar
+            controleExecucao.taskDir = taskDir; // Salva para o OpenClaw saber onde trabalhar
             await log(`📁 Diretório de trabalho isolado criado.`);
         } catch (fsError: any) {
             await log(`⚠️ Erro fatal ao criar diretório de trabalho: ${fsError.message}`);
-            tarefaAtual.erroInicializacao = true;
+            controleExecucao.erroInicializacao = true;
             return; // Sem disco, não dá pra continuar
         }
 

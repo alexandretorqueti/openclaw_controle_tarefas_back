@@ -31,6 +31,7 @@ const LlmService = require('./services/llmService');
 const TaskExecutionService = require('./services/taskExecutionService');
 const TaskExecutionOrchestrator = require('./steps/TaskExecutionOrchestrator');
 const UserService = require('./services/userService'); // <-- Importa o UserService para resolver o usuário atual
+const ValidationService = require('./services/validationService');
 
 const { log } = require('./aux/logger'); // caminho relativo ao bootstrap
 const config = require('./aux/config');
@@ -65,7 +66,6 @@ container.register('llmService', LlmService);
 container.register('taskExecutionService', TaskExecutionService);
 container.register('userService', UserService); // <-- Registra o UserService para resolver o usuário atual
 
-
 // Serviços que precisam ser instanciados com configuração
 // Registramos as classes para que possam ser instanciadas quando necessário
 container.register('LockServiceClass', LockService);
@@ -73,4 +73,10 @@ container.register('MonitorStateServiceClass', MonitorStateService);
 container.register('TaskFileServiceClass', TaskFileService);
 const lockServiceInstance = new LockService('/tmp/.lock');
 container.register('lockService', lockServiceInstance);
+const monitorStateServiceInstance = new MonitorStateService(config.TASKS_DIR);
+container.register('monitorStateService', monitorStateServiceInstance);
+container.register('apiService', axios.create({ baseURL: config.API_URL }));
+
+container.register('validationService', ValidationService); // <-- Registra o ValidationService
+
 module.exports = container;

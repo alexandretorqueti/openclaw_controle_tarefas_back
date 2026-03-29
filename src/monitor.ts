@@ -32,7 +32,7 @@ export class monitor {
 
     constructor() {
         this.lockService = container.resolve('lockService');
-        this.stateService = container.resolve('MonitorStateServiceClass');
+        this.stateService = container.resolve('monitorStateService');
         this.inicializaPassos();
     }
 
