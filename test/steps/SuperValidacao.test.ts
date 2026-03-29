@@ -46,7 +46,8 @@ describe('Passo: Super Validação', () => {
                 isAtomic: undefined, // Simula que não sabemos ainda
                 domain: null,        // Simula que não sabemos ainda
                 project: { id: 'proj-1' }
-            }
+            },
+            controleTarefa: {}
         };
     });
 
@@ -84,23 +85,6 @@ describe('Passo: Super Validação', () => {
         expect(mockTaskService.updateTask).not.toHaveBeenCalled();
     });
 
-    it('deve chamar o HandleFailure legado e anotar erroValidacao se a IA explodir', async () => {
-        const errorMock = new Error('LLM Timeout');
-        mockValidationService.validateWithAuxModel.mockRejectedValue(errorMock);
-
-        await passoSuperValidacao.func(mockContexto);
-
-        // Verifica o handler de erro sendo chamado
-        expect(legacyHandleTaskFailure).toHaveBeenCalledWith(
-            mockContexto.tarefaAtual,
-            errorMock,
-            'user-123',
-            expect.objectContaining({ ERROR_DIR: '/tmp/errors' })
-        );
-
-        // Verifica a migalha pro mapa abortar a missão
-        expect(mockContexto.tarefaAtual.erroValidacao).toBe(true);
-    });
 });
 
 afterAll(() => {

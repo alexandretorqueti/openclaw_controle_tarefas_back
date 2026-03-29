@@ -53,10 +53,10 @@ export const mapaDeTransicoes: Record<string, Rota[]> = {
     ],
 
     'Prepara Sessão e Prompt para Programador': [
-        { to: 'Executa OpenClaw' }
+        { to: 'Programador' }
     ],
 
-    'Executa OpenClaw': [
+   'Programador': [
         { condition: (c) => c.controleExecucao.erroFatalIA === true, to: null },
         { condition: (c) => c.controleExecucao.loopsExecutados > 5, to: null }, // Eject por segurança
         { to: 'Inspeciona Workspace' }
@@ -81,7 +81,7 @@ export const mapaDeTransicoes: Record<string, Rota[]> = {
     ],
 
     'Prepara Prompt de Correção': [
-        { to: 'Executa OpenClaw' }
+        { to: 'Programador' }
     ],
 
     'Finaliza Tarefa': [

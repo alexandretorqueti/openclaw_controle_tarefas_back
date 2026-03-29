@@ -26,7 +26,8 @@ describe('Passo: Verificação de Domínio', () => {
             tarefaAtual: {
                 id: 'task-789',
                 domain: undefined // Começa sem domínio para testar a falha
-            }
+            },
+            controleExecucao: {}
         };
     });
 
@@ -42,7 +43,7 @@ describe('Passo: Verificação de Domínio', () => {
         );
         
         // Verifica a migalha vital
-        expect(mockContexto.tarefaAtual.falhaDeDominio).toBe(true);
+        expect(mockContexto.controleExecucao.falhaDeDominio).toBe(true);
     });
 
     it('deve manter a flag falhaDeDominio MESMO SE a limpeza legada falhar (Resiliência)', async () => {
@@ -53,7 +54,7 @@ describe('Passo: Verificação de Domínio', () => {
         await expect(passoVerificacaoDominio.func(mockContexto)).resolves.not.toThrow();
         
         // A flag DEVE estar lá para o mapa interromper o ciclo
-        expect(mockContexto.tarefaAtual.falhaDeDominio).toBe(true);
+        expect(mockContexto.controleExecucao.falhaDeDominio).toBe(true);
     });
 
     it('não deve fazer nada e manter as flags limpas se o domínio existir (Caminho Feliz)', async () => {
@@ -65,7 +66,7 @@ describe('Passo: Verificação de Domínio', () => {
         expect(legacyHandleTaskFailure).not.toHaveBeenCalled();
         
         // A flag de falha não deve existir
-        expect(mockContexto.tarefaAtual.falhaDeDominio).toBeUndefined();
+        expect(mockContexto.controleExecucao.falhaDeDominio).toBeUndefined();
     });
 });
 

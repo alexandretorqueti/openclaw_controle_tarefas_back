@@ -46,7 +46,8 @@ describe('Passo: Inicializa Tarefa', () => {
             },
             tarefaAtual: {
                 id: '123'
-            }
+            },
+            controleExecucao: {}
         };
     });
 
@@ -61,8 +62,8 @@ describe('Passo: Inicializa Tarefa', () => {
         expect(mockFileSystem.mkdir).toHaveBeenCalledWith('/tmp/tasks/123', { recursive: true });
         
         expect(mockedAxios.put).toHaveBeenCalledWith('http://api.com/api/tasks/123', { statusId: 2 });
-        expect(mockContexto.tarefaAtual.taskDir).toBe('/tmp/tasks/123');
-        expect(mockContexto.tarefaAtual.erroInicializacao).toBeUndefined();
+        expect(mockContexto.controleExecucao.taskDir).toBe('/tmp/tasks/123');
+        expect(mockContexto.controleExecucao.erroInicializacao).toBeUndefined();
     });
 
     it('deve abortar e sinalizar erro se falhar ao adquirir o lock', async () => {
@@ -74,7 +75,7 @@ describe('Passo: Inicializa Tarefa', () => {
         expect(mockStateService.registerActiveTask).not.toHaveBeenCalled();
         expect(mockFileSystem.mkdir).not.toHaveBeenCalled();
         expect(mockedAxios.put).not.toHaveBeenCalled();
-        expect(mockContexto.tarefaAtual.erroInicializacao).toBe(true);
+        expect(mockContexto.controleExecucao.erroInicializacao).toBe(true);
     });
 
     it('deve abortar e sinalizar erro se falhar ao criar a pasta no disco', async () => {
@@ -82,7 +83,7 @@ describe('Passo: Inicializa Tarefa', () => {
 
         await passoInicializaTarefa.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.erroInicializacao).toBe(true);
+        expect(mockContexto.controleExecucao.erroInicializacao).toBe(true);
         expect(mockedAxios.put).not.toHaveBeenCalled(); // Não atualiza status se não tem disco
     });
 
@@ -93,7 +94,7 @@ describe('Passo: Inicializa Tarefa', () => {
 
         // Ele ainda deve ter criado a pasta e mantido a flag limpa para a tarefa continuar
         expect(mockFileSystem.mkdir).toHaveBeenCalled();
-        expect(mockContexto.tarefaAtual.erroInicializacao).toBeUndefined();
+        expect(mockContexto.controleExecucao.erroInicializacao).toBeUndefined();
     });
 });
 afterAll(() => {

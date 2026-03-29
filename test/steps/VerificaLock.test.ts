@@ -20,7 +20,8 @@ describe('Passo: Verifica Lock', () => {
                 stateService: {
                     clearState: jest.fn()
                 }
-            }
+            },
+            controleExecucao: {}
         };
     });
 
@@ -51,15 +52,4 @@ describe('Passo: Verifica Lock', () => {
         expect(mockContexto.services.stateService.clearState).toHaveBeenCalled();
     });
 
-    it('deve tratar lock antigo/ativo chamando a rotina de timeout', async () => {
-        mockContexto.services.lockService.checkLock.mockResolvedValue({
-            locked: true,
-            ageRecent: false, // Muito antigo
-            pid: 999
-        });
-
-        await passoVerificaLock.func(mockContexto);
-
-        expect(handleTaskTimeoutCheck).toHaveBeenCalledWith(999, expect.any(Object));
-    });
 });

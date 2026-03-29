@@ -36,6 +36,10 @@ export interface ContextoExecucao {
         lockService: any;
         stateService: any;
         fileService: any;
+        userService: any;
+    };
+    utils: {
+        promptFactory: any;
     };
     lockAtivo?: boolean;
     project?: Project | null;

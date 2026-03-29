@@ -28,13 +28,15 @@ describe('Passo: Executa OpenClaw', () => {
             },
             tarefaAtual: {
                 id: 'task-123',
+                project: { pastaBase: '/src' }
+            }, 
+            controleExecucao: {
                 promptVez: 'Crie um botão em React.',
                 sessionId: 'session-xyz',
                 agenteAlocado: 'react-expert',
                 loopsExecutados: 1, // Já rodou uma vez
                 terminalLogFile: '/tmp/log.txt',
-                project: { pastaBase: '/src' }
-            }
+            },
         };
     });
 
@@ -50,7 +52,7 @@ describe('Passo: Executa OpenClaw', () => {
         await passoExecutaOpenClaw.func(mockContexto);
 
         // O contador de loops deve ter subido de 1 para 2
-        expect(mockContexto.tarefaAtual.loopsExecutados).toBe(2);
+        expect(mockContexto.controleExecucao.loopsExecutados).toBe(2);
 
         // Verifica se chamou a IA com os parâmetros certos
         expect(mockOpenClawService.executeWithFallback).toHaveBeenCalledWith(
@@ -66,12 +68,12 @@ describe('Passo: Executa OpenClaw', () => {
         );
 
         // Verifica as anotações na prancheta
-        expect(mockContexto.tarefaAtual.rawOutput).toBe('{"tool": "write_file"}');
-        expect(mockContexto.tarefaAtual.erroFatalIA).toBe(false);
+        expect(mockContexto.controleExecucao.rawOutput).toBe('{"tool": "write_file"}');
+        expect(mockContexto.controleExecucao.erroFatalIA).toBe(false);
     });
 
     it('deve usar o agente "main" se nenhum agente foi alocado previamente', async () => {
-        mockContexto.tarefaAtual.agenteAlocado = undefined;
+        mockContexto.controleExecucao.agenteAlocado = undefined;
         mockOpenClawService.executeWithFallback.mockResolvedValue({});
 
         await passoExecutaOpenClaw.func(mockContexto);
@@ -85,19 +87,19 @@ describe('Passo: Executa OpenClaw', () => {
 
         await passoExecutaOpenClaw.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.erroFatalIA).toBe(true);
-        expect(mockContexto.tarefaAtual.ultimoErro).toBe('API Rate Limit Exceeded');
+        expect(mockContexto.controleExecucao.erroFatalIA).toBe(true);
+        expect(mockContexto.controleExecucao.ultimoErro).toBe('API Rate Limit Exceeded');
     });
 
     it('deve sinalizar erroFatalIA e abortar se o promptVez estiver vazio', async () => {
-        mockContexto.tarefaAtual.promptVez = null;
+        mockContexto.controleExecucao.promptVez = null;
 
         await passoExecutaOpenClaw.func(mockContexto);
 
         // Não deve chamar a IA
         expect(mockOpenClawService.executeWithFallback).not.toHaveBeenCalled();
         // Deve sinalizar erro para a esteira ejetar a tarefa
-        expect(mockContexto.tarefaAtual.erroFatalIA).toBe(true);
+        expect(mockContexto.controleExecucao.erroFatalIA).toBe(true);
     });
 });
 afterAll(() => {

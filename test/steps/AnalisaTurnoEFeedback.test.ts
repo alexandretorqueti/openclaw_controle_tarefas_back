@@ -25,6 +25,8 @@ describe('Passo: Analisa Turno e Feedback', () => {
         mockContexto = {
             tarefaAtual: {
                 id: '123',
+            }, 
+            controleExecucao: {
                 rawOutput: '{"tool": "exec"}',
                 doneExists: false,
                 hasRealChanges: true,
@@ -34,17 +36,17 @@ describe('Passo: Analisa Turno e Feedback', () => {
     });
 
     it('deve detectar erro de sintaxe se o JSON estiver truncado', async () => {
-        mockContexto.tarefaAtual.rawOutput = '{"action": "write_file", "content": "muito longo...'; 
+        mockContexto.controleExecucao.rawOutput = '{"action": "write_file", "content": "muito longo...'; 
         
         await passoAnalisaTurnoEFeedback.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.erroSintaxeJSON).toBe(true);
-        expect(mockContexto.tarefaAtual.feedbackForNextTurn).toContain('ERRO DE SINTAXE');
+        expect(mockContexto.controleExecucao.erroSintaxeJSON).toBe(true);
+        expect(mockContexto.controleExecucao.feedbackForNextTurn).toContain('ERRO DE SINTAXE');
     });
 
     it('deve gerar feedback de pendência se a IA disser que acabou mas faltarem requisitos', async () => {
-        mockContexto.tarefaAtual.doneExists = true;
-        mockContexto.tarefaAtual.hasRealChanges = false; // Força a chamada do service
+        mockContexto.controleExecucao.doneExists = true;
+        mockContexto.controleExecucao.hasRealChanges = false; // Força a chamada do service
 
         mockAnalysisService.analyzeDeveloperTurn.mockResolvedValue({
             isDeclaringDone: true,
@@ -54,16 +56,16 @@ describe('Passo: Analisa Turno e Feedback', () => {
 
         await passoAnalisaTurnoEFeedback.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.feedbackForNextTurn).toContain('Faltou o teste unitário');
+        expect(mockContexto.controleExecucao.feedbackForNextTurn).toContain('Faltou o teste unitário');
     });
 
     it('deve aprovar o turno (feedback null) se tudo estiver correto', async () => {
-        mockContexto.tarefaAtual.doneExists = true;
-        mockContexto.tarefaAtual.hasRealChanges = true;
+        mockContexto.controleExecucao.doneExists = true;
+        mockContexto.controleExecucao.hasRealChanges = true;
 
         await passoAnalisaTurnoEFeedback.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.feedbackForNextTurn).toBeNull();
+        expect(mockContexto.controleExecucao.feedbackForNextTurn).toBeNull();
     });
 });
 

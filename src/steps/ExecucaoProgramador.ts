@@ -1,3 +1,4 @@
+
 // src/steps/ExecucaoProgramador.ts
 
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
@@ -39,3 +40,4 @@ export const passoExecucaoProgramador: Passo = {
         await log(`👨‍💻 Agente alocado com sucesso: ${agent} (${tarefaAtual.domain}). Enviando para a bancada de trabalho...`);
     }
 };
+

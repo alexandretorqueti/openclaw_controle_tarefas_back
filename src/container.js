@@ -29,6 +29,10 @@ class Container {
   clear() {
     this.registry.clear();
   }
+
+  getRegistry() {
+    return this.registry;
+  }
 }
 
 // Exporta um singleton para ser usado em todo o código

@@ -51,12 +51,15 @@ describe('Passo: Inspeciona Workspace', () => {
             },
             tarefaAtual: {
                 id: '123',
-                taskDir: '/tmp/tasks/123',
                 project: { pastaBase: '/src/projeto' },
+            },
+            controleExecucao: {
+                taskDir: '/tmp/tasks/123',
                 initialSnapshot: { files: { 'a.ts': 'hash_antigo' } },
                 toolCall: { name: 'write' },
                 toolResult: { success: true }
             }
+
         };
     });
 
@@ -69,8 +72,8 @@ describe('Passo: Inspeciona Workspace', () => {
 
         await passoInspecionaWorkspace.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.doneExists).toBe(true);
-        expect(mockContexto.tarefaAtual.actualDonePath).toBe('/tmp/tasks/123/finalizado.done');
+        expect(mockContexto.controleExecucao.doneExists).toBe(true);
+        expect(mockContexto.controleExecucao.actualDonePath).toBe('/tmp/tasks/123/finalizado.done');
     });
 
     it('deve encontrar o arquivo .done na pasta do projeto se não achar na taskDir', async () => {
@@ -82,8 +85,8 @@ describe('Passo: Inspeciona Workspace', () => {
 
         await passoInspecionaWorkspace.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.doneExists).toBe(true);
-        expect(mockContexto.tarefaAtual.actualDonePath).toBe('/src/projeto/meu.done');
+        expect(mockContexto.controleExecucao.doneExists).toBe(true);
+        expect(mockContexto.controleExecucao.actualDonePath).toBe('/src/projeto/meu.done');
     });
 
     it('deve registrar hasRealChanges=true se o snapshot detectar modificações', async () => {
@@ -93,8 +96,8 @@ describe('Passo: Inspeciona Workspace', () => {
         await passoInspecionaWorkspace.func(mockContexto);
 
         expect(mockWorkspaceSnapshotService.takeSnapshot).toHaveBeenCalledWith('/src/projeto');
-        expect(mockContexto.tarefaAtual.hasRealChanges).toBe(true);
-        expect(mockContexto.tarefaAtual.changesSummary.modified).toContain('a.ts');
+        expect(mockContexto.controleExecucao.hasRealChanges).toBe(true);
+        expect(mockContexto.controleExecucao.changesSummary.modified).toContain('a.ts');
     });
 
     it('deve lidar graciosamente com erro no snapshot e setar hasRealChanges=false', async () => {
@@ -103,7 +106,7 @@ describe('Passo: Inspeciona Workspace', () => {
 
         await passoInspecionaWorkspace.func(mockContexto);
 
-        expect(mockContexto.tarefaAtual.hasRealChanges).toBe(false);
+        expect(mockContexto.controleExecucao.hasRealChanges).toBe(false);
     });
 
     it('deve compilar as evidências usando o evidenceService', async () => {
@@ -118,7 +121,7 @@ describe('Passo: Inspeciona Workspace', () => {
             { success: true },
             { executionDirectory: '/src/projeto' }
         );
-        expect(mockContexto.tarefaAtual.evidence).toBeDefined();
+        expect(mockContexto.controleExecucao.evidence).toBeDefined();
     });
 });
 afterAll(() => {

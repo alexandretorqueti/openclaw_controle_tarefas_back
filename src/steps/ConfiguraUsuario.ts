@@ -12,11 +12,11 @@ export const passoConfiguraUsuario: Passo = {
 
         try {
             // Tenta usar um serviço injetado, ou cai no axios direto se ainda não migrou
-            const api = container.resolve('userService') || axios;
+            const { userService } = ctx.services;
             
             await log(`🔍 Buscando ID para o usuário: ${config.MY_USER_NICKNAME}...`);
 
-            const user = await api.getUserByNickname(`${config.MY_USER_NICKNAME}`);
+            const user = await userService.getUserByNickname(`${config.MY_USER_NICKNAME}`);
 
             if (user) {
                 ctx.UserId = user.id;

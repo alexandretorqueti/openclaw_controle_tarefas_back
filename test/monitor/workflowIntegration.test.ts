@@ -4,8 +4,7 @@ import container from '../../src/container';
 import { monitor } from '../../src/monitor';
 import axios from 'axios';
 import { createLegacyGetNextTask } from '../../src/steps/adapters/legacyGetNextTask';
-import { fa } from 'zod/v4/locales';
-import { mock } from 'node:test';
+import PromptFactory from '../../src/utils/promptFactory';
 
 // 1. MOCKS DE MÓDULOS
 jest.mock('../../src/container');
@@ -26,6 +25,7 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
     const mockstepInexistente = {
         mockResolvedValue: jest.fn()
     }; 
+    const mockpromptFactory = PromptFactory; // Usamos a implementação real, mas poderíamos mockar métodos específicos se necessário.
 
     const mockFileSystem = {
         mkdir: jest.fn().mockResolvedValue(undefined),
@@ -109,7 +109,8 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 'apiService': mockedAxios,
                 'taskAnalysisService': mockAnalysis,
                 'path': mockPath,
-                'stepAtualNome': mockstepInexistente
+                'stepAtualNome': mockstepInexistente,
+                'promptFactory': mockpromptFactory
             };
             return mocks[name];
         });
@@ -131,7 +132,8 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 'taskAnalysisService': mockAnalysis,
                 'analysisService': mockAnalysis,
                 'taskAnalysis': mockAnalysis,
-                'analysis': mockAnalysis
+                'analysis': mockAnalysis,
+                'promptFactory': mockpromptFactory,
             };
             return registry[name];
         });

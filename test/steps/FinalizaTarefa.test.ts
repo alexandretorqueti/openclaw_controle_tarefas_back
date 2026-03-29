@@ -49,6 +49,8 @@ describe('Passo: Finaliza Tarefa', () => {
             },
             tarefaAtual: {
                 id: 'task-123',
+            },
+            controleExecucao: {
                 actualDonePath: '/tmp/pending/task-123/.done'
             }
         };
@@ -74,12 +76,12 @@ describe('Passo: Finaliza Tarefa', () => {
         );
 
         // Verifica migalha
-        expect(mockContexto.tarefaAtual.finalizadaComSucesso).toBe(true);
-        expect(mockContexto.tarefaAtual.erroFinalizacao).toBeUndefined();
+        expect(mockContexto.controleExecucao.finalizadaComSucesso).toBe(true);
+        expect(mockContexto.controleExecucao.erroFinalizacao).toBeUndefined();
     });
 
     it('deve ignorar a exclusão do .done se o caminho não existir no contexto', async () => {
-        mockContexto.tarefaAtual.actualDonePath = undefined;
+        mockContexto.controleExecucao.actualDonePath = undefined;
 
         await passoFinalizaTarefa.func(mockContexto);
 
@@ -100,8 +102,8 @@ describe('Passo: Finaliza Tarefa', () => {
         expect(mockFileSystem.rename).not.toHaveBeenCalled();
 
         // A migalha de erro deve ser plantada
-        expect(mockContexto.tarefaAtual.erroFinalizacao).toBe(true);
-        expect(mockContexto.tarefaAtual.finalizadaComSucesso).toBeUndefined();
+        expect(mockContexto.controleExecucao.erroFinalizacao).toBe(true);
+        expect(mockContexto.controleExecucao.finalizadaComSucesso).toBeUndefined();
     });
 });
 afterAll(() => {

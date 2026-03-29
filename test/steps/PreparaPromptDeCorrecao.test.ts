@@ -37,10 +37,12 @@ describe('Passo: Prepara Prompt de Correção', () => {
             },
             tarefaAtual: {
                 id: '123',
+            },
+            controleExecucao: {
                 taskDir: '/tmp/tasks/123',
                 loopsExecutados: 1,
                 feedbackForNextTurn: '[ERRO DE SINTAXE] JSON quebrado.'
-            }
+            }   
         };
     });
 
@@ -48,24 +50,24 @@ describe('Passo: Prepara Prompt de Correção', () => {
         await passoPreparaPromptDeCorrecao.func(mockContexto);
 
         // Verifica se o promptVez foi atualizado corretamente com o template
-        expect(mockContexto.tarefaAtual.promptVez).toContain('=== FEEDBACK DO SISTEMA ===');
-        expect(mockContexto.tarefaAtual.promptVez).toContain('[ERRO DE SINTAXE] JSON quebrado.');
+        expect(mockContexto.controleExecucao.promptVez).toContain('=== FEEDBACK DO SISTEMA ===');
+        expect(mockContexto.controleExecucao.promptVez).toContain('[ERRO DE SINTAXE] JSON quebrado.');
 
         // Verifica se salvou o log dentro da pasta da tarefa
         expect(mockPath.join).toHaveBeenCalledWith('/tmp/tasks/123', 'prompt-retry-loop-1.txt');
         expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
             '/tmp/tasks/123/prompt-retry-loop-1.txt',
-            mockContexto.tarefaAtual.promptVez
+            mockContexto.controleExecucao.promptVez
         );
     });
 
     it('deve retornar graciosamente sem fazer nada se não houver feedbackForNextTurn', async () => {
-        mockContexto.tarefaAtual.feedbackForNextTurn = null;
+        mockContexto.controleExecucao.feedbackForNextTurn = null;
 
         await passoPreparaPromptDeCorrecao.func(mockContexto);
 
         // Não deve tentar atualizar promptVez ou salvar arquivos
-        expect(mockContexto.tarefaAtual.promptVez).toBeUndefined();
+        expect(mockContexto.controleExecucao.promptVez).toBeUndefined();
         expect(mockFileSystem.writeFile).not.toHaveBeenCalled();
     });
 
@@ -76,7 +78,7 @@ describe('Passo: Prepara Prompt de Correção', () => {
         await expect(passoPreparaPromptDeCorrecao.func(mockContexto)).resolves.not.toThrow();
 
         // A IA ainda deve receber o prompt mesmo que o log do disco falhe
-        expect(mockContexto.tarefaAtual.promptVez).toBeDefined();
+        expect(mockContexto.controleExecucao.promptVez).toBeDefined();
     });
 });
 

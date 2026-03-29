@@ -1,32 +1,33 @@
-
 // monitor.ts
-import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor";
+
+// 1. PRIMEIRO: Inicializa a infraestrutura (Injeção de dependência e configs)
+import './bootstrap';
+import container = require('./container');
 import config from './aux/config';
 import { log } from './aux/logger';
 import { mapaDeTransicoes } from "./aux/workflowMap"; 
+import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor";
 
-// --- IMPORTS DOS PASSOS ---
+// 2. DEPOIS: Importa os passos (que dependem da infraestrutura já estar pronta)
 import { passoVerificaLock } from "./steps/VerificaLock";
 import { passoConfiguraUsuario } from "./steps/ConfiguraUsuario";
 import { passoBuscaTarefa } from "./steps/BuscaTarefa";
 import { passoInicializaTarefa } from "./steps/InicializaTarefa";
 import { passoSuperValidacao } from "./steps/SuperValidacao";
-import { passoDecomposicaoTarefa } from "./steps/DecomposicaoTarefa"; // Verifique se o .name é igual no map
+import { passoDecomposicaoTarefa } from "./steps/DecomposicaoTarefa"; 
 import { passoVerificacaoDominio } from "./steps/VerificacaoDominio";
+import { passoTimeoutCheck } from "./steps/TaskTimeoutCheckStep";
 
-// Passos do Ciclo do Programador (OS QUE FALTAVAM)
+// Passos do Ciclo do Programador 
 import { passoPreparaSessaoEPromptInicial } from "./steps/PreparaSessaoEPromptInicial";
-import { passoExecutaOpenClaw } from "./steps/ExecutaOpenClaw";           // <--- ADICIONADO
+import { passoExecutaOpenClaw } from "./steps/ExecutaOpenClaw";           
 import { passoInspecionaWorkspace } from "./steps/InspecionaWorkspace";
-import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; // <--- ADICIONADO
+import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; 
 import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
-import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             // <--- ADICIONADO
+import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             
 import { passoExecucaoProgramador } from "./steps/ExecucaoProgramador";
 import { passoArchitectPlanning } from "./steps/ArchitectPlanning";
-
-import './bootstrap';
-import container from './container';
-import { passoTimeoutCheck } from "./steps/TaskTimeoutCheckStep";
+import { th } from 'zod/v4/locales';
 
 export class monitor {
     catalogo_de_passos: Record<string, Passo> = {};
@@ -34,11 +35,15 @@ export class monitor {
     lockService: any;
     stateService: any;
     fileService: any;
+    promptFactory: any;
+    userService: any;
 
     constructor() {
         this.lockService = container.resolve('lockService');
         this.stateService = container.resolve('monitorStateService');
         this.fileService = container.resolve('taskFileService');
+        this.promptFactory = container.resolve('promptFactory');
+        this.userService = container.resolve('userService');
         this.inicializaPassos();
     }
 
@@ -107,6 +112,10 @@ export class monitor {
                 lockService: this.lockService,
                 stateService: this.stateService,
                 fileService: this.fileService,
+                userService: this.userService
+            },
+            utils: {
+                promptFactory: this.promptFactory,
             },
             config: config,
             controleExecucao: {

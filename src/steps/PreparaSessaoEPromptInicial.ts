@@ -7,14 +7,14 @@ import container from '../container';
 export const passoPreparaSessaoEPromptInicial: Passo = {
     name: 'Prepara Sessão e Prompt para Programador',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, config, controleExecucao } = ctx;
+        const { tarefaAtual, config, controleExecucao, utils } = ctx;
 
         if (!tarefaAtual) return;
 
         const fileSystem = container.resolve('fileSystem');
         const path = container.resolve('path');
-        const promptFactory = container.resolve('promptFactory');
-        const CONFIG = container.resolve('config');
+        const promptFactory = utils.promptFactory;
+
 
         const TASKS_DIR = config.TASKS_DIR;
         const dirBase = config.BASE_DIR;
@@ -41,6 +41,7 @@ export const passoPreparaSessaoEPromptInicial: Passo = {
         const basePrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\n
 TAREFA: ${tarefaAtual.title}.
 DESC: ${tarefaAtual.description}. 
+REGRAS: ${(tarefaAtual.project && tarefaAtual.project.regras)? tarefaAtual.project.regras : 'Siga as boas práticas de desenvolvimento'}\n\n
 BASE: ${dirBase}\n\n
 ${engineRules}`;
         
