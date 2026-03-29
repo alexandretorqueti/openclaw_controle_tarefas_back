@@ -21,6 +21,8 @@ import { passoAnalisaTurnoEFeedback } from "./steps/AnalisaTurnoEFeedback"; // <
 import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
 import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             // <--- ADICIONADO
 import { passoExecucaoProgramador } from "./steps/ExecucaoProgramador";
+import { passoArchitectPlanning } from "./steps/ArchitectPlanning";
+
 import './bootstrap';
 import container from './container';
 
@@ -45,6 +47,8 @@ export class monitor {
         this.addPasso(passoSuperValidacao);
         this.addPasso(passoDecomposicaoTarefa);
         this.addPasso(passoVerificacaoDominio);
+
+        this.addPasso(passoArchitectPlanning); // Passo do Arquiteto
         
         // Loop do Desenvolvedor
         this.addPasso(passoPreparaSessaoEPromptInicial);

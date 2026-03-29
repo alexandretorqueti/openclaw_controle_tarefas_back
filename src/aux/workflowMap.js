@@ -37,9 +37,13 @@ exports.mapaDeTransicoes = {
         { to: 'Prepara Sessão e Prompt para Programador' }
     ],
     'Prepara Sessão e Prompt para Programador': [
-        { to: 'Executa OpenClaw' }
+        { to: 'Analista de Sistemas' }
     ],
-    'Executa OpenClaw': [
+    'Analista de Sistemas': [
+        { condition: (c) => c.controleExecucao.erroFatalIA === true, to: null },
+        { to: 'Programador' }
+    ],
+    'Programador': [
         { condition: (c) => c.controleExecucao.erroFatalIA === true, to: null },
         { condition: (c) => c.controleExecucao.loopsExecutados > 5, to: null },
         { to: 'Inspeciona Workspace' }
@@ -61,7 +65,7 @@ exports.mapaDeTransicoes = {
         { to: null }
     ],
     'Prepara Prompt de Correção': [
-        { to: 'Executa OpenClaw' }
+        { to: 'Programador' }
     ],
     'Finaliza Tarefa': [
         { to: null }

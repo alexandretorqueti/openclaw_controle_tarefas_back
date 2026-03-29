@@ -5,7 +5,7 @@ import { log } from '../aux/logger';
 import container from '../container';
 
 export const passoExecutaOpenClaw: Passo = {
-    name: 'Executa OpenClaw',
+    name: 'Programador',
     func: async (ctx: ContextoExecucao) => {
         const { tarefaAtual, config, controleExecucao } = ctx;
         

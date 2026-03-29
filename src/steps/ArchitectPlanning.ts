@@ -313,8 +313,8 @@ class ArchitectPlanningStep {
 }
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
 
-export const passoArchitectPlanning: Passo = {
-    name: 'Planejamento do Arquiteto',
+const passoArchitectPlanning: Passo = {
+    name: 'Analista de Sistemas',
     func: async (ctx: ContextoExecucao) => {
         const architectPlanningStep = new ArchitectPlanningStep();
         const result: ContextoExecucao = await architectPlanningStep.execute(ctx);
@@ -325,4 +325,4 @@ export const passoArchitectPlanning: Passo = {
 // EXPORTAÇÕES
 // ============================================================================
 
-export default ArchitectPlanningStep;
+export { passoArchitectPlanning };
