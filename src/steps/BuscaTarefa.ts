@@ -25,6 +25,7 @@ export const passoBuscaTarefa: Passo = {
 
             // 4. Sucesso: injetamos a tarefa no contexto
             ctx.tarefaAtual = tarefa;
+            ctx.project = tarefa.project;
             await log(`🎯 Tarefa capturada: [${tarefa.id}] ${tarefa.title}`);
 
         } catch (error: any) {
