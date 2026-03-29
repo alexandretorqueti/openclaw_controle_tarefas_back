@@ -119,7 +119,7 @@ export class monitor {
             },
             config: config,
             controleExecucao: {
-
+                loopsExecutados: 0,
             },
             lockAtivo: false
         };

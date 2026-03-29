@@ -6,7 +6,7 @@ import container from '../container';
 import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/legacyTaskFailure';
 
 export const passoSuperValidacao: Passo = {
-    name: 'Super Validação',
+    name: 'Valida se a tarefa é atômica e se tem domínio',
     func: async (ctx: ContextoExecucao) => {
         const { tarefaAtual, UserId, config, controleExecucao } = ctx;
 

@@ -1,15 +1,14 @@
 "use strict";
-// test/steps/ExecucaoProgramador.test.ts
 Object.defineProperty(exports, "__esModule", { value: true });
 const ExecucaoProgramador_1 = require("../../src/steps/ExecucaoProgramador");
-beforeAll(() => {
-    // Faz o console.error não fazer nada durante o teste 
-    // (ou apenas imprimir a mensagem sem o rastro do Jest)
-    jest.spyOn(console, 'error').mockImplementation(() => { });
-});
+// Mock do logger para não sujar o terminal do teste
+jest.mock('../../src/aux/logger', () => ({
+    log: jest.fn()
+}));
 describe('Passo: Execução Programador (Alocação de Agente)', () => {
     let mockContexto;
     beforeEach(() => {
+        // Inicializamos o contexto com a estrutura correta esperada pelo Passo
         mockContexto = {
             tarefaAtual: {
                 id: 'task-123',
@@ -18,42 +17,48 @@ describe('Passo: Execução Programador (Alocação de Agente)', () => {
                     programadorBack: 'agent-senior-node',
                     programadorFront: 'agent-senior-react'
                 }
+            },
+            // IMPORTANTE: O Passo espera que este objeto exista
+            controleExecucao: {
+                agenteAlocado: null,
+                loopsExecutados: 0,
+                erroExecucao: false
             }
         };
     });
     it('deve alocar o agente de BACKEND configurado no projeto', async () => {
         await ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto);
-        expect(mockContexto.tarefaAtual.agenteAlocado).toBe('agent-senior-node');
-        expect(mockContexto.tarefaAtual.loopsExecutados).toBe(0);
-        expect(mockContexto.tarefaAtual.erroExecucao).toBeUndefined();
+        // ALVO CORRIGIDO: controleExecucao, não tarefaAtual
+        expect(mockContexto.controleExecucao.agenteAlocado).toBe('agent-senior-node');
+        expect(mockContexto.controleExecucao.loopsExecutados).toBe(0);
+        expect(mockContexto.controleExecucao.erroExecucao).toBeFalsy();
     });
     it('deve alocar o agente de FRONTEND configurado no projeto', async () => {
         mockContexto.tarefaAtual.domain = 'FRONTEND';
         await ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto);
-        expect(mockContexto.tarefaAtual.agenteAlocado).toBe('agent-senior-react');
+        expect(mockContexto.controleExecucao.agenteAlocado).toBe('agent-senior-react');
     });
     it('deve usar o agente default de BACKEND se o projeto não tiver um configurado', async () => {
         mockContexto.tarefaAtual.project = null;
         await ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto);
-        expect(mockContexto.tarefaAtual.agenteAlocado).toBe('default-backend-agent');
+        expect(mockContexto.controleExecucao.agenteAlocado).toBe('default-backend-agent');
     });
     it('deve usar o agente default de FRONTEND se o projeto não tiver um configurado', async () => {
         mockContexto.tarefaAtual.domain = 'FRONTEND';
         mockContexto.tarefaAtual.project = null;
         await ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto);
-        expect(mockContexto.tarefaAtual.agenteAlocado).toBe('default-frontend-agent');
+        expect(mockContexto.controleExecucao.agenteAlocado).toBe('default-frontend-agent');
     });
     it('deve marcar erroExecucao se o domínio for inválido ou ausente', async () => {
         mockContexto.tarefaAtual.domain = 'FULLSTACK_NAO_SUPORTADO';
         await ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto);
-        expect(mockContexto.tarefaAtual.agenteAlocado).toBeUndefined();
-        expect(mockContexto.tarefaAtual.erroExecucao).toBe(true);
+        // ALVO CORRIGIDO
+        expect(mockContexto.controleExecucao.agenteAlocado).toBeNull();
+        expect(mockContexto.controleExecucao.erroExecucao).toBe(true);
     });
     it('não deve fazer nada se não houver tarefaAtual no contexto', async () => {
         mockContexto.tarefaAtual = null;
         await expect(ExecucaoProgramador_1.passoExecucaoProgramador.func(mockContexto)).resolves.not.toThrow();
+        expect(mockContexto.controleExecucao.agenteAlocado).toBeNull();
     });
-});
-afterAll(() => {
-    jest.restoreAllMocks();
 });

@@ -51,8 +51,10 @@ describe('Passo: Inspeciona Workspace', () => {
             },
             tarefaAtual: {
                 id: '123',
-                taskDir: '/tmp/tasks/123',
                 project: { pastaBase: '/src/projeto' },
+            },
+            controleExecucao: {
+                taskDir: '/tmp/tasks/123',
                 initialSnapshot: { files: { 'a.ts': 'hash_antigo' } },
                 toolCall: { name: 'write' },
                 toolResult: { success: true }
@@ -67,8 +69,8 @@ describe('Passo: Inspeciona Workspace', () => {
             return [];
         });
         await InspecionaWorkspace_1.passoInspecionaWorkspace.func(mockContexto);
-        expect(mockContexto.tarefaAtual.doneExists).toBe(true);
-        expect(mockContexto.tarefaAtual.actualDonePath).toBe('/tmp/tasks/123/finalizado.done');
+        expect(mockContexto.controleExecucao.doneExists).toBe(true);
+        expect(mockContexto.controleExecucao.actualDonePath).toBe('/tmp/tasks/123/finalizado.done');
     });
     it('deve encontrar o arquivo .done na pasta do projeto se não achar na taskDir', async () => {
         mockFileSystem.readdir.mockImplementation(async (dir) => {
@@ -79,22 +81,22 @@ describe('Passo: Inspeciona Workspace', () => {
             return [];
         });
         await InspecionaWorkspace_1.passoInspecionaWorkspace.func(mockContexto);
-        expect(mockContexto.tarefaAtual.doneExists).toBe(true);
-        expect(mockContexto.tarefaAtual.actualDonePath).toBe('/src/projeto/meu.done');
+        expect(mockContexto.controleExecucao.doneExists).toBe(true);
+        expect(mockContexto.controleExecucao.actualDonePath).toBe('/src/projeto/meu.done');
     });
     it('deve registrar hasRealChanges=true se o snapshot detectar modificações', async () => {
         // fileSystem não acha o .done para não atrapalhar esse teste
         mockFileSystem.readdir.mockResolvedValue([]);
         await InspecionaWorkspace_1.passoInspecionaWorkspace.func(mockContexto);
         expect(mockWorkspaceSnapshotService.takeSnapshot).toHaveBeenCalledWith('/src/projeto');
-        expect(mockContexto.tarefaAtual.hasRealChanges).toBe(true);
-        expect(mockContexto.tarefaAtual.changesSummary.modified).toContain('a.ts');
+        expect(mockContexto.controleExecucao.hasRealChanges).toBe(true);
+        expect(mockContexto.controleExecucao.changesSummary.modified).toContain('a.ts');
     });
     it('deve lidar graciosamente com erro no snapshot e setar hasRealChanges=false', async () => {
         mockFileSystem.readdir.mockResolvedValue([]);
         mockWorkspaceSnapshotService.takeSnapshot.mockRejectedValue(new Error('Permission Denied'));
         await InspecionaWorkspace_1.passoInspecionaWorkspace.func(mockContexto);
-        expect(mockContexto.tarefaAtual.hasRealChanges).toBe(false);
+        expect(mockContexto.controleExecucao.hasRealChanges).toBe(false);
     });
     it('deve compilar as evidências usando o evidenceService', async () => {
         mockFileSystem.readdir.mockResolvedValue([]);
@@ -102,7 +104,7 @@ describe('Passo: Inspeciona Workspace', () => {
         expect(mockEvidenceService.createEmptyEvidence).toHaveBeenCalled();
         expect(mockEvidenceService.applyExecutionEvidence).toHaveBeenCalledWith({ steps: [] }, // O empty evidence retornado pelo mock
         { name: 'write' }, { success: true }, { executionDirectory: '/src/projeto' });
-        expect(mockContexto.tarefaAtual.evidence).toBeDefined();
+        expect(mockContexto.controleExecucao.evidence).toBeDefined();
     });
 });
 afterAll(() => {

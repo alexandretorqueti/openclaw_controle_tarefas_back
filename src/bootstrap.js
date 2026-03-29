@@ -70,7 +70,7 @@ container.register('userService', UserService); // <-- Registra o UserService pa
 // Registramos as classes para que possam ser instanciadas quando necessário
 container.register('LockServiceClass', LockService);
 container.register('MonitorStateServiceClass', MonitorStateService);
-container.register('TaskFileServiceClass', TaskFileService);
+container.register('taskFileService', TaskFileService);
 const lockServiceInstance = new LockService('/tmp/.lock');
 container.register('lockService', lockServiceInstance);
 const monitorStateServiceInstance = new MonitorStateService(config.TASKS_DIR);

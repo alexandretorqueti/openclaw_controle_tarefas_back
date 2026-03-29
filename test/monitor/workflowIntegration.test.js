@@ -8,49 +8,48 @@ const container_1 = __importDefault(require("../../src/container"));
 const monitor_1 = require("../../src/monitor");
 const axios_1 = __importDefault(require("axios"));
 const legacyGetNextTask_1 = require("../../src/steps/adapters/legacyGetNextTask");
+const promptFactory_1 = __importDefault(require("../../src/utils/promptFactory"));
+const VerificaLock_1 = require("../../src/steps/VerificaLock"); // <-- Importado para os testes de lock
+const config_1 = __importDefault(require("../../src/aux/config"));
 // 1. MOCKS DE MÓDULOS
 jest.mock('../../src/container');
 jest.mock('axios');
 jest.mock('../../src/steps/adapters/legacyGetNextTask');
 describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
-    // 2. DECLARAÇÃO DOS MOCKS (No escopo global do describe)
+    // DECLARAÇÃO DOS MOCKS GLOBAIS
     let instanciaMonitor;
+    let mockContexto; // <-- Adicionado para os testes de unidade de Lock
     const mockLockService = {
-        checkLock: jest.fn().mockResolvedValue(false),
+        checkLock: jest.fn().mockResolvedValue({ locked: false }),
         acquireLock: jest.fn().mockResolvedValue(true),
-        releaseLock: jest.fn().mockResolvedValue(true)
+        releaseLock: jest.fn().mockResolvedValue(true),
+        forceReleaseLock: jest.fn().mockResolvedValue(true)
     };
-    const mockstepInexistente = {
-        mockResolvedValue: jest.fn()
-    };
+    const mockpromptFactory = promptFactory_1.default;
     const mockFileSystem = {
         mkdir: jest.fn().mockResolvedValue(undefined),
         writeFile: jest.fn().mockResolvedValue(undefined),
-        // IMPORTANTE: Simulamos que o detetive ACHA o arquivo .done para a tarefa poder finalizar
         readdir: jest.fn().mockResolvedValue(['.done']),
         unlink: jest.fn().mockResolvedValue(undefined),
         rename: jest.fn().mockResolvedValue(undefined)
     };
     const mockPath = { join: jest.fn((...args) => args.join('/')) };
-    const mockStateService = { registerActiveTask: jest.fn() };
+    const mockStateService = {
+        registerActiveTask: jest.fn(),
+        clearState: jest.fn().mockResolvedValue(true)
+    };
     const mockTaskService = {
         updateTask: jest.fn().mockResolvedValue(true),
         getNextTask: jest.fn(),
-        getTasks: jest.fn(), // Por garantia, se o seu código usar este nom
+        getTasks: jest.fn(),
     };
     const mockValidationService = {
         validateWithAuxModel: jest.fn().mockResolvedValue({ isAtomic: true, domain: 'BACKEND' })
     };
     const mockOpenClaw = { executeWithFallback: jest.fn() };
-    // No topo do arquivo, mude para:
     const mockAnalysis = {
-        analyzeDeveloperTurn: jest.fn().mockResolvedValue({
-            isDeclaringDone: true,
-            hasFulfilledContract: true,
-            missingRequirements: [],
-            isTalkingWithoutAction: false
-        }),
-        analyzeTurn: jest.fn() // Por garantia
+        analyzeDeveloperTurn: jest.fn(),
+        analyzeTurn: jest.fn()
     };
     const mockWorkspaceSnapshotService = {
         takeSnapshot: jest.fn().mockResolvedValue({ files: {} }),
@@ -60,15 +59,15 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
         createEmptyEvidence: jest.fn().mockReturnValue({}),
         applyExecutionEvidence: jest.fn()
     };
-    // Mock da API para passos como ConfiguraUsuario e InicializaTarefa não quebrarem
     const mockedAxios = axios_1.default;
     beforeAll(() => {
         // Silencia logs para o terminal ficar limpo
-        //jest.spyOn(console, 'error').mockImplementation(() => {});
-        //jest.spyOn(console, 'log').mockImplementation(() => {});
+        jest.spyOn(console, 'error').mockImplementation(() => { });
+        jest.spyOn(console, 'log').mockImplementation(() => { });
     });
     beforeEach(() => {
         jest.clearAllMocks();
+        // Setup Padrão de IA e Análise
         mockOpenClaw.executeWithFallback.mockResolvedValue({
             success: true,
             rawOutput: JSON.stringify({ action: "done", thought: "Tarefa concluída" }),
@@ -81,28 +80,13 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
             missingRequirements: [],
             isTalkingWithoutAction: false
         });
-        // 2. Atribuímos ao objeto que o teste vigia
         mockAnalysis.analyzeDeveloperTurn = spyAnalysis;
-        container_1.default.resolve.mockImplementation((name) => {
-            if (['taskAnalysisService', 'analysisService', 'analysis'].includes(name)) {
-                return { analyzeDeveloperTurn: spyAnalysis };
-            }
-            const mocks = {
-                'lockService': mockLockService,
-                'openClawService': mockOpenClaw,
-                'monitorStateService': mockStateService,
-                'fileSystem': mockFileSystem,
-                'apiService': mockedAxios,
-                'taskAnalysisService': mockAnalysis,
-                'path': mockPath,
-                'stepAtualNome': mockstepInexistente
-            };
-            return mocks[name];
-        });
+        // Container Limpo e Unificado
         container_1.default.resolve.mockImplementation((name) => {
             const registry = {
                 'lockService': mockLockService,
                 'fileSystem': mockFileSystem,
+                'taskFileService': mockFileSystem,
                 'path': mockPath,
                 'validationService': mockValidationService,
                 'monitorStateService': mockStateService,
@@ -112,16 +96,15 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 'workspaceSnapshotService': mockWorkspaceSnapshotService,
                 'evidenceService': mockEvidenceService,
                 'apiService': mockedAxios,
-                // Mapeia todas as variações para o mesmo mock
                 'taskAnalysisService': mockAnalysis,
                 'analysisService': mockAnalysis,
                 'taskAnalysis': mockAnalysis,
-                'analysis': mockAnalysis
+                'analysis': mockAnalysis,
+                'promptFactory': mockpromptFactory,
             };
             return registry[name];
         });
         // Configura API mockada
-        // Configura API mockada para responder coisas diferentes dependendo da URL
         mockedAxios.get.mockImplementation((url) => {
             if (url.includes('/api/statuses')) {
                 return Promise.resolve({
@@ -136,9 +119,7 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
             }
             if (url.includes('/api/users')) {
                 return Promise.resolve({
-                    data: {
-                        users: [{ id: 'user1', nickname: 'jarbas' }]
-                    }
+                    data: { users: [{ id: 'user1', nickname: 'jarbas' }] }
                 });
             }
             return Promise.resolve({ data: {} });
@@ -156,104 +137,108 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 pastaBase: '/src',
                 instructions: 'Use React'
             },
-            // 💡 O QUE ESTAVA FALTANDO:
             initialSnapshot: { files: {} },
             loopsExecutados: 0,
             agenteAlocado: 'default-frontend-agent'
         }));
-        // 2. SÓ AGORA instanciamos o motor! Ele vai ler os mocks acima perfeitamente.
+        // Cria o Mock Contexto para os testes unitários do VerificaLock
+        mockContexto = {
+            config: config_1.default,
+            services: {
+                lockService: mockLockService,
+                stateService: mockStateService
+            },
+            controleExecucao: {},
+            lockAtivo: false
+        };
+        // 2. SÓ AGORA instanciamos o motor!
         instanciaMonitor = new monitor_1.monitor();
     });
     afterAll(() => {
         jest.restoreAllMocks();
     });
+    // ==========================================
+    // TESTES DE INTEGRAÇÃO (CICLO)
+    // ==========================================
     it('deve executar o caminho feliz: Busca -> Validação -> Execução -> Sucesso', async () => {
-        // ... (seu setup de mockResolvedValue igual ao anterior)
         await instanciaMonitor.executaCiclo();
-        // Pausa técnica para garantir o fim das promessas
         await new Promise(resolve => setTimeout(resolve, 1000));
-        // Verificações
-        expect(mockFileSystem.rename).toHaveBeenCalled(); // Se este passar, a esteira rodou!
+        expect(mockFileSystem.rename).toHaveBeenCalled();
         expect(mockOpenClaw.executeWithFallback).toHaveBeenCalled();
-        // Verifica se QUALQUER UM dos métodos de análise foi chamado
         const foiChamado = mockAnalysis.analyzeDeveloperTurn.mock.calls.length > 0 ||
             mockAnalysis.analyzeTurn.mock.calls.length > 0;
         expect(foiChamado).toBe(false);
     });
     it('deve detectar erro de sintaxe e realizar o LOOP de correção', async () => {
-        // 1. Configuramos o OpenClaw para falhar na 1ª (truncado) e acertar na 2ª
         mockOpenClaw.executeWithFallback
-            .mockResolvedValueOnce({ rawOutput: '{"acao": "incompleta"' }) // Syntax Error
-            .mockResolvedValueOnce({ rawOutput: '{"acao": "completa"}', success: true }); // Sucesso
-        // O Juiz vai perdoar o segundo turno
+            .mockResolvedValueOnce({ rawOutput: '{"acao": "incompleta"' })
+            .mockResolvedValueOnce({ rawOutput: '{"acao": "completa"}', success: true });
         mockAnalysis.analyzeDeveloperTurn.mockResolvedValue({
             isDeclaringDone: true,
             hasFulfilledContract: true,
             missingRequirements: [],
             isTalkingWithoutAction: false
         });
-        // 2. Roda o motor
         await instanciaMonitor.executaCiclo();
         await new Promise(resolve => setTimeout(resolve, 500));
-        // 3. Validação do Loop
-        // O executeWithFallback deve ter sido chamado 2 vezes!
         expect(mockOpenClaw.executeWithFallback).toHaveBeenCalledTimes(2);
-        // Verificamos se o prompt de correção da segunda chamada conteve o esporro do Juiz
         const segundoPrompt = mockOpenClaw.executeWithFallback.mock.calls[1][1];
         expect(segundoPrompt).toContain('[ERRO DE SINTAXE]');
-        // A tarefa eventualmente finalizou após o loop
         expect(mockFileSystem.rename).toHaveBeenCalled();
     });
     it('deve interromper a execução se exceder 5 loops de correção', async () => {
-        // Setup: O mock da IA sempre retorna erro de sintaxe
         mockOpenClaw.executeWithFallback.mockResolvedValue({ rawOutput: '{ erro' });
         await instanciaMonitor.executaCiclo();
-        // Verifique se ele parou por segurança e não chamou o 'Finaliza Tarefa'
         expect(mockFileSystem.rename).not.toHaveBeenCalled();
-        // Verifique se o log de "Limite de tentativas" apareceu
     });
     it('deve encerrar silenciosamente se não houver tarefas na fila', async () => {
-        // 1. FORÇA o serviço de busca a dizer que NÃO tem nada
-        // Se você usa o 'taskService' no container:
         mockTaskService.getNextTask.mockResolvedValue(null);
-        legacyGetNextTask_1.createLegacyGetNextTask.mockReturnValue(jest.fn().mockResolvedValue(null) // Retorna null em vez do objeto da tarefa
-        );
-        // Se você usa o 'apiService' (Axios) para buscar:
+        legacyGetNextTask_1.createLegacyGetNextTask.mockReturnValue(jest.fn().mockResolvedValue(null));
         mockedAxios.get.mockResolvedValue({ data: { tasks: [] } });
-        // 2. Roda o motor
         await instanciaMonitor.executaCiclo();
-        // 3. A VERIFICAÇÃO INTELIGENTE:
-        // Em vez de checar se mkdir NUNCA foi chamado (pois o monitor pode criar pastas base no init),
-        // vamos checar se ele NÃO tentou criar a pasta específica da 'task-100'.
         const chamadasMkdir = mockFileSystem.mkdir.mock.calls.map(call => call[0]);
         const tentouCriarPastaDaTarefa = chamadasMkdir.some(path => path.includes('task-100'));
         expect(tentouCriarPastaDaTarefa).toBe(false);
     });
-    // Caso onde o lock começa bloqueado
     it('deve detectar lock ativo e interromper o ciclo para evitar conflitos', async () => {
-        // 1. Configura o lock para parecer que já está ativo
         mockLockService.checkLock.mockResolvedValue({
             locked: true,
             ageRecent: true,
         });
-        // 2. Roda o motor
         await instanciaMonitor.executaCiclo();
-        // 3. Verifica se ele parou por segurança e não chamou o 'Finaliza Tarefa'
         expect(mockFileSystem.rename).not.toHaveBeenCalled();
     });
-    // Caso onde tentamos rodar um passo que não existe
-    it('deve logar erro crítico se o passo não existir no catálogo', async () => {
-        // 1. Configura o monitor para começar com um passo inexistente
-        const passoInexistente = 'passoInexistente';
-        mockstepInexistente.mockResolvedValue(passoInexistente);
-        // 2. Roda o motor
-        await instanciaMonitor.executaCiclo();
-        // 3. Verifica se o log de erro crítico foi chamado
-        // Aqui, como o log é um console.log, podemos espiar o console ou refinar o design para injetar um logger mockável.
-        // Para simplicidade, vamos espiar o console.log:
-        const consoleSpy = jest.spyOn(console, 'log');
-        const foiChamado = mockAnalysis.analyzeDeveloperTurn.mock.calls.length > 0 ||
-            mockAnalysis.analyzeTurn.mock.calls.length > 0;
-        expect(foiChamado).toBe(false);
+    // ==========================================
+    // TESTES DE UNIDADE DE PASSOS ISOLADOS
+    // ==========================================
+    it('deve limpar o lock órfão (PID morto) e permitir a continuação da execução', async () => {
+        // 1. ARRANGE
+        mockLockService.checkLock.mockResolvedValue({
+            locked: false,
+            corrupted: false,
+            pid: 9999,
+            alive: false
+        });
+        // 2. ACT
+        await VerificaLock_1.passoVerificaLock.func(mockContexto);
+        // 3. ASSERT
+        expect(mockLockService.forceReleaseLock).toHaveBeenCalled();
+        expect(mockStateService.clearState).toHaveBeenCalled();
+        expect(mockContexto.lockAtivo).toBe(false);
+        expect(mockContexto.controleExecucao.processoFantasma).toBeUndefined();
+    });
+    it('deve identificar um processo fantasma (lock antigo) e acionar o Ceifador', async () => {
+        // 1. ARRANGE
+        mockLockService.checkLock.mockResolvedValue({
+            locked: true,
+            ageRecent: false,
+            pid: 1234,
+            mtime: Date.now() - (config_1.default.TASK_TIMEOUT_MS + 1000)
+        });
+        // 2. ACT
+        await VerificaLock_1.passoVerificaLock.func(mockContexto);
+        // 3. ASSERT
+        expect(mockContexto.lockAtivo).toBe(false);
+        expect(mockContexto.controleExecucao.processoFantasma).toEqual({ pid: 1234 });
     });
 });

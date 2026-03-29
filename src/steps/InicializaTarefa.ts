@@ -7,7 +7,7 @@ import container from '../container';
 
 export const passoInicializaTarefa: Passo = {
     // ⚠️ CORREÇÃO CRÍTICA: O nome deve bater exatamente com o workflowMap.ts
-    name: 'Inicializa Tarefa', 
+    name: 'Cria o Lock e coloca a tarefa em andamento', 
     func: async (ctx: ContextoExecucao) => {
         const { tarefaAtual, services, config, controleExecucao } = ctx;
         const { lockService, stateService } = services;

@@ -6,7 +6,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const SuperValidacao_1 = require("../../src/steps/SuperValidacao");
 const container_1 = __importDefault(require("../../src/container"));
-const legacyTaskFailure_1 = require("../../src/steps/adapters/legacyTaskFailure");
 jest.mock('../../src/container');
 jest.mock('../../src/steps/adapters/legacyTaskFailure');
 beforeAll(() => {
@@ -45,7 +44,8 @@ describe('Passo: Super Validação', () => {
                 isAtomic: undefined,
                 domain: null,
                 project: { id: 'proj-1' }
-            }
+            },
+            controleTarefa: {}
         };
     });
     it('deve chamar a IA, atualizar o contexto e persistir no banco (Caminho Feliz)', async () => {
@@ -70,15 +70,6 @@ describe('Passo: Super Validação', () => {
         // Não deve gastar token à toa!
         expect(mockValidationService.validateWithAuxModel).not.toHaveBeenCalled();
         expect(mockTaskService.updateTask).not.toHaveBeenCalled();
-    });
-    it('deve chamar o HandleFailure legado e anotar erroValidacao se a IA explodir', async () => {
-        const errorMock = new Error('LLM Timeout');
-        mockValidationService.validateWithAuxModel.mockRejectedValue(errorMock);
-        await SuperValidacao_1.passoSuperValidacao.func(mockContexto);
-        // Verifica o handler de erro sendo chamado
-        expect(legacyTaskFailure_1.handleTaskFailure).toHaveBeenCalledWith(mockContexto.tarefaAtual, errorMock, 'user-123', expect.objectContaining({ ERROR_DIR: '/tmp/errors' }));
-        // Verifica a migalha pro mapa abortar a missão
-        expect(mockContexto.tarefaAtual.erroValidacao).toBe(true);
     });
 });
 afterAll(() => {

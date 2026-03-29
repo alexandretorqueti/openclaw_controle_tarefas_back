@@ -5,7 +5,7 @@ import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
 import { log } from '../aux/logger';
 
 export const passoExecucaoProgramador: Passo = {
-    name: 'Prepara para Programador',
+    name: 'Seleciona os agentes alocados como programadores',
     func: async (ctx: ContextoExecucao) => {
         const { tarefaAtual, controleExecucao } = ctx;
 
@@ -35,7 +35,6 @@ export const passoExecucaoProgramador: Passo = {
         
         // 3. Deixa a "migalha" para o OpenClaw usar no próximo passo
         controleExecucao.agenteAlocado = agent;
-        controleExecucao.loopsExecutados = 0; // Prepara o contador para o loop de correção
         
         await log(`👨‍💻 Agente alocado com sucesso: ${agent} (${tarefaAtual.domain}). Enviando para a bancada de trabalho...`);
     }

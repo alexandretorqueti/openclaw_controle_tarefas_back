@@ -12,6 +12,6 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["jest", "node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts"], // Inclui apenas arquivos TypeScript
   "exclude": ["node_modules", "dist", "src/**/*.js", "src/**/*.test.js", "src/**/*.spec.js", "src/aux/**/*.js"]
 }

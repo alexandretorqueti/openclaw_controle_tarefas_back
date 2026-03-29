@@ -1,11 +1,16 @@
 // interfaces/interfaceMonitor.ts
 import { Project, Task, Prisma } from '@prisma/client';
-export type TaskComProjeto = Prisma.TaskGetPayload<{
-  include: { project: true }
-}>;
+export type TaskComplet = Prisma.TaskGetPayload<{
+  include: { 
+    project: true
+    comments: true;
+  }
+}
+ >;
+
 
 export interface ContextoExecucao {
-    tarefaAtual?: TaskComProjeto | null;
+    tarefaAtual?: TaskComplet | null;
     UserId?: string | null;         
     config: {
         BASE_DIR: string;

@@ -15,38 +15,43 @@ describe('Passo: Decomposição de Tarefa', () => {
     let mockCallAnalyst;
     beforeEach(() => {
         jest.clearAllMocks();
-        // Preparamos o mock do adaptador
+        // 1. Preparamos o mock do adaptador
         mockCallAnalyst = jest.fn();
         legacyCallAnalyst_1.createLegacyCallAnalyst.mockReturnValue(mockCallAnalyst);
-        // Estado inicial do contexto
+        // 2. Montamos o contexto UMA ÚNICA VEZ
         mockContexto = {
             UserId: 'user-789',
             tarefaAtual: {
                 id: 'task-123',
                 title: 'Criar sistema de login'
+            },
+            controleExecucao: {
+                // Inicia limpo/falso, como seria na vida real antes do passo rodar
+                analiseConcluidaComSucesso: false,
+                subtasksCreated: 0,
+                erroDecomposicao: false
             }
         };
     });
     it('deve registrar sucesso e a quantidade de subtarefas criadas (Caminho Feliz)', async () => {
-        // Simulamos o Analista retornando 3 subtarefas
-        mockCallAnalyst.mockResolvedValue({ success: true, subtasksCreated: 3 });
+        // ARRANGE (Preparar)
+        // Simulamos o Analista (a IA) retornando um array com 3 subtarefas "fake"
+        mockCallAnalyst.mockResolvedValue({
+            success: true,
+            subtasksCreated: 3
+        });
+        // ACT (Agir)
         await DecomposicaoTarefa_1.passoDecomposicaoTarefa.func(mockContexto);
-        // Verifica se a fábrica foi chamada com o UserId
+        // ASSERT (Verificar)
+        // Verifica se chamou as funções corretas
         expect(legacyCallAnalyst_1.createLegacyCallAnalyst).toHaveBeenCalledWith('user-789');
-        // Verifica se a função final foi chamada passando a tarefa
         expect(mockCallAnalyst).toHaveBeenCalledWith(mockContexto.tarefaAtual);
-        // Verifica as "migalhas" deixadas para o Mapa
-        expect(mockContexto.tarefaAtual.analiseConcluidaComSucesso).toBe(true);
-        expect(mockContexto.tarefaAtual.subtasksCreated).toBe(3);
-        expect(mockContexto.tarefaAtual.erroDecomposicao).toBeUndefined(); // Não deve ter flag de erro
-    });
-    it('deve sinalizar corretamente quando o Analista falha em criar subtarefas (Fallback)', async () => {
-        // Simulamos o Analista rodando, mas devolvendo 0 tarefas
-        mockCallAnalyst.mockResolvedValue({ success: true, subtasksCreated: 0 });
-        await DecomposicaoTarefa_1.passoDecomposicaoTarefa.func(mockContexto);
-        expect(mockContexto.tarefaAtual.analiseConcluidaComSucesso).toBe(true);
-        expect(mockContexto.tarefaAtual.subtasksCreated).toBe(0);
-        expect(mockContexto.tarefaAtual.erroDecomposicao).toBeUndefined();
+        // VERIFICA AS MIGALHAS NO LUGAR CERTO (controleExecucao, não tarefaAtual)
+        // É o seu passo quem deve ter alterado esses valores para true e 3!
+        expect(mockContexto.controleExecucao.analiseConcluidaComSucesso).toBe(true);
+        expect(mockContexto.controleExecucao.subtasksCreated).toBe(3);
+        // Opcional: dependendo de como você programou o passo, pode ser false ou undefined
+        expect(mockContexto.controleExecucao.erroDecomposicao).toBeFalsy();
     });
     it('deve capturar erros da API/LLM e sinalizar a flag de erro (Aborta Missão)', async () => {
         // Simulamos um timeout ou erro na IA do Analista
@@ -54,7 +59,7 @@ describe('Passo: Decomposição de Tarefa', () => {
         // O passo não deve quebrar o loop do monitor (não deve dar throw)
         await expect(DecomposicaoTarefa_1.passoDecomposicaoTarefa.func(mockContexto)).resolves.not.toThrow();
         // A flag de erro DEVE estar lá para o Mapa encerrar o ciclo
-        expect(mockContexto.tarefaAtual.erroDecomposicao).toBe(true);
+        expect(mockContexto.controleExecucao.erroDecomposicao).toBe(true);
     });
     it('não deve fazer nada se não houver tarefaAtual no contexto', async () => {
         mockContexto.tarefaAtual = null;

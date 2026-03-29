@@ -3,7 +3,40 @@
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
 import { log } from '../aux/logger';
 import container from '../container';
+ const formatarComentarios = (comments: any[]): string => {
+    if (!comments || comments.length === 0) {
+        return 'Nenhum comentário adicional.';
+    }
 
+    // 1. Ordena do mais antigo para o mais novo (cronológico)
+    const ordenados = [...comments].sort((a, b) => 
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    // 2. Cria um mapa para sabermos quem respondeu a quem
+    const mapaComentarios = new Map(ordenados.map(c => [c.id, c]));
+
+    let textoFormatado = '';
+
+    ordenados.forEach(c => {
+        const autor = c.user?.nickname || c.user?.name || 'Usuário';
+        const data = new Date(c.createdAt).toLocaleDateString('pt-BR');
+        
+        let cabecalho = `🗣️ [${data}] ${autor}`;
+        
+        // Se for uma resposta, avisa no cabeçalho
+        if (c.parentCommentId && mapaComentarios.has(c.parentCommentId)) {
+            const parent = mapaComentarios.get(c.parentCommentId);
+            const parentAutor = parent?.user?.nickname || parent?.user?.name || 'Usuário';
+            cabecalho += ` (respondendo a ${parentAutor})`;
+        }
+
+        textoFormatado += `${cabecalho}:\n"${c.content}"\n\n`;
+    });
+
+    return textoFormatado.trim();
+  }
+  
 export const passoPreparaSessaoEPromptInicial: Passo = {
     name: 'Prepara Sessão e Prompt para Programador',
     func: async (ctx: ContextoExecucao) => {
@@ -37,11 +70,13 @@ export const passoPreparaSessaoEPromptInicial: Passo = {
 
         // 2. Montagem do Prompt Base
 
-        const engineRules = promptFactory.buildEngineRulesPrompt(files);
+        const comentariosFormatados = formatarComentarios(tarefaAtual.comments);
+        const engineRules = promptFactory.buildEngineRulesPrompt(files, dirBase, tarefaAtual);
         const basePrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\n
 TAREFA: ${tarefaAtual.title}.
 DESC: ${tarefaAtual.description}. 
 REGRAS: ${(tarefaAtual.project && tarefaAtual.project.regras)? tarefaAtual.project.regras : 'Siga as boas práticas de desenvolvimento'}\n\n
+COMENTÁRIOS: ${comentariosFormatados}\n\n
 BASE: ${dirBase}\n\n
 ${engineRules}`;
         

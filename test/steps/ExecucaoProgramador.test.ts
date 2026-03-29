@@ -22,7 +22,7 @@ describe('Passo: Execução Programador (Alocação de Agente)', () => {
             // IMPORTANTE: O Passo espera que este objeto exista
             controleExecucao: {
                 agenteAlocado: null,
-                loopsExecutados: null,
+                loopsExecutados: 0,
                 erroExecucao: false
             }
         };

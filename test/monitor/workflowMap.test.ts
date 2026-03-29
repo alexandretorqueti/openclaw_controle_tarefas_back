@@ -11,7 +11,7 @@ describe('Workflow Map: Lógica de Transição', () => {
 
     it('deve desviar para Decomposição se a tarefa não for atômica', () => {
         const ctx = { tarefaAtual: { isAtomic: false }, controleExecucao: { erroValidacao: false } };
-        const proximo = encontrarDestino('Super Validação', ctx);
+        const proximo = encontrarDestino('Valida se a tarefa é atômica e se tem domínio', ctx);
         expect(proximo).toBe('Decomposição de Tarefa');
     });
 

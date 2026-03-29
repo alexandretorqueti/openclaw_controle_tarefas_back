@@ -20,20 +20,20 @@ export const mapaDeTransicoes: Record<string, Rota[]> = {
 
     'Busca Tarefa': [
         { condition: (c) => !c.tarefaAtual, to: null }, // Para se não houver fila
-        { to: 'Inicializa Tarefa' }
+        { to: 'Cria o Lock e coloca a tarefa em andamento' }
     ],
 
-    'Inicializa Tarefa': [
+    'Cria o Lock e coloca a tarefa em andamento': [
         // Se falhou no lock ou no disco, encerra (para o finally liberar o que der)
         { condition: (c) => c.controleExecucao?.erroInicializacao === true, to: null },
-        { to: 'Super Validação' }
+        { to: 'Valida se a tarefa é atômica e se tem domínio' }
     ],
 
-    'Super Validação': [
+    'Valida se a tarefa é atômica e se tem domínio': [
         { condition: (c) => c.controleExecucao.erroValidacao === true, to: null },
         { condition: (c) => c.tarefaAtual.isAtomic === false, to: 'Decomposição de Tarefa' },
         { condition: (c) => !c.tarefaAtual.domain, to: 'Verificação de Domínio' }, 
-        { to: 'Prepara para Programador' } 
+        { to: 'Seleciona os agentes alocados como programadores' } 
     ],
 
     'Decomposição de Tarefa': [
@@ -47,7 +47,7 @@ export const mapaDeTransicoes: Record<string, Rota[]> = {
         { to: 'Prepara Sessão e Prompt para Programador' }
     ],
 
-    'Prepara para Programador': [
+    'Seleciona os agentes alocados como programadores': [
         // Rota direta caso o domínio já esteja verificado
         { to: 'Prepara Sessão e Prompt para Programador' }
     ],
