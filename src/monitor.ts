@@ -1,3 +1,4 @@
+
 // monitor.ts
 import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor";
 import config from './aux/config';
@@ -25,22 +26,26 @@ import { passoArchitectPlanning } from "./steps/ArchitectPlanning";
 
 import './bootstrap';
 import container from './container';
+import { passoTimeoutCheck } from "./steps/TaskTimeoutCheckStep";
 
 export class monitor {
     catalogo_de_passos: Record<string, Passo> = {};
     jaEnvieiMensagemQueEstouAguardando: boolean = false;
     lockService: any;
     stateService: any;
+    fileService: any;
 
     constructor() {
         this.lockService = container.resolve('lockService');
         this.stateService = container.resolve('monitorStateService');
+        this.fileService = container.resolve('taskFileService');
         this.inicializaPassos();
     }
 
     inicializaPassos() {
         // Registro de todos os "trabalhadores" no catálogo
         this.addPasso(passoVerificaLock);
+        this.addPasso(passoTimeoutCheck)
         this.addPasso(passoConfiguraUsuario);
         this.addPasso(passoBuscaTarefa);
         this.addPasso(passoInicializaTarefa);
@@ -100,9 +105,14 @@ export class monitor {
             UserId: null, 
             services: {
                 lockService: this.lockService,
-                stateService: this.stateService
+                stateService: this.stateService,
+                fileService: this.fileService,
             },
-            config: config
+            config: config,
+            controleExecucao: {
+
+            },
+            lockAtivo: false
         };
         const passosExecutads: string[] = [];
         try {
@@ -120,12 +130,6 @@ export class monitor {
                 // 1. Executa a lógica do passo
                 await passoAtual.func(contexto);
                 passosExecutads.push(stepAtualNome);
-
-                // Verifica Lock
-                if (contexto.lockAtivo) {
-                    await log(`🔒 Lock ativo detectado durante o ciclo. Interrompendo para evitar conflitos.`);
-                    break;
-                }
 
                 // 2. Busca as rotas no mapa
                 const rotasDisponiveis = mapaDeTransicoes[stepAtualNome];
@@ -155,8 +159,9 @@ export class monitor {
         } catch (error: any) {
             await log(`💥 Erro Fatal no ciclo: ${error.message}`);
         } finally {
-            // Libera o lock de arquivo para que o próximo ciclo possa rodar
-            await contexto.services.lockService.releaseLock();
+            if (!contexto.lockAtivo && !contexto.controleExecucao?.processoFantasma) {
+                await contexto.services.lockService.releaseLock();
+            }
         }
     }
 }

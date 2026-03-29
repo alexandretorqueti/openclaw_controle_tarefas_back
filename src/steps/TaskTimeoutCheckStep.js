@@ -1,3 +1,5 @@
+
+
 /**
  * Step responsável por verificar timeout de tarefas em execução.
  * Mata processos que excederam o limite crítico e limpa o sistema.
@@ -184,3 +186,4 @@ class TaskTimeoutCheckStep {
 }
 
 module.exports = TaskTimeoutCheckStep;
+

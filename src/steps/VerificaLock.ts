@@ -1,3 +1,4 @@
+
 // src/steps/VerificaLock.ts
 
 import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
@@ -5,26 +6,24 @@ import { log } from '../aux/logger';
 import { handleTaskTimeoutCheck } from '../steps/adapters/legacyTaskTimeoutCheck';
 import { segundosToMinutos_Segundos } from '../utils/timeUtils';
 
+// Verifica se existe um lock ativo. 
 export const passoVerificaLock: Passo = {
     name: 'Verifica Lock',
     func: async (ctx: ContextoExecucao) => {
         const { lockService, stateService } = ctx.services;
+        const { controleExecucao } = ctx;
         ctx.lockAtivo = false;
         const lockCheck = await lockService.checkLock(ctx.config.TASK_TIMEOUT_MS);
 
+        controleExecucao.processoFantasma = undefined; // Reset para evitar confusão com checagens anteriores
         if (lockCheck.locked) {
             if (lockCheck.ageRecent) {
                 ctx.lockAtivo = true;
                 await log(`🔒 Lock recente (${segundosToMinutos_Segundos((Date.now() - lockCheck.mtime)/1000)}). Mantendo execução atual.`);
             } else {
-                await log(`🔒 Lock antigo/ativo detectado. PID ${lockCheck.pid}.`);
-                await handleTaskTimeoutCheck(lockCheck.pid, { 
-                    TASK_TIMEOUT_MS: ctx.config.TASK_TIMEOUT_MS, 
-                    TASKS_DIR: ctx.config.TASKS_DIR, 
-                    ERROR_DIR: ctx.config.ERROR_DIR 
-                });
+                // Se não limparmos ou verificarmos o timeout, o monitor morre aqui.
+                controleExecucao.processoFantasma = { pid: lockCheck.pid }; // Para o monitor logar depois do ciclo
             }
-
             return;
         }
 
@@ -38,3 +37,4 @@ export const passoVerificaLock: Passo = {
         }
     }
 }
+

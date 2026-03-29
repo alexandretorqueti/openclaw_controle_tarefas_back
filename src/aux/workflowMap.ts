@@ -1,10 +1,17 @@
+
 // config/workflowMap.ts
 import { Rota } from '../interfaces/interfaceMonitor';
 
 export const mapaDeTransicoes: Record<string, Rota[]> = {
     
     'Verifica Lock': [
+        { condition: (c) => c.controleExecucao?.processoFantasma !== undefined, to: 'Task Timeout Check' }, // Se detectou um processo fantasma, para o ciclo para logar e esperar intervenção
+        { condition: (c) => c.lockAtivo === true, to: null }, // Se o lock está ativo e recente, não faz nada (permanece no passo de Verifica Lock)
         { to: 'Configura Usuário' }
+    ],
+
+    'Task Timeout Check': [
+        { to: null } // Após o passo de timeout, o ciclo para para evitar que o monitor continue rodando em um estado instável. O operador deve intervir para resolver a situação do processo fantasma antes de reiniciar o monitor.
     ],
 
     'Configura Usuário': [

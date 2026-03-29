@@ -299,8 +299,11 @@ class ArchitectPlanningStep {
                     error: stepError.message,
                     taskId: tarefaAtual?.id
                 },
-                shouldAbort: true,
-                abortReason: `Falha no planejamento do arquiteto: ${stepError.message}`
+                controleExecucao: {
+                    ...context.controleExecucao,
+                    shouldAbort: true,
+                    abortReason: `Falha no planejamento do arquiteto: ${stepError.message}`
+                }
             };
         }
     }

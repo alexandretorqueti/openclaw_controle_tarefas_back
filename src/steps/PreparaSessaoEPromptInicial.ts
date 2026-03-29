@@ -17,8 +17,7 @@ export const passoPreparaSessaoEPromptInicial: Passo = {
         const CONFIG = container.resolve('config');
 
         const TASKS_DIR = config.TASKS_DIR;
-        const dirBase = config.DIR_BASE;
-        const commentsSection = config.COMMENTS_SECTION;
+        const dirBase = config.BASE_DIR;
         const taskId = tarefaAtual.id;
 
         const files = {
@@ -39,7 +38,11 @@ export const passoPreparaSessaoEPromptInicial: Passo = {
         // 2. Montagem do Prompt Base
 
         const engineRules = promptFactory.buildEngineRulesPrompt(files);
-        const basePrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\nTAREFA: ${tarefaAtual.title}. DESC: ${tarefaAtual.description}. BASE: ${dirBase}.${commentsSection}\n\n${engineRules}`;
+        const basePrompt = `DESENVOLVEDOR: Analise o plano de ação e crie o código.\n\n
+TAREFA: ${tarefaAtual.title}.
+DESC: ${tarefaAtual.description}. 
+BASE: ${dirBase}\n\n
+${engineRules}`;
         
         // 3. INJEÇÃO VITAL NO CONTEXTO (Garantido fora do try/catch)
         // O próximo passo (Executa OpenClaw) depende disso para funcionar.

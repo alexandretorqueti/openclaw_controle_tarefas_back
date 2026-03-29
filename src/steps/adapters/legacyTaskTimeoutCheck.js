@@ -1,3 +1,4 @@
+
 // src/steps/adapters/legacyTaskTimeoutCheck.js
 /**
  * Adaptador para manter compatibilidade com a função handleTaskTimeoutCheck original.
@@ -53,3 +54,4 @@ async function handleTaskTimeoutCheck(pid, config = {}) {
 }
 
 module.exports = { createLegacyTaskTimeoutCheck, handleTaskTimeoutCheck };
+
