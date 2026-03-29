@@ -1,14 +1,19 @@
+
+
 /**
  * Step responsável pela análise e planejamento do arquiteto.
  * O arquiteto analisa a tarefa, gera um plano de ação e pode até executar a tarefa.
  * Inclui validação inteligente de evidências e decisão de fluxo.
  */
 
+import { ta } from 'zod/v4/locales';
 import container from '../container';
 
 // ============================================================================
 // INTERFACES (Contratos de Tipagem)
 // ============================================================================
+
+const path = require('path');
 
 export interface ArchitectAnalysis {
     hasExecuted: boolean;
@@ -57,6 +62,8 @@ export interface ArchitectPlanningOptions {
     fileSystem?: any;
     promptFactory?: any;
 }
+
+
 
 // ============================================================================
 // CLASSE PRINCIPAL
@@ -107,17 +114,32 @@ class ArchitectPlanningStep {
             developerPrompt = '',
             currentInput = ''
         } = context;
+        const {
+            taskAnalysisService,
+        } = context.services;
         
         if (!tarefaAtual || !files || !config) {
             await this.log(`⚠️ ArchitectPlanningStep: contexto incompleto`);
-            return {
-                ...context,
-                architectPlanningResult: {
-                    success: false,
-                    error: 'contexto incompleto (task, files ou config faltando)'
-                }
-            };
+            context.architectPlanningResult = {
+                success: false,
+                error: 'contexto incompleto (task, files ou config faltando)'
+            }
+            return;
         }
+        const analise = await taskAnalysisService.analyzeTaskScope(
+            tarefaAtual, 
+            project, 
+            path.join(config.TASKS_DIR, `terminal-pre-analise-${tarefaAtual.id}.log`)
+        );
+
+        analysisPlan.taskType = analise.taskType;
+        analysisPlan.requiresReport = analise.requiresReport;
+        analysisPlan.expectedLayers = analise.expectedLayers;
+        analysisPlan.requiredModifiedLayers = analise.requiredModifiedLayers;
+        analysisPlan.mandatoryChecks = analise.mandatoryChecks;
+        analysisPlan.definitionOfDone = analise.definitionOfDone;
+        analysisPlan.finalizationInstructions = analise.finalizationInstructions;
+        analysisPlan.risks = analise.risks;
 
         try {
             await this.log(`📋 [Arquiteto] Tipo de tarefa: ${analysisPlan.taskType}`);
@@ -273,38 +295,38 @@ class ArchitectPlanningStep {
             
             await this.log(`✅ [Arquiteto] Planejamento concluído para tarefa ${tarefaAtual.id}`);
             
-            return {
-                ...context,
-                architectPlanningResult: {
-                    success: true,
-                    taskId: tarefaAtual.id,
-                    hasArchitectPlan: architectAnalysis.hasPlan,
-                    hasArchitectExecution: architectAnalysis.hasExecuted,
-                    confidence: architectAnalysis.confidence,
-                    promptUpdated: true,
-                    error: null
-                },
-                currentInput: updatedPromptContent,
-                architectAnalysis,
-                architectPlan
+            context.architectPlanningResult = {
+                success: true,
+                taskId: tarefaAtual.id,
+                hasArchitectPlan: architectAnalysis.hasPlan,
+                hasArchitectExecution: architectAnalysis.hasExecuted,
+                confidence: architectAnalysis.confidence,
+                promptUpdated: true,
+                error: null
             };
+            context.currentInput = updatedPromptContent;
+            context.architectAnalysis = architectAnalysis;
+            context.architectPlan = architectPlan;
+
+            return;
             
         } catch (stepError: any) {
             await this.log(`💥 Erro no ArchitectPlanningStep para tarefa ${tarefaAtual?.id}: ${stepError.message}`);
             
-            return {
-                ...context,
-                architectPlanningResult: {
+            context.architectPlanningResult = 
+                {
                     success: false,
                     error: stepError.message,
                     taskId: tarefaAtual?.id
-                },
-                controleExecucao: {
-                    ...context.controleExecucao,
-                    shouldAbort: true,
-                    abortReason: `Falha no planejamento do arquiteto: ${stepError.message}`
                 }
-            };
+
+            context.controleExecucao = {
+                ...context.controleExecucao,
+                shouldAbort: true,
+                abortReason: `Falha no planejamento do arquiteto: ${stepError.message}`
+            }
+
+            return;
         }
     }
 
@@ -329,3 +351,4 @@ const passoArchitectPlanning: Passo = {
 // ============================================================================
 
 export { passoArchitectPlanning };
+

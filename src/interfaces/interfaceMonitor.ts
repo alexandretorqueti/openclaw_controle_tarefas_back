@@ -8,6 +8,16 @@ export type TaskComplet = Prisma.TaskGetPayload<{
 }
  >;
 
+export interface AnalysisPlan {
+    taskType?: string;
+    requiresReport?: any | null;
+    expectedLayers?: string[];
+    requiredModifiedLayers?: string[];
+    mandatoryChecks?: string[];
+    definitionOfDone?: string[];
+    finalizationInstructions?: string[];
+    risks?: string[];
+}
 
 export interface ContextoExecucao {
     tarefaAtual?: TaskComplet | null;
@@ -42,6 +52,7 @@ export interface ContextoExecucao {
         stateService: any;
         fileService: any;
         userService: any;
+        taskAnalysisService: any;
     };
     utils: {
         promptFactory: any;
@@ -54,9 +65,10 @@ export interface ContextoExecucao {
         doneFile: string;
         relatorioFile: string;
         promptFile: string;
+        terminalLogFile: string;
     };
     initialSnapshot?: any | null;
-    analysisPlan?: any | null;
+    analysisPlan?: AnalysisPlan | null;
     developerPrompt?: string;
     currentInput?: string;
     architectPlanningResult?: {
@@ -80,39 +92,39 @@ export interface ContextoExecucao {
     architectPlan?: string | null;
     architectExecution?: string | null;    
     controleExecucao?: {
-        sessionId?: string | null;
-        loopsExecutados?: number | null;
-        promptVez?: string | null;
-        taskDir?: string | null;
-        falhaDeDominio?: boolean | null;
-        erroInicializacao?: boolean | null;
-        erroValidacao?: boolean | null;
-        erroDecomposicao?: boolean | null;
-        analiseConcluidaComSucesso?: boolean | null;
-        subtasksCreated?: number | null;
-        erroFatalIA?: boolean | null;
-        feedbackForNextTurn?: string | null;
-        doneExists?: boolean | null;
-        erroSintaxeJSON?: boolean | null;
-        agenteAlocado?: string | null;
-        erroExecucao?: boolean | null;
-        hasRealChanges?: boolean | null;
-        changesSummary?: any | null;
+        abortReason?: string;
         actualDonePath?: string | null;
-        evidence?: any | null;
-        toolCall?: any | null;
-        toolResult?: any | null;
-        finalizadaComSucesso?: boolean | null;
+        analiseConcluidaComSucesso?: boolean | null;
+        agenteAlocado?: string | null;
+        changesSummary?: any | null;
+        doneExists?: boolean | null;
+        erroDecomposicao?: boolean | null;
+        erroExecucao?: boolean | null;
+        erroFatalIA?: boolean | null;
         erroFinalizacao?: boolean | null;
-        terminalLogFile?: string | null;
-        rawOutput?: string | null;
-        toolFeedback?: string | null;
-        ultimoErro?: string | null;
+        erroInicializacao?: boolean | null;
+        erroSintaxeJSON?: boolean | null;
+        erroValidacao?: boolean | null;
+        evidence?: any | null;
+        falhaDeDominio?: boolean | null;
+        feedbackForNextTurn?: string | null;
+        finalizadaComSucesso?: boolean | null;
+        hasRealChanges?: boolean | null;
+        loopsExecutados?: number | null;
         processoFantasma?: {
             pid: number;
         } | null;
+        promptVez?: string | null;
+        rawOutput?: string | null;
+        sessionId?: string | null;
         shouldAbort?: boolean;
-        abortReason?: string;
+        subtasksCreated?: number | null;
+        taskDir?: string | null;
+        terminalLogFile?: string | null;
+        toolCall?: any | null;
+        toolFeedback?: string | null;
+        toolResult?: any | null;
+        ultimoErro?: string | null;
     };
 }
  

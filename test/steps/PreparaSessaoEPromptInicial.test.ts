@@ -2,6 +2,7 @@
 
 import { passoPreparaSessaoEPromptInicial } from '../../src/steps/PreparaSessaoEPromptInicial';
 import container from '../../src/container';
+import { file } from 'zod/v4';
 
 jest.mock('../../src/container');
 beforeAll(() => {
@@ -58,7 +59,8 @@ describe('Passo: Prepara Sessão e Prompt para Programador', () => {
                 promptFactory: {
                     buildEngineRulesPrompt: jest.fn().mockReturnValue('Instruções Mestre: .done')
                 }
-            }
+            },
+            files: {}
         };
     });
 

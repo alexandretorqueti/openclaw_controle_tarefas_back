@@ -7,6 +7,9 @@ import { createLegacyGetNextTask } from '../../src/steps/adapters/legacyGetNextT
 import PromptFactory from '../../src/utils/promptFactory';
 import { passoVerificaLock } from '../../src/steps/VerificaLock'; // <-- Importado para os testes de lock
 import config from '../../src/aux/config';
+import { AnalysisPlan } from '../../src/interfaces/interfaceMonitor';
+import { ArchitectAnalysis } from '../../src/steps/ArchitectPlanning';
+import { tr } from 'zod/v4/locales';
 
 // 1. MOCKS DE MÓDULOS
 jest.mock('../../src/container');
@@ -18,7 +21,19 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
     // DECLARAÇÃO DOS MOCKS GLOBAIS
     let instanciaMonitor: monitor;
     let mockContexto: any; // <-- Adicionado para os testes de unidade de Lock
+    const mockLog = jest.fn(); // Mock simples para o logger
     
+    const mockSessionChainUtils = {
+        generateIsolatedSessionId: jest.fn().mockResolvedValue('sessao-mock-123')
+    };
+    
+    const mockSmartFileFinder = {
+        findRealArchitectPlan: jest.fn().mockResolvedValue({ content: 'Plano mockado pelo Jest' })
+    };
+    
+    const mockFileUtils = {
+        fileExists: jest.fn().mockResolvedValue(true)
+    };
     const mockLockService = {
         checkLock: jest.fn().mockResolvedValue({ locked: false }),
         acquireLock: jest.fn().mockResolvedValue(true),
@@ -57,7 +72,8 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
     
     const mockAnalysis = {
         analyzeDeveloperTurn: jest.fn(),
-        analyzeTurn: jest.fn() 
+        analyzeTaskScope: jest.fn(),
+        analyzeArchitectResponse: jest.fn()
     };
     
     const mockWorkspaceSnapshotService = {
@@ -98,6 +114,38 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
 
         mockAnalysis.analyzeDeveloperTurn = spyAnalysis;
 
+        const analysisTaskScopeSpy = jest.fn().mockResolvedValue
+        (
+            {
+                taskType: 'development',
+                requiresReport: false,
+                expectedLayers: ['frontend', 'backend'],
+                requiredModifiedLayers: ['frontend', 'backend'],
+                mandatoryChecks: ['Verificar se a tarefa foi concluida corretamente'],
+                definitionOfDone: ['Evidência de execução detectada'],
+                finalizationInstructions: ['Escrever o resultado final no arquivo de relatorio'],
+                risks: [
+                    'Risco de loop infinito caso a IA não consiga corrigir o erro de sintaxe', 
+                    'Risco de falha na análise de escopo levando a um plano de ação inadequado'
+                ]
+            }
+        );
+        mockAnalysis.analyzeTaskScope = analysisTaskScopeSpy;
+        
+        const analyzeArchitectResponseSpy = jest.fn().mockResolvedValue(
+        {
+            hasExecuted: false,
+            hasPlan: true,
+            confidence: 90,
+            executionDetails: null,
+            planDetails: 'Plano de ação detalhado para a tarefa, incluindo passos específicos e tecnologias a serem usadas.',
+            analysisFailed : false,
+            hadExecuted: false
+        } as ArchitectAnalysis);
+
+        mockAnalysis.analyzeArchitectResponse = analyzeArchitectResponseSpy;
+        
+
         // Container Limpo e Unificado
         (container.resolve as jest.Mock).mockImplementation((name: string) => {
             const registry: Record<string, any> = {
@@ -118,6 +166,10 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 'taskAnalysis': mockAnalysis,
                 'analysis': mockAnalysis,
                 'promptFactory': mockpromptFactory,
+                'log': mockLog,
+                'sessionChainUtils': mockSessionChainUtils,
+                'smartFileFinder': mockSmartFileFinder,
+                'fileUtils': mockFileUtils
             };
             return registry[name];
         });
@@ -170,7 +222,8 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
                 stateService: mockStateService
             },
             controleExecucao: {},
-            lockAtivo: false
+            lockAtivo: false,
+            files: {}
         };
 
         // 2. SÓ AGORA instanciamos o motor!
@@ -193,14 +246,14 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
         expect(mockFileSystem.rename).toHaveBeenCalled(); 
         expect(mockOpenClaw.executeWithFallback).toHaveBeenCalled();
 
-        const foiChamado = mockAnalysis.analyzeDeveloperTurn.mock.calls.length > 0 || 
-                           mockAnalysis.analyzeTurn.mock.calls.length > 0;
+        expect(mockAnalysis.analyzeDeveloperTurn.mock.calls.length).toBe(0);
+        expect(mockAnalysis.analyzeTaskScope.mock.calls.length).toBe(1);
         
-        expect(foiChamado).toBe(false);
     });
 
     it('deve detectar erro de sintaxe e realizar o LOOP de correção', async () => {
         mockOpenClaw.executeWithFallback
+            .mockResolvedValueOnce({ rawOutput: '{"acao": "incompleta"' })
             .mockResolvedValueOnce({ rawOutput: '{"acao": "incompleta"' }) 
             .mockResolvedValueOnce({ rawOutput: '{"acao": "completa"}', success: true }); 
 
@@ -214,10 +267,10 @@ describe('Integração do Workflow: Ciclo Completo do Desenvolvedor', () => {
         await instanciaMonitor.executaCiclo();
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        expect(mockOpenClaw.executeWithFallback).toHaveBeenCalledTimes(2);
+        expect(mockOpenClaw.executeWithFallback).toHaveBeenCalledTimes(3);
         
-        const segundoPrompt = mockOpenClaw.executeWithFallback.mock.calls[1][1];
-        expect(segundoPrompt).toContain('[ERRO DE SINTAXE]');
+        const segundoPrompt = mockOpenClaw.executeWithFallback.mock.calls[2][1];
+        expect(segundoPrompt).toContain('FEEDBACK DO SISTEMA');
         
         expect(mockFileSystem.rename).toHaveBeenCalled();
     });

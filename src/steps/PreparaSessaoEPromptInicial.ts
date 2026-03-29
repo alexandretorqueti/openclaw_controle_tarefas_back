@@ -40,7 +40,7 @@ import container from '../container';
 export const passoPreparaSessaoEPromptInicial: Passo = {
     name: 'Prepara Sessão e Prompt para Programador',
     func: async (ctx: ContextoExecucao) => {
-        const { tarefaAtual, config, controleExecucao, utils } = ctx;
+        const { tarefaAtual, config, controleExecucao, utils, files } = ctx;
 
         if (!tarefaAtual) return;
 
@@ -53,14 +53,14 @@ export const passoPreparaSessaoEPromptInicial: Passo = {
         const dirBase = config.BASE_DIR;
         const taskId = tarefaAtual.id;
 
-        const files = {
-            promptFile: path.join(TASKS_DIR, `prompt-${taskId}.txt`),
-            relatorioFile: path.join(TASKS_DIR, `relatorio-${taskId}.txt`),
-            doneFile: path.join(TASKS_DIR, `done-${taskId}.done`),
-            terminalLogFile: path.join(TASKS_DIR, `terminal-${taskId}.log`),
-            architectPlanFile: path.join(TASKS_DIR, `plano-arquiteto-${taskId}.txt`),
-            architectLogFile: path.join(TASKS_DIR, `terminal-arquiteto-${taskId}.log`)
-        };
+        
+        files.promptFile = path.join(TASKS_DIR, `prompt-${taskId}.txt`);
+        files.relatorioFile = path.join(TASKS_DIR, `relatorio-${taskId}.txt`);
+        files.doneFile = path.join(TASKS_DIR, `done-${taskId}.done`);
+        files.terminalLogFile = path.join(TASKS_DIR, `terminal-${taskId}.log`);
+        files.architectPlanFile = path.join(TASKS_DIR, `plano-arquiteto-${taskId}.txt`);
+        files.architectLogFile = path.join(TASKS_DIR, `terminal-arquiteto-${taskId}.log`);
+    
         await log(`🔗 Iniciando sessão de desenvolvimento para tarefa ${tarefaAtual.id}...`);
 
         // 1. Gerar Session ID único para este ciclo de vida

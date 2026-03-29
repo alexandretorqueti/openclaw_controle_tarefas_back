@@ -53,10 +53,14 @@ export const mapaDeTransicoes: Record<string, Rota[]> = {
     ],
 
     'Prepara Sessão e Prompt para Programador': [
+        { to: 'Analista de Sistemas' }
+    ],
+
+    'Analista de Sistemas': [
         { to: 'Programador' }
     ],
 
-   'Programador': [
+    'Programador': [
         { condition: (c) => c.controleExecucao.erroFatalIA === true, to: null },
         { condition: (c) => c.controleExecucao.loopsExecutados > 5, to: null }, // Eject por segurança
         { to: 'Inspeciona Workspace' }

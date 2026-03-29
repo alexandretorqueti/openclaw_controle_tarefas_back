@@ -37,6 +37,7 @@ export class monitor {
     fileService: any;
     promptFactory: any;
     userService: any;
+    taskAnalysisService: any;
 
     constructor() {
         this.lockService = container.resolve('lockService');
@@ -44,6 +45,7 @@ export class monitor {
         this.fileService = container.resolve('taskFileService');
         this.promptFactory = container.resolve('promptFactory');
         this.userService = container.resolve('userService');
+        this.taskAnalysisService = container.resolve('taskAnalysisService');
         this.inicializaPassos();
     }
 
@@ -112,8 +114,10 @@ export class monitor {
                 lockService: this.lockService,
                 stateService: this.stateService,
                 fileService: this.fileService,
-                userService: this.userService
+                userService: this.userService,
+                taskAnalysisService: this.taskAnalysisService
             },
+            analysisPlan: {},
             utils: {
                 promptFactory: this.promptFactory,
             },
@@ -121,7 +125,15 @@ export class monitor {
             controleExecucao: {
                 loopsExecutados: 0,
             },
-            lockAtivo: false
+            lockAtivo: false,
+            files: {
+                promptFile: null,
+                relatorioFile: null,
+                doneFile: null,
+                terminalLogFile: null,
+                architectPlanFile: null,
+                architectLogFile: null
+            }
         };
         const passosExecutads: string[] = [];
         try {
