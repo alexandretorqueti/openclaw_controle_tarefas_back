@@ -14,7 +14,7 @@ class SmartFileFinder {
    */
   static async findRealArchitectPlan(expectedPath, taskDir, maxRetries = 3) {
     try {
-      await this.sleep(1000);
+      await this.sleep(100);
       let realPlanContent = null;
       let actualFilePath = expectedPath;
 

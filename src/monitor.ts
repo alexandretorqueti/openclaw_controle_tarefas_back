@@ -27,8 +27,9 @@ import { passoPreparaPromptDeCorrecao } from "./steps/PreparaPromptDeCorrecao";
 import { passoFinalizaTarefa } from "./steps/FinalizaTarefa";             
 import { passoExecucaoProgramador } from "./steps/ExecucaoProgramador";
 import { passoArchitectPlanning } from "./steps/ArchitectPlanning";
-import { th } from 'zod/v4/locales';
 
+const path = require('path'); 
+const fs = require('fs');
 export class monitor {
     catalogo_de_passos: Record<string, Passo> = {};
     jaEnvieiMensagemQueEstouAguardando: boolean = false;
@@ -106,6 +107,36 @@ export class monitor {
         }
     }
 
+    formataJsonParaFacilLeitura(obj: any): string {
+        // Primeiro substituimos no json todas as strings longas por uma versão truncada para evitar poluição visual
+        const replacer = (key: string, value: any) => {
+            if (typeof value === 'string' && value.length > 100) {
+                return value.substring(0, 100) + '...';
+            }
+            return value;
+        };
+        
+        // Depois aplicamos a formatação tradicional com indentação
+        let jsonString = JSON.stringify(obj, replacer, 2);
+        
+        // Colocamos quebras de linha extras entre objetos para melhorar a leitura
+        jsonString = jsonString.replace(/},\n\s*{/g, '},\n\n{');
+        
+        return jsonString;
+    }
+
+    salvaContextoEmArquivoParaDebug = async (contexto: ContextoExecucao, nomeArquivo: string, passo: string) => {
+        const caminhoCompleto = path.join(config.TASKS_DIR, 'contexto-debug', `${nomeArquivo}.json`);
+        const datahora = new Date().toISOString().replace(/[:.]/g, '-');
+        const conteudo = {
+            passo,
+            timestamp: datahora,
+            contexto
+        };
+        fs.writeFileSync(caminhoCompleto, this.formataJsonParaFacilLeitura(conteudo), 'utf-8');
+        log(`Contexto salvo para debug: ${caminhoCompleto}`);
+    }
+
     async executaCiclo() {
         const contexto: ContextoExecucao = {
             tarefaAtual: null,
@@ -142,7 +173,7 @@ export class monitor {
 
             while (stepAtualNome !== null) {
                 const passoAtual = this.catalogo_de_passos[stepAtualNome];
-                
+                this.salvaContextoEmArquivoParaDebug(contexto, 'debug', stepAtualNome);
                 if (!passoAtual) {
                     await log(`⚠️ ERRO CRÍTICO: Passo '${stepAtualNome}' não encontrado no catálogo!`);
                     break;

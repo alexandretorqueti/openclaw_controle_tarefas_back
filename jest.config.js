@@ -4,7 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   // Vamos ser ultra-específicos para não dar margem ao erro de picomatch
   testMatch: [
-    "<rootDir>/test/**/*.test.ts"
+    "<rootDir>/test/**/*.test.ts",
+    "<rootDir>/monitor/__tests__/**/*.test.ts"
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', {

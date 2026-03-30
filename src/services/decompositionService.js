@@ -29,8 +29,7 @@ class DecompositionService {
       // Verificar se a tarefa pai existe
       const parentTask = await prisma.task.findUnique({
         where: { id: parentTaskId },
-        select: { id: true, isDecomposed: true },
-        include: { project: true }
+        include: { id: true, isDecomposed: true, project: true }
       });
 
       if (!parentTask) {

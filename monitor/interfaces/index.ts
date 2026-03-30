@@ -1,0 +1,48 @@
+// monitor/interfaces/index.ts
+// Barrel export — importação limpa: import { Passo, ContextoExecucao } from './interfaces';
+
+export type {
+  // Tarefa e projeto
+  TarefaCompleta,
+
+  // Serviços
+  ResultadoCheckLock,
+  ServicoLock,
+  ServicoEstado,
+  ServicoArquivosTarefa,
+  ServicoUsuario,
+  ServicoAnaliseTarefa,
+  FabricaPrompts,
+
+  // Plano
+  PlanoDeAnalise,
+
+  // Controle
+  ProcessoFantasma,
+  ControleExecucao,
+
+  // Arquivos
+  ArquivosSessao,
+
+  // Configuração
+  ConfiguracaoMonitor,
+
+  // Contexto
+  ContextoExecucao,
+  ServicosDoMonitor,
+  UtilidadesDoMonitor,
+
+  // Resultados
+  ResultadoPlanejamentoArquiteto,
+  AnaliseArquiteto,
+
+  // Motor
+  CondicaoDeRota,
+  Rota,
+  MapaDeTransicoes,
+  Passo,
+} from './tipos';
+
+export { StepName } from './tipos';
+
+export type { Logger } from './logger';

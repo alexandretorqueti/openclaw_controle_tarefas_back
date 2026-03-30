@@ -5,13 +5,13 @@
     "allowJs": true,           // O coração da estratégia híbrida!
     "checkJs": false,          // Ignora erros de tipagem dentro dos arquivos .js
     "outDir": "./dist",     // REMOVIDO: Compila no lugar para compatibilidade com imports existentes
-    "rootDir": "./src",        // Garanta que aponta para a raiz do seu código-fonte
+    "rootDir": ".",             // Raiz do projeto (inclui src/ e monitor/)
     "strict": false,           // Comece relaxado
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "types": ["jest", "node"]
   },
-  "include": ["src/**/*.ts"], // Inclui apenas arquivos TypeScript
+  "include": ["src/**/*.ts", "monitor/**/*.ts"], // Inclui src/ e monitor/
   "exclude": ["node_modules", "dist", "src/**/*.js", "src/**/*.test.js", "src/**/*.spec.js", "src/aux/**/*.js"]
 }
