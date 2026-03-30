@@ -8,7 +8,6 @@
 // ─────────────────────────────────────────────────────
 
 import type { ContextoExecucao, Passo } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { Logger } from '../../interfaces/logger';
 
 export interface DependenciasVerificaTimeout {
@@ -16,7 +15,7 @@ export interface DependenciasVerificaTimeout {
 }
 
 export class PassoVerificaTimeout implements Passo {
-  readonly name = StepName.VERIFICA_TIMEOUT;
+  readonly name = "Verifica Timeout";
 
   private readonly logger: Logger;
 
@@ -24,7 +23,7 @@ export class PassoVerificaTimeout implements Passo {
     this.logger = deps.logger;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const fantasma = ctx.controle.processoFantasma;
 
     if (!fantasma) {

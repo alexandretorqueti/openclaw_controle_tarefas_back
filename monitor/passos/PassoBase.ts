@@ -7,7 +7,6 @@
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../interfaces/logger';
-import type { StepName } from '../interfaces';
 
 export interface DependenciasBase {
   logger: Logger;
@@ -21,7 +20,7 @@ export interface DependenciasBase {
  * @template TOutput - Tipo dos dados que o passo devolve
  */
 export abstract class PassoBase<TInput, TOutput> {
-  abstract readonly nome: StepName;
+  abstract readonly nome: string;
   protected readonly logger: Logger;
 
   constructor(deps: DependenciasBase) {

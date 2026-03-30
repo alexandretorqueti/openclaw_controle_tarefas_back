@@ -209,7 +209,7 @@ export interface ContextoExecucao {
   architectPlanningResult?: ResultadoPlanejamentoArquiteto;
   
   // Trilha de auditoria embutida
-  historicoPassos: StepName[];
+  historicoPassos: string[];
   
   // Namespaces separados (evitando o God Object)
   controle: ControleGeral;
@@ -254,47 +254,11 @@ export interface AnaliseArquiteto {
 }
 
 // ═══════════════════════════════════════════════════════
-// 9. NOMES DOS PASSOS (Evitando Strings Mágicas)
+// 9. ROTEAMENTO
 // ═══════════════════════════════════════════════════════
 
-export enum StepName {
-  VERIFICA_LOCK = 'Verifica Lock',
-  VERIFICA_TIMEOUT = 'Verifica Timeout',
-  CONFIGURA_USUARIO = 'Configura Usuário',
-  BUSCA_TAREFA = 'Busca Tarefa',
-  INICIALIZA_TAREFA = 'Inicializa Tarefa',
-  VALIDA_TAREFA = 'Valida Tarefa',
-  DECOMPOE_TAREFA = 'Decompõe Tarefa',
-  VERIFICA_DOMINIO = 'Verifica Domínio',
-  PREPARA_SESSAO = 'Prepara Sessão',
-  ANALISTA_SISTEMAS = 'Analista de Sistemas',
-  PROGRAMADOR = 'Programador',
-  INSPECIONA_WORKSPACE = 'Inspeciona Workspace',
-  ANALISA_TURNO = 'Analisa Turno',
-  PREPARA_CORRECAO = 'Prepara Correção',
-  FINALIZA_TAREFA = 'Finaliza Tarefa',
-}
-
-// ═══════════════════════════════════════════════════════
-// 10. MOTOR DE PASSOS E ROTEAMENTO
-// ═══════════════════════════════════════════════════════
-
-/** Função que avalia o contexto para decidir uma rota */
-export type CondicaoDeRota = (ctx: ContextoExecucao) => boolean;
-
-/** Uma rota possível a partir de um passo */
-export interface Rota {
-  /** Nome do passo destino. null = fim do ciclo. */
-  to: StepName | null;
-  /** Condição opcional. Sem condição = fallback padrão. */
-  condition?: CondicaoDeRota;
-}
-
-/** Mapa completo de transições: nome do passo → rotas disponíveis */
-export type MapaDeTransicoes = Partial<Record<StepName, Rota[]>>;
-
-/** Contrato de um passo executável */
+/** Contrato de um passo atômico simples que trabalha com Contexto (Fase 1 Legada) */
 export interface Passo {
-  readonly name: StepName;
-  executar(contexto: ContextoExecucao): Promise<void>;
+  readonly name: string;
+  execute(contexto: ContextoExecucao): Promise<void>;
 }

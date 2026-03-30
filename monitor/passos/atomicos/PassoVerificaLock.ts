@@ -8,7 +8,6 @@
 // ─────────────────────────────────────────────────────
 
 import type { ContextoExecucao, Passo, ServicoLock, ServicoEstado } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { Logger } from '../../interfaces/logger';
 import { segundosParaMinutosSegundos } from '../../utils/formatacao';
 
@@ -19,7 +18,7 @@ export interface DependenciasVerificaLock {
 }
 
 export class PassoVerificaLock implements Passo {
-  readonly name = StepName.VERIFICA_LOCK;
+  readonly name = "Verifica Lock";
 
   private readonly logger: Logger;
   private readonly lockService: ServicoLock;
@@ -31,7 +30,7 @@ export class PassoVerificaLock implements Passo {
     this.stateService = deps.stateService;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     ctx.lockAtivo = false;
     ctx.controle.processoFantasma = undefined;
 

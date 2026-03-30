@@ -33,7 +33,7 @@ describe('PassoVerificaLock', () => {
       mtime: Date.now() - 5000,
     });
 
-    await passo.executar(ctx);
+    await passo.execute(ctx);
 
     expect(ctx.lockAtivo).toBe(true);
     expect(ctx.controle.processoFantasma).toBeUndefined();
@@ -49,7 +49,7 @@ describe('PassoVerificaLock', () => {
       pid: 12345,
     });
 
-    await passo.executar(ctx);
+    await passo.execute(ctx);
 
     expect(ctx.lockAtivo).toBe(false);
     expect(ctx.controle.processoFantasma).toEqual({ pid: 12345 });
@@ -64,7 +64,7 @@ describe('PassoVerificaLock', () => {
       corrupted: true,
     });
 
-    await passo.executar(ctx);
+    await passo.execute(ctx);
 
     expect(lockService.forceReleaseLock).toHaveBeenCalledTimes(1);
     expect(ctx.lockAtivo).toBe(false);
@@ -80,7 +80,7 @@ describe('PassoVerificaLock', () => {
       alive: false,
     });
 
-    await passo.executar(ctx);
+    await passo.execute(ctx);
 
     expect(lockService.forceReleaseLock).toHaveBeenCalledTimes(1);
     expect(stateService.clearState).toHaveBeenCalledTimes(1);
@@ -91,7 +91,7 @@ describe('PassoVerificaLock', () => {
     const ctx = criarContextoMock();
 
     // Mock padrão já retorna { locked: false, corrupted: false }
-    await passo.executar(ctx);
+    await passo.execute(ctx);
 
     expect(ctx.lockAtivo).toBe(false);
     expect(ctx.controle.processoFantasma).toBeUndefined();

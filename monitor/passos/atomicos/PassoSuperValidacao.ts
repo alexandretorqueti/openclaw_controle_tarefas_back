@@ -6,7 +6,6 @@
 
 import type { Logger } from '../../interfaces/logger';
 import type { Passo } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { ContextoExecucao, TarefaCompleta, PlanoDeAnalise } from '../../interfaces';
 
 /**
@@ -23,7 +22,7 @@ import type { ContextoExecucao, TarefaCompleta, PlanoDeAnalise } from '../../int
  *   - Se sucesso: continua para Decomposição
  */
 export class PassoSuperValidacao implements Passo {
-  readonly name = StepName.VALIDA_TAREFA;
+  readonly name = "SuperValidacao";
 
   private readonly logger: Logger;
 
@@ -31,7 +30,7 @@ export class PassoSuperValidacao implements Passo {
     this.logger = logger;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const logPrefix = `[${this.name}]`;
 
     // 1. Validação de campos obrigatórios

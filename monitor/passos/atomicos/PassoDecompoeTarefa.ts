@@ -9,7 +9,6 @@
 import { PassoBase } from '../PassoBase';
 import type { DependenciasBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
-import { StepName } from '../../interfaces';
 
 // 1. O QUE ENTRA (Sem "Deus Contexto")
 export interface DecomposicaoInput {
@@ -34,7 +33,7 @@ export interface DependenciasDecompoeTarefa extends DependenciasBase {
 
 // 4. A CLASSE PURA (A Regra de Negócio)
 export class LogicaDecomposicao extends PassoBase<DecomposicaoInput, DecomposicaoOutput> {
-  readonly nome = StepName.DECOMPOE_TAREFA;
+  readonly nome = "Decompõe Tarefa";
   private readonly analista: ServicoAnalistaTarefa;
 
   constructor(deps: DependenciasDecompoeTarefa) {

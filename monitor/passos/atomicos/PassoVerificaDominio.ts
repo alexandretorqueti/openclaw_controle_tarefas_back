@@ -8,7 +8,6 @@
 
 import type { Logger } from '../../interfaces/logger';
 import type { Passo, ContextoExecucao, TarefaCompleta } from '../../interfaces';
-import { StepName } from '../../interfaces';
 
 export interface ConfiguracaoFalha {
   apiUrl: string;
@@ -32,7 +31,7 @@ export interface DependenciasVerificaDominio {
 }
 
 export class PassoVerificaDominio implements Passo {
-  readonly name = StepName.VERIFICA_DOMINIO;
+  readonly name = "Verificação de Domínio";
 
   private readonly logger: Logger;
   private readonly gerenciadorFalha: GerenciadorFalhaTarefa;
@@ -42,7 +41,7 @@ export class PassoVerificaDominio implements Passo {
     this.gerenciadorFalha = deps.gerenciadorFalha;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const tarefa = ctx.tarefaAtual;
     if (!tarefa) return;
 

@@ -10,7 +10,6 @@ import type {
   ServicoLock,
   ServicoEstado,
 } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { Logger } from '../../interfaces/logger';
 
 /** Contrato mínimo para operações de filesystem */
@@ -36,7 +35,7 @@ export interface DependenciasInicializaTarefa {
 }
 
 export class PassoInicializaTarefa implements Passo {
-  readonly name = StepName.INICIALIZA_TAREFA;
+  readonly name = "Inicializa Tarefa";
 
   private readonly logger: Logger;
   private readonly lockService: ServicoLock;
@@ -54,7 +53,7 @@ export class PassoInicializaTarefa implements Passo {
     this.pathUtil = deps.path;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const { tarefaAtual, config, controle, erros } = ctx;
 
     if (!tarefaAtual) return;

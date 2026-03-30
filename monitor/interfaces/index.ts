@@ -38,13 +38,7 @@ export type {
   ResultadoPlanejamentoArquiteto,
   AnaliseArquiteto,
 
-  // Motor
-  CondicaoDeRota,
-  Rota,
-  MapaDeTransicoes,
   Passo,
 } from './tipos';
-
-export { StepName } from './tipos';
 
 export type { Logger } from './logger';

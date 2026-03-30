@@ -4,7 +4,6 @@
 // ─────────────────────────────────────────────────────
 
 import type { ContextoExecucao, Passo, TarefaCompleta } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { Logger } from '../../interfaces/logger';
 
 /** Contrato do buscador de tarefa (adapter sobre a API legada) */
@@ -18,7 +17,7 @@ export interface DependenciasBuscaTarefa {
 }
 
 export class PassoBuscaTarefa implements Passo {
-  readonly name = StepName.BUSCA_TAREFA;
+  readonly name = "Busca Tarefa";
 
   private readonly logger: Logger;
   private readonly buscadorTarefa: BuscadorTarefa;
@@ -28,7 +27,7 @@ export class PassoBuscaTarefa implements Passo {
     this.buscadorTarefa = deps.buscadorTarefa;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const nickname = ctx.config.MY_USER_NICKNAME;
 
     try {

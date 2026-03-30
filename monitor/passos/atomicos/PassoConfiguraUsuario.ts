@@ -4,7 +4,6 @@
 // ─────────────────────────────────────────────────────
 
 import type { ContextoExecucao, Passo, ServicoUsuario } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import type { Logger } from '../../interfaces/logger';
 
 export interface DependenciasConfiguraUsuario {
@@ -13,7 +12,7 @@ export interface DependenciasConfiguraUsuario {
 }
 
 export class PassoConfiguraUsuario implements Passo {
-  readonly name = StepName.CONFIGURA_USUARIO;
+  readonly name = "Configura Usuário";
 
   private readonly logger: Logger;
   private readonly userService: ServicoUsuario;
@@ -23,7 +22,7 @@ export class PassoConfiguraUsuario implements Passo {
     this.userService = deps.userService;
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     const nickname = ctx.config.MY_USER_NICKNAME;
 
     const usuario = await this.userService.getCurrentUser(nickname);

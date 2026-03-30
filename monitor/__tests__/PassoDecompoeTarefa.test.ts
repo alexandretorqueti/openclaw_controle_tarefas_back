@@ -59,7 +59,7 @@ describe('PassoDecompoeTarefa', () => {
       });
 
       // Executa o adapter que injeta o contexto na lógica
-      await adapter.executar(ctx);
+      await adapter.execute(ctx);
 
       // EFEITO COLATERAL VALIDADO: Mutação ocorreu exatamente no namespace correto
       expect(ctx.resultados.decomposicao).toEqual({
@@ -84,7 +84,7 @@ describe('PassoDecompoeTarefa', () => {
       });
 
       // Adapter deve capturar a exceção e transformar em estado do fluxo
-      await adapter.executar(ctx);
+      await adapter.execute(ctx);
 
       // Mutação ocorreu exatamente no namespace correto de erros
       expect(ctx.erros.decomposicao).toBe(true);

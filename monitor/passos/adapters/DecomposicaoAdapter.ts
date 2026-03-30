@@ -7,19 +7,18 @@
 // ─────────────────────────────────────────────────────
 
 import type { Passo, ContextoExecucao } from '../../interfaces';
-import { StepName } from '../../interfaces';
 import { LogicaDecomposicao } from '../atomicos/PassoDecompoeTarefa';
 import type { DependenciasDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
 
 export class PassoDecompoeTarefaAdapter implements Passo {
-  readonly name = StepName.DECOMPOE_TAREFA;
+  readonly name = "Decompõe Tarefa";
   private readonly logicaPura: LogicaDecomposicao;
 
   constructor(deps: DependenciasDecompoeTarefa) {
     this.logicaPura = new LogicaDecomposicao(deps);
   }
 
-  async executar(ctx: ContextoExecucao): Promise<void> {
+  async execute(ctx: ContextoExecucao): Promise<void> {
     if (!ctx.tarefaAtual) return;
 
     // 1. O QUE ENTRA: Extrai apenas o que o passo precisa (Monta o Input)
