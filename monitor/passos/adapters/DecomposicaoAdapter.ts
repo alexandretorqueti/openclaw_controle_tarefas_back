@@ -9,6 +9,7 @@
 import type { Passo, ContextoExecucao } from '../../interfaces';
 import { LogicaDecomposicao } from '../atomicos/PassoDecompoeTarefa';
 import type { DependenciasDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
+import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
 
 export class PassoDecompoeTarefaAdapter implements Passo {
   readonly name = "Decompõe Tarefa";
@@ -25,6 +26,7 @@ export class PassoDecompoeTarefaAdapter implements Passo {
     const inputParaDecomposicao = {
       tarefaAtual: ctx.tarefaAtual,
       userId: ctx.UserId,
+      prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
     };
 
     try {

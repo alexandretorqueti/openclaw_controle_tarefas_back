@@ -24,6 +24,7 @@ import { MacroFaseProgramador } from './passos/macro/FaseProgramador';
 import { MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
 import { MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
 import { PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
+import { FabricaPromptsIA } from './utils/FabricaPrompts';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -150,10 +151,13 @@ export class OrquestradorTarefas {
           analista: this.deps.servicoAnalista,
         });
 
+        const promptDecomposicao = FabricaPromptsIA.gerarPromptDecomposicao(tarefa);
+
         // Executamos o passo puro
         const resultDecomposicao = await passoDecomposicao.execute({
           tarefaAtual: tarefa,
           userId: ctx.UserId,
+          prompt: promptDecomposicao,
         });
 
         // Mutações explícitas
@@ -202,10 +206,19 @@ export class OrquestradorTarefas {
         jsonValidator: this.deps.jsonValidator,
       });
 
+      const promptArquiteto = FabricaPromptsIA.gerarPromptArquiteto(
+        tarefa,
+        {
+          pastaBase: this.deps.config.BASE_DIR,
+          // Mapeie dados de projetos caso existam
+        },
+        caminhoPlanoParaSalvar
+      );
+
       const resultArquiteto = await passoArquiteto.execute({
         tarefaAtual: tarefa,
         planoAnalise: ctx.analysisPlan,
-        promptInicial: `Gere o plano de arquitetura para a tarefa: ${tarefa.title}\n\n${tarefa.description}`,
+        promptInicial: promptArquiteto,
         caminhoPlanoParaSalvar,
       });
 
@@ -223,9 +236,15 @@ export class OrquestradorTarefas {
         jsonValidator: this.deps.jsonValidator,
       });
 
+      const promptProgramador = FabricaPromptsIA.gerarPromptProgramador(
+        tarefa,
+        resultArquiteto.planDetails || 'Sem plano.',
+        ctx.controle.taskDir || ''
+      );
+
       const resultProgramador = await passoProgramador.execute({
         tarefaAtual: tarefa,
-        planoArquiteto: resultArquiteto.planDetails,
+        planoArquiteto: promptProgramador,
       });
 
       if (!resultProgramador.sucesso) {

@@ -14,6 +14,7 @@ import type { TarefaCompleta } from '../../interfaces';
 export interface DecomposicaoInput {
   tarefaAtual: TarefaCompleta;
   userId: string | null;
+  prompt: string;
 }
 
 // 2. O QUE SAI
@@ -24,7 +25,7 @@ export interface DecomposicaoOutput {
 
 // 3. CONTRATO DO SERVIÇO DE NEGÓCIO
 export interface ServicoAnalistaTarefa {
-  decompor(tarefa: TarefaCompleta, userId: string | null): Promise<DecomposicaoOutput>;
+  decompor(tarefa: TarefaCompleta, userId: string | null, prompt: string): Promise<DecomposicaoOutput>;
 }
 
 export interface DependenciasDecompoeTarefa extends DependenciasBase {
@@ -46,7 +47,7 @@ export class LogicaDecomposicao extends PassoBase<DecomposicaoInput, Decomposica
       `🔍 Solicitando decomposição ao Analista (Tarefa: ${input.tarefaAtual.id})...`
     );
 
-    const resultado = await this.analista.decompor(input.tarefaAtual, input.userId);
+    const resultado = await this.analista.decompor(input.tarefaAtual, input.userId, input.prompt);
 
     if (resultado.quantidadeSubtarefas > 0) {
       await this.logger.info(

@@ -50,12 +50,8 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
     let codigoAprovado = false;
     let tentativa = 1;
     
-    // Prompt inicial com o plano do Arquiteto injetado
-    let promptAtual = `Execute a tarefa: ${input.tarefaAtual.title}\n\n`;
-    if (input.planoArquiteto) {
-      promptAtual += `=== PLANO DO ARQUITETO ===\n${input.planoArquiteto}\n=====================\n`;
-    }
-    promptAtual += `Responda obrigatoriamente com um JSON indicando seu status ({"acao": "feito"}).`;
+    // Prompt inicial injetado no Orquestrador
+    let promptAtual = input.planoArquiteto || "Plano Indisponível";
 
     // Loop de auto-correção do Programador (max 5 tentativas)
     while (!codigoAprovado && tentativa <= 5) {

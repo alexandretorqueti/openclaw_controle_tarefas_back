@@ -27,6 +27,7 @@ describe('PassoDecompoeTarefa', () => {
       const input = {
         tarefaAtual: criarTarefaFake({ id: 999 }),
         userId: 'user-123',
+        prompt: 'Divida isso...',
       };
 
       const resultado = await passoPuro.execute(input);

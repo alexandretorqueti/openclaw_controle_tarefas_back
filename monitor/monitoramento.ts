@@ -147,7 +147,7 @@ class ClienteApiStatusViaAxios implements ClienteApiStatus {
  * Adapter para chamar o serviço legado de decomposição (CallAnalyst)
  */
 class ServicoAnalistaLegacy implements ServicoAnalistaTarefa {
-  async decompor(tarefa: TarefaCompleta, userId: string | null): Promise<DecomposicaoOutput> {
+  async decompor(tarefa: TarefaCompleta, userId: string | null, prompt: string): Promise<DecomposicaoOutput> {
     const { createLegacyCallAnalyst } = require('../src/steps/adapters/legacyCallAnalyst');
     const callAnalyst = createLegacyCallAnalyst(userId);
     const resultado = await callAnalyst(tarefa);
