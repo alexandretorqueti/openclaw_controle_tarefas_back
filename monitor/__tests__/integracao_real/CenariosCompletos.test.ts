@@ -6,6 +6,8 @@
 import { OrquestradorTarefas } from '../../Orquestrador';
 import { criarLoggerMock } from '../fixtures/fabricaMocks';
 import type { Logger } from '../../interfaces/logger';
+import { stat } from 'node:fs';
+import { project } from '../../../src/services/prismaService';
 
 // Mock global do child_process para interceptar comandos de build/test
 jest.mock('child_process', () => ({
@@ -444,9 +446,9 @@ function gerarCenarios(): Cenario[] {
       // Configurar arquiteto para sucesso
       mocks.servicoOpenClaw.executarTurno.mockResolvedValue({
         sucesso: true,
-        output: '```json\n{"plano": "ok"}\n```',
+        output: '```json\n{"acao": "feito"}\n```',
       });
-      mocks.jsonValidator.parsear.mockReturnValue({ plano: 'ok' });
+      mocks.jsonValidator.parsear.mockReturnValue({ acao: 'feito' });
       mocks.servicoDisco.escrever.mockResolvedValue(undefined);
       
       // Programador sempre continua
@@ -565,6 +567,10 @@ function configurarMocksBaseComTarefaValida(mocks: MocksContainer) {
     comments: [],
     createdAt: new Date(),
     updatedAt: new Date(),
+    status: { id: 1, name: 'In Progress' },
+    statusId: 1,
+    projectId: 1,
+
   });
   mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({
     taskType: 'feature',
@@ -577,9 +583,9 @@ function configurarMocksSucessoAteAnaliseProgramador(mocks: MocksContainer) {
   // Arquiteto sucesso
   mocks.servicoOpenClaw.executarTurno.mockResolvedValue({
     sucesso: true,
-    output: '```json\n{"plano": "ok"}\n```',
+    output: '```json\n{"acao": "feito"}\n```',
   });
-  mocks.jsonValidator.parsear.mockReturnValue({ plano: 'ok' });
+  mocks.jsonValidator.parsear.mockReturnValue({ acao: 'feito' });
   mocks.servicoDisco.escrever.mockResolvedValue(undefined);
   
   // Programador sucesso (2 turnos: continuar, feito)
