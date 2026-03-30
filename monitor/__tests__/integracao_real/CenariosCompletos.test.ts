@@ -12,6 +12,7 @@ import { project } from '../../../src/services/prismaService';
 // Mock global do child_process para interceptar comandos de build/test
 jest.mock('child_process', () => ({
   exec: jest.fn((cmd, options, callback) => {
+    console.log(`🔍 [MOCK GLOBAL child_process.exec] chamado com comando: "${cmd}"`);
     // Comportamento padrão: sucesso
     if (cmd === 'npm run build') {
       callback(null, 'build success', '');
@@ -24,6 +25,15 @@ jest.mock('child_process', () => ({
     // Para cenários de falha, o mock será sobrescrito no teste específico
     callback(null, '', '');
   }),
+}));
+
+// Mock do PassoExecutarComando para garantir retornos consistentes
+const mockPassoExecutarComandoExecute = jest.fn();
+
+jest.mock('../../passos/atomicos/PassoExecutarComando', () => ({
+  PassoExecutarComando: jest.fn(() => ({
+    execute: mockPassoExecutarComandoExecute,
+  })),
 }));
 
 // Configuração base para todos os cenários
@@ -78,6 +88,7 @@ interface MocksContainer {
   servicoAnalista: any;
   servicoOpenClaw: any;
   servicoDisco: any;
+  servicoSnapshot: any;
   jsonValidator: any;
   gerenciadorFalha: any;
 }
@@ -531,6 +542,34 @@ function gerarCenarios(): Cenario[] {
       // A tarefa foi capturada e inicializada
       expect(logs).toContainEqual(expect.stringContaining('Tarefa capturada'));
       expect(mocks.servicoLock.acquireLock).toHaveBeenCalled();
+      // Verificar que o arquivo .done foi verificado
+      expect(mocks.fileSystem.access).toHaveBeenCalledWith(
+        expect.stringContaining('.done')
+      );
+      
+      // Verificar que NÃO houve erro fatal não tratado
+      const errosFatais = logs.filter(log => 
+        log.includes('💥 Erro fatal não tratado no Orquestrador') ||
+        log.includes('Cannot read properties of undefined') ||
+        log.includes('TypeError')
+      );
+      if (errosFatais.length > 0) {
+        console.log('❌ ERROS FATAS DETECTADOS:', errosFatais);
+        console.log('📋 TODOS OS LOGS:', logs);
+      }
+      expect(errosFatais).toHaveLength(0);
+      
+      // Verificar que os comandos de build e teste foram executados via mock
+      expect(mockPassoExecutarComandoExecute).toHaveBeenCalledTimes(2);
+      expect(mockPassoExecutarComandoExecute).toHaveBeenCalledWith({
+        comando: 'npm run build',
+        diretorioDeTrabalho: CONFIG_BASE.BASE_DIR,
+      });
+      expect(mockPassoExecutarComandoExecute).toHaveBeenCalledWith({
+        comando: 'npm run test',
+        diretorioDeTrabalho: CONFIG_BASE.BASE_DIR,
+      });
+      
       // O lock é liberado? Pode não ser se a tarefa não foi concluída
       // expect(mocks.servicoLock.releaseLock).toHaveBeenCalled();
     },
@@ -549,6 +588,9 @@ function configurarMocksBaseComTarefa(mocks: MocksContainer) {
   mocks.servicoUsuario.getCurrentUser.mockResolvedValue({ id: 'user-123', nickname: 'jarbas' });
   mocks.servicoLock.acquireLock.mockResolvedValue(true);
   mocks.fileSystem.mkdir.mockResolvedValue(undefined);
+  mocks.fileSystem.access.mockResolvedValue(undefined); // Para que arquivos existam
+  mocks.fileSystem.readdir.mockResolvedValue([]); // Diretório vazio para snapshots
+  mocks.fileSystem.stat.mockRejectedValue(new Error('Arquivo não existe')); // Padrão
   mocks.clienteApi.buscarStatusPorNome.mockResolvedValue({ id: 2 });
   mocks.clienteApi.atualizarStatusTarefa.mockResolvedValue(undefined);
   mocks.clienteApi.adicionarComentarioTarefa.mockResolvedValue(undefined);
@@ -606,29 +648,56 @@ function configurarMocksSucessoAteAnaliseProgramador(mocks: MocksContainer) {
 
 function configurarMocksSucessoAteBuildTestes(mocks: MocksContainer) {
   configurarMocksSucessoAteAnaliseProgramador(mocks);
-  // Build e testes sucesso - mock do child_process
-  const childProcess = require('child_process');
-  (childProcess.exec as jest.Mock)
-    .mockImplementationOnce((cmd, options, callback) => {
-      if (cmd === 'npm run build') {
-        callback(null, 'build success', '');
-        return;
-      }
-      callback(null, '', '');
-    })
-    .mockImplementationOnce((cmd, options, callback) => {
-      if (cmd === 'npm run test') {
-        callback(null, 'tests passed', '');
-        return;
-      }
-      callback(null, '', '');
-    });
+  // Build e testes sucesso - já mockados via PassoExecutarComando mock global
+  // Não precisamos mais mockar child_process.exec diretamente
 }
 
 function configurarMocksSucessoCompleto(mocks: MocksContainer) {
   configurarMocksSucessoAteBuildTestes(mocks);
   // Finalização sucesso
   mocks.clienteApi.buscarStatusPorNome.mockResolvedValue({ id: 3 }); // Status "Concluída"
+  
+  // Configurar mock do PassoExecutarComando
+  mockPassoExecutarComandoExecute.mockImplementation((input) => {
+    if (input.comando === 'npm run build') {
+      return Promise.resolve({
+        sucesso: true,
+        stdout: 'build success',
+        stderr: '',
+      });
+    }
+    if (input.comando === 'npm run test') {
+      return Promise.resolve({
+        sucesso: true,
+        stdout: 'tests passed',
+        stderr: '',
+      });
+    }
+    return Promise.resolve({
+      sucesso: false,
+      stdout: '',
+      stderr: '',
+    });
+  });
+
+  // Configurar mock do serviço de snapshot
+  // Snapshot inicial vazio (simulando workspace limpo)
+  const snapshotInicial = new Map();
+  const snapshotAtual = new Map();
+  // Adicionar alguns arquivos simulando mudanças (opcional)
+  // snapshotAtual.set('/tmp/test_cenarios/arquivo_novo.js', Date.now());
+  
+  mocks.servicoSnapshot.takeSnapshot
+    .mockResolvedValueOnce(snapshotInicial) // Primeira chamada: snapshot inicial
+    .mockResolvedValue(snapshotAtual);      // Chamadas subsequentes: snapshot atual
+  
+  mocks.servicoSnapshot.compareSnapshots.mockReturnValue({
+    modified: [],
+    created: [],
+    deleted: [],
+    totalChanges: 0,
+    hasChanges: false,
+  });
 }
 
 // ============================================================================
@@ -636,6 +705,10 @@ function configurarMocksSucessoCompleto(mocks: MocksContainer) {
 // ============================================================================
 
 describe('Cenários Completos do Orquestrador', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+  
   const cenarios = gerarCenarios();
   
   // Teste cada cenário
@@ -680,6 +753,9 @@ describe('Cenários Completos do Orquestrador', () => {
         },
         fileSystem: {
           mkdir: jest.fn(),
+          access: jest.fn(),
+          readdir: jest.fn(),
+          stat: jest.fn(),
         },
         pathUtil: {
           join: jest.fn(),
@@ -702,6 +778,10 @@ describe('Cenários Completos do Orquestrador', () => {
           apagar: jest.fn(),
           existe: jest.fn(),
           executar: jest.fn(),
+        },
+        servicoSnapshot: {
+          takeSnapshot: jest.fn(),
+          compareSnapshots: jest.fn(),
         },
         jsonValidator: {
           parsear: jest.fn(),
@@ -765,6 +845,7 @@ describe('Cenários Completos do Orquestrador', () => {
         servicoAnalista: mocks.servicoAnalista,
         servicoOpenClaw: mocks.servicoOpenClaw,
         servicoDisco: mocks.servicoDisco,
+        servicoSnapshot: mocks.servicoSnapshot,
         jsonValidator: mocks.jsonValidator,
         gerenciadorFalha: mocks.gerenciadorFalha,
         criarContexto,

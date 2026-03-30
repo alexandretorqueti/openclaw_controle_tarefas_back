@@ -48,6 +48,7 @@ import { OrquestradorTarefas } from './Orquestrador';
 
 import type { BuscadorTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import type { ClienteApiStatus } from './passos/atomicos/PassoInicializaTarefa';
+import { WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
 import type { ServicoAnalistaTarefa, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
 import type { GerenciadorFalhaTarefa, ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { ChamarIAInput } from './passos/atomicos/PassoChamarIA';
@@ -222,9 +223,23 @@ export class Monitoramento {
     const lockService = container.resolve('lockService') as ServicoLock;
     const stateService = container.resolve('monitorStateService') as ServicoEstado;
     const fileService = container.resolve('taskFileService') as any;
-    const userService = container.resolve('userService') as ServicoUsuario;
+    const userServiceReal = container.resolve('userService') as any;
     const taskAnalysisService = container.resolve('taskAnalysisService') as ServicoAnaliseTarefa;
     const promptFactory = container.resolve('promptFactory') as FabricaPrompts;
+
+    // ─── Adapter para UserService ───
+    const userService: ServicoUsuario = {
+      getCurrentUser: async (nickname: string) => {
+        // O serviço real tem getUserByNickname, não getCurrentUser
+        return await userServiceReal.getUserByNickname(nickname);
+      }
+    };
+
+    // ─── Serviço de Snapshot ───
+    const servicoSnapshot = new WorkspaceSnapshotService({
+      logger: this.logger,
+      fileSystem: require('fs').promises,
+    });
 
     // ─── Orquestrador Imperativo ───
     this.orquestrador = new OrquestradorTarefas({
@@ -235,6 +250,7 @@ export class Monitoramento {
       servicoArquivos: fileService,
       servicoUsuario: userService,
       servicoAnaliseTarefa: taskAnalysisService,
+      servicoSnapshot: servicoSnapshot,
       clienteApi: new ClienteApiStatusViaAxios(),
       fileSystem: require('fs').promises,
       pathUtil: require('path'),

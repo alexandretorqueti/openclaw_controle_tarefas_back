@@ -25,6 +25,7 @@ import { MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramad
 import { MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
 import { PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
 import { FabricaPromptsIA } from './utils/FabricaPrompts';
+import { WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -43,6 +44,7 @@ export interface DependenciasGlobais {
   servicoAnalista: any;
   servicoOpenClaw: any;
   servicoDisco: any;
+  servicoSnapshot: any;
   jsonValidator: any;
   gerenciadorFalha: any;
   // utils
@@ -229,6 +231,16 @@ export class OrquestradorTarefas {
 
       await logger.info('🛠️ Plano validado e salvo. Pronto para o Programador!');
 
+      // CAPTURAR SNAPSHOT INICIAL (antes do programador)
+      await logger.info('📸 Capturando snapshot inicial do workspace...');
+      const snapshotService = new WorkspaceSnapshotService({
+        logger,
+        fileSystem: this.deps.fileSystem,
+      });
+      const snapshotInicial = await snapshotService.takeSnapshot(this.deps.config.BASE_DIR);
+      ctx.initialSnapshot = snapshotInicial;
+      await logger.info(`✅ Snapshot inicial capturado: ${snapshotInicial.size} arquivos`);
+
       // PASSO DO PROGRAMADOR (Macro Passo)
       const passoProgramador = new MacroFaseProgramador({
         logger,
@@ -270,11 +282,14 @@ export class OrquestradorTarefas {
             }
           },
         },
+        snapshotService,
       });
 
       const analise = await analisadorDisco.execute({
         tarefaAtual: tarefa,
         caminhoTaskDir: ctx.controle.taskDir || '',
+        snapshotInicial,
+        diretorioBase: this.deps.config.BASE_DIR,
       });
 
       let mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';

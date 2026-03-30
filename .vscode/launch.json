@@ -22,11 +22,17 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Debug monitor.ts",
-            "program": "${workspaceFolder}/src/monitor.js",
+            "name": "Debug monitoramento.ts",
+            "program": "${workspaceFolder}/monitor/monitoramento.ts",
             "cwd": "${workspaceFolder}",
             "runtimeExecutable": "npx",
-            "runtimeArgs": ["tsx"]
+            "runtimeArgs": ["tsx"],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "env": {
+                "PATH": "/home/alexandrebragatorqueti/.nvm/versions/node/v24.11.0/bin:${env:PATH}"
+            }
         }
     ]
 }
