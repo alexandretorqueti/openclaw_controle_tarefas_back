@@ -32,7 +32,7 @@ describe('PassoDecompoeTarefa', () => {
 
       const resultado = await passoPuro.execute(input);
 
-      expect(analista.decompor).toHaveBeenCalledWith(input.tarefaAtual, input.userId);
+      expect(analista.decompor).toHaveBeenCalledWith(input.tarefaAtual, input.userId, input.prompt);
       expect(resultado).toEqual({
         sucesso: true,
         quantidadeSubtarefas: 3,
