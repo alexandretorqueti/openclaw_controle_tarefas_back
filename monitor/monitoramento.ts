@@ -52,7 +52,7 @@ import type { ServicoAnalistaTarefa, DecomposicaoOutput } from './passos/atomico
 import type { GerenciadorFalhaTarefa, ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { ChamarIAInput } from './passos/atomicos/PassoChamarIA';
 import type { TarefaCompleta } from './interfaces';
-import fs from 'fs';
+import * as fs from 'fs';
 import axios from 'axios';
 
 /**
@@ -80,11 +80,31 @@ class ServicoDiscoLegacy {
 class ServicoOpenClawLegacy {
   async executarTurno(input: ChamarIAInput): Promise<{ sucesso: boolean; output: string }> {
     const OpenClawService = require('../src/services/openclawService');
-    const resultado = await OpenClawService.executeAgent({
-      prompt: input.prompt,
-      agent: input.agente,
-      // Passar context, workspace e arquivos caso implementado
-    });
+    const configuracao = config as ConfiguracaoMonitor;
+    
+    const sessionId = `session-${input.agente}-${Date.now()}`;
+    const terminalLogFile = null; // não usamos log de terminal para chamadas simples
+    const tasksDir = configuracao.TASKS_DIR || '/tmp';
+    const projectPath = process.cwd();
+    
+    const resultado = await OpenClawService.executeOptimized(
+      sessionId,
+      input.prompt,
+      input.agente,
+      null, // model (usa o padrão do agente)
+      tasksDir,
+      terminalLogFile,
+      projectPath,
+      120000, // timeout 2 minutos
+      {
+        enableBrowser: false,
+        enableElevated: false,
+        enableThinking: true,
+        fallbackAgent: 'main',
+        maxRetries: 0
+      }
+    );
+    
     return {
       sucesso: resultado?.success ?? false,
       output: resultado?.rawOutput ?? '',
