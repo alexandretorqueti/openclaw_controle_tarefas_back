@@ -19,6 +19,10 @@ import { PassoSuperValidacao } from './passos/atomicos/PassoSuperValidacao';
 import { LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
+import { MacroFaseProgramador } from './passos/macro/FaseProgramador';
+import { MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
+import { MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
+import { PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -184,7 +188,96 @@ export class OrquestradorTarefas {
       }
 
       await logger.info('🛠️ Plano validado e salvo. Pronto para o Programador!');
-      // TODO: Loop do Programador...
+
+      // PASSO DO PROGRAMADOR (Macro Passo)
+      const passoProgramador = new MacroFaseProgramador({
+        logger,
+        openClaw: this.deps.servicoOpenClaw,
+        jsonValidator: this.deps.jsonValidator,
+      });
+
+      const resultProgramador = await passoProgramador.execute({
+        tarefaAtual: tarefa,
+        planoArquiteto: resultArquiteto.planDetails,
+      });
+
+      if (!resultProgramador.sucesso) {
+        await logger.erro('O Programador falhou ou estourou o limite de turnos.');
+        return; // Eject
+      }
+
+      // ==========================================================
+      // FASE 5: INSPEÇÃO, BUILDS E TESTES
+      // ==========================================================
+
+      await logger.info(`🔎 Programador declarou que terminou. Inspecionando o trabalho...`);
+
+      const analisadorDisco = new MacroFaseAnaliseProgramador({
+        logger,
+        arquivos: {
+          existe: async (caminho: string) => {
+            try {
+              await this.deps.fileSystem.access(caminho);
+              return true;
+            } catch {
+              return false;
+            }
+          },
+        },
+      });
+
+      const analise = await analisadorDisco.execute({
+        tarefaAtual: tarefa,
+        caminhoTaskDir: ctx.controle.taskDir || '',
+      });
+
+      let mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';
+      let novoStatus = ctx.config.STATUS.IN_PROGRESS;
+
+      if (analise.workspaceValidado) {
+        // RODA OS BUILDS E TESTES
+        const executor = new PassoExecutarComando({ logger });
+        
+        await logger.info('🔨 Iniciando rotina de Build/Lint...');
+        const build = await executor.execute({
+          comando: 'npm run build', // ou tsc --noEmit, dependendo do repositório configurado
+          diretorioDeTrabalho: this.deps.config.BASE_DIR, 
+        });
+
+        await logger.info('🧪 Iniciando rotina de Testes Automatizados...');
+        const testes = await executor.execute({
+          comando: 'npm run test',
+          diretorioDeTrabalho: this.deps.config.BASE_DIR, 
+        });
+
+        if (build.sucesso && testes.sucesso) {
+          mensagemFinal = `✅ Tudo verde! Código passou em todos os testes e builds.\n\nLogs:\n${testes.stdout.substring(0, 500)}...`;
+          novoStatus = ctx.config.STATUS.COMPLETED;
+        } else {
+          mensagemFinal = `❌ O código falhou na esteira de CI/CD local!\nBuild: ${build.sucesso ? 'Ok' : 'Falhou'}\nTestes: ${testes.sucesso ? 'Ok' : 'Falhou'}\n\nLogs:\n${(testes.stderr || build.stderr).substring(0, 1000)}`;
+          // Podemos enviar isso de volta para o Programador num loop de auto-correção maior aqui!
+        }
+      }
+
+      // ==========================================================
+      // FASE 6: FINALIZAÇÃO
+      // ==========================================================
+
+      const passoFinaliza = new MacroFaseFinalizacao({
+        logger,
+        clienteApi: this.deps.clienteApi,
+        apiUrl: this.deps.config.API_URL,
+        userId: ctx.UserId,
+      });
+
+      await passoFinaliza.execute({
+        tarefaAtual: tarefa,
+        novoStatus,
+        mensagemFechamento: mensagemFinal,
+      });
+
+      // Se chegamos aqui, o ciclo dessa tarefa chegou ao fim!
+      await logger.info(`🎉 Ciclo da Tarefa [${tarefa.id}] completamente finalizado!`);
 
     } catch (erroGlobal: unknown) {
       const msg = erroGlobal instanceof Error ? erroGlobal.message : String(erroGlobal);
