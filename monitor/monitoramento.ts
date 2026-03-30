@@ -50,8 +50,56 @@ import type { BuscadorTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import type { ClienteApiStatus } from './passos/atomicos/PassoInicializaTarefa';
 import type { ServicoAnalistaTarefa, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
 import type { GerenciadorFalhaTarefa, ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
+import type { ChamarIAInput } from './passos/atomicos/PassoChamarIA';
 import type { TarefaCompleta } from './interfaces';
+import fs from 'fs';
 import axios from 'axios';
+
+/**
+ * Adapter para usar o módulo "fs" real no FileSystem
+ */
+class ServicoDiscoLegacy {
+  async escrever(caminho: string, conteudo: string, criar: boolean): Promise<void> {
+    if (criar) {
+      const { dirname } = require('path');
+      await fs.promises.mkdir(dirname(caminho), { recursive: true });
+    }
+    await fs.promises.writeFile(caminho, conteudo, 'utf-8');
+  }
+  async ler(caminho: string): Promise<string> {
+    return fs.promises.readFile(caminho, 'utf-8');
+  }
+  async apagar(caminho: string): Promise<void> {
+    await fs.promises.unlink(caminho);
+  }
+}
+
+/**
+ * Adapter para chamar a API real do OpenClaw usando container legado
+ */
+class ServicoOpenClawLegacy {
+  async executarTurno(input: ChamarIAInput): Promise<{ sucesso: boolean; output: string }> {
+    const OpenClawService = require('../src/services/openclawService');
+    const resultado = await OpenClawService.executeAgent({
+      prompt: input.prompt,
+      agent: input.agente,
+      // Passar context, workspace e arquivos caso implementado
+    });
+    return {
+      sucesso: resultado?.success ?? false,
+      output: resultado?.rawOutput ?? '',
+    };
+  }
+}
+
+/**
+ * Utilitário: JSON parse genérico ou baseado em schema.
+ */
+class JsonValidator {
+  parsear(texto: string): any {
+    return JSON.parse(texto);
+  }
+}
 
 /**
  * Adapter que conecta o BuscadorTarefa ao endpoint legado da API.
@@ -172,6 +220,9 @@ export class Monitoramento {
       pathUtil: require('path'),
       servicoBusca: new BuscadorTarefaViaApi(configuracao.API_URL),
       servicoAnalista: new ServicoAnalistaLegacy(),
+      servicoOpenClaw: new ServicoOpenClawLegacy(),
+      servicoDisco: new ServicoDiscoLegacy(),
+      jsonValidator: new JsonValidator(),
       gerenciadorFalha: new GerenciadorFalhaLegacy(),
       criarContexto: () => criarContextoLimpo({
         config: configuracao,

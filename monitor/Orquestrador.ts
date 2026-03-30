@@ -18,6 +18,7 @@ import { PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
 import { PassoSuperValidacao } from './passos/atomicos/PassoSuperValidacao';
 import { LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
+import { MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -34,6 +35,9 @@ export interface DependenciasGlobais {
   servicoBusca: any;
   servicoAnaliseTarefa: any;
   servicoAnalista: any;
+  servicoOpenClaw: any;
+  servicoDisco: any;
+  jsonValidator: any;
   gerenciadorFalha: any;
   // utils
   criarContexto: () => ContextoExecucao;
@@ -155,8 +159,32 @@ export class OrquestradorTarefas {
       // FASE 4: ESTEIRA DA IA (Arquiteto e Programador)
       // ==========================================================
 
-      await logger.info(`🚀 Tarefa [${tarefa.id}] validada e pronta para a IA! (Fase 4 - Em construção)`);
-      // Aqui entrarão: PassoArchitectPlanning, Loop do Programador, etc.
+      await logger.info(`🚀 Tarefa [${tarefa.id}] validada e pronta para a IA! (Fase 4)`);
+
+      const caminhoPlanoParaSalvar = this.deps.pathUtil.join(ctx.controle.taskDir || '', 'architect_plan.json');
+
+      // PASSO DO ARQUITETO (Macro Passo)
+      const passoArquiteto = new MacroFaseArquiteto({
+        logger,
+        openClaw: this.deps.servicoOpenClaw,
+        disco: this.deps.servicoDisco,
+        jsonValidator: this.deps.jsonValidator,
+      });
+
+      const resultArquiteto = await passoArquiteto.execute({
+        tarefaAtual: tarefa,
+        planoAnalise: ctx.analysisPlan,
+        promptInicial: `Gere o plano de arquitetura para a tarefa: ${tarefa.title}\n\n${tarefa.description}`,
+        caminhoPlanoParaSalvar,
+      });
+
+      if (!resultArquiteto.sucesso) {
+        await logger.erro('O Arquiteto falhou criticamente.');
+        return; // Eject
+      }
+
+      await logger.info('🛠️ Plano validado e salvo. Pronto para o Programador!');
+      // TODO: Loop do Programador...
 
     } catch (erroGlobal: unknown) {
       const msg = erroGlobal instanceof Error ? erroGlobal.message : String(erroGlobal);
