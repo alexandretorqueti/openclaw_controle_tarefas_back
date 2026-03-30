@@ -34,8 +34,15 @@ export function criarContextoLimpo(deps: DependenciasFabricaContexto): ContextoE
       architectLogFile: null,
     },
     analysisPlan: null,
-    controleExecucao: {
+    
+    // Trilha de auditoria vazia no início
+    historicoPassos: [],
+    
+    // Namespaces separados e inicializados limpos
+    controle: {
       loopsExecutados: 0,
     },
+    erros: {},
+    resultados: {},
   };
 }

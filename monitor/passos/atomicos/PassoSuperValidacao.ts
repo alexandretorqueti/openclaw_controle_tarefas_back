@@ -41,7 +41,7 @@ export class PassoSuperValidacao implements Passo {
         await this.logger.erro(
           `${logPrefix} Campo obrigatório faltando: ${campo} na tarefa ${ctx.tarefaAtual?.id}`
         );
-        ctx.controleExecucao.erroFatalIA = true;
+        ctx.erros.fatalIA = true;
         return;
       }
     }
@@ -51,7 +51,7 @@ export class PassoSuperValidacao implements Passo {
       await this.logger.erro(
         `${logPrefix} Projeto não é válido para tarefa ${ctx.tarefaAtual?.id}`
       );
-      ctx.controleExecucao.erroFatalIA = true;
+      ctx.erros.fatalIA = true;
       return;
     }
 
@@ -68,6 +68,6 @@ export class PassoSuperValidacao implements Passo {
     }
 
     // 4. Preparação para decomposição
-    ctx.controleExecucao.loopsExecutados++;
+    ctx.controle.loopsExecutados++;
   }
 }

@@ -25,7 +25,7 @@ export class PassoVerificaTimeout implements Passo {
   }
 
   async executar(ctx: ContextoExecucao): Promise<void> {
-    const fantasma = ctx.controleExecucao.processoFantasma;
+    const fantasma = ctx.controle.processoFantasma;
 
     if (!fantasma) {
       await this.logger.info(

@@ -105,7 +105,7 @@ describe('MotorDePassos', () => {
 
     const mapa: MapaDeTransicoes = {
       [StepName.PROGRAMADOR]: [
-        { condition: (c) => (c.controleExecucao.loopsExecutados ?? 0) >= 3, to: null },
+        { condition: (c) => (c.controle.loopsExecutados ?? 0) >= 3, to: null },
         { to: StepName.PROGRAMADOR },
       ],
     };
@@ -114,7 +114,7 @@ describe('MotorDePassos', () => {
     motor.registrar(
       criarPassoFake(StepName.PROGRAMADOR, (ctx) => {
         contador++;
-        ctx.controleExecucao.loopsExecutados = contador;
+        ctx.controle.loopsExecutados = contador;
       })
     );
 
@@ -122,6 +122,6 @@ describe('MotorDePassos', () => {
     const resultado = await motor.executar(StepName.PROGRAMADOR, ctx);
 
     expect(resultado).toEqual([StepName.PROGRAMADOR, StepName.PROGRAMADOR, StepName.PROGRAMADOR]);
-    expect(ctx.controleExecucao.loopsExecutados).toBe(3);
+    expect(ctx.controle.loopsExecutados).toBe(3);
   });
 });

@@ -84,51 +84,68 @@ export interface PlanoDeAnalise {
 }
 
 // ═══════════════════════════════════════════════════════
-// 4. CONTROLE DE EXECUÇÃO
+// 4. CONTROLE, ERROS E RESULTADOS (Namespaces)
 // ═══════════════════════════════════════════════════════
 
 export interface ProcessoFantasma {
   pid: number;
 }
 
-export interface ControleExecucao {
+/** Estado geral de controle do ciclo */
+export interface ControleGeral {
   loopsExecutados: number;
   processoFantasma?: ProcessoFantasma | null;
   shouldAbort?: boolean;
   abortReason?: string;
-
-  // Flags de erro (cada passo seta a sua)
-  erroInicializacao?: boolean;
-  erroValidacao?: boolean;
-  erroDecomposicao?: boolean;
-  erroExecucao?: boolean;
-  erroFatalIA?: boolean;
-  erroFinalizacao?: boolean;
-  erroSintaxeJSON?: boolean;
-  falhaDeDominio?: boolean;
-
-  // Estado do ciclo do programador
-  sessionId?: string | null;
   taskDir?: string | null;
   promptVez?: string | null;
-  rawOutput?: string | null;
-  feedbackForNextTurn?: string | null;
-  doneExists?: boolean | null;
-  hasRealChanges?: boolean | null;
-  analiseConcluidaComSucesso?: boolean | null;
-  finalizadaComSucesso?: boolean | null;
-  subtasksCreated?: number | null;
   agenteAlocado?: string | null;
-  ultimoErro?: string | null;
+}
 
-  // Artefatos
-  changesSummary?: unknown;
-  evidence?: unknown;
-  toolCall?: unknown;
-  toolResult?: unknown;
-  toolFeedback?: string | null;
-  terminalLogFile?: string | null;
-  actualDonePath?: string | null;
+/** Flags de erro centralizadas (fáceis de checar no mapa de transições) */
+export interface ErrosCiclo {
+  inicializacao?: boolean;
+  validacao?: boolean;
+  decomposicao?: boolean;
+  dominio?: boolean;
+  fatalIA?: boolean;
+  sintaxeJSON?: boolean;
+  execucao?: boolean;
+  finalizacao?: boolean;
+}
+
+/** Resultados específicos de cada passo (Evita o God Object) */
+export interface ResultadosPassos {
+  decomposicao?: {
+    sucesso: boolean;
+    subtasksCreated: number;
+  };
+  inspecao?: {
+    doneExists: boolean;
+    hasRealChanges?: boolean;
+    actualDonePath?: string;
+    terminalLogFile?: string;
+  };
+  analiseTurno?: {
+    sucesso: boolean;
+    feedbackForNextTurn?: string;
+  };
+  programador?: {
+    sessionId?: string;
+    rawOutput?: string;
+    ultimoErro?: string;
+    toolCall?: unknown;
+    toolResult?: unknown;
+    toolFeedback?: string;
+    evidence?: unknown;
+  };
+  arquiteto?: {
+    hasPlan: boolean;
+    hasExecuted: boolean;
+    confidence: number;
+    planDetails?: string | null;
+    analysisFailed: boolean;
+  };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -190,10 +207,14 @@ export interface ContextoExecucao {
   developerPrompt?: string;
   currentInput?: string;
   architectPlanningResult?: ResultadoPlanejamentoArquiteto;
-  architectAnalysis?: AnaliseArquiteto;
-  architectPlan?: string | null;
-  architectExecution?: string | null;
-  controleExecucao: ControleExecucao;
+  
+  // Trilha de auditoria embutida
+  historicoPassos: StepName[];
+  
+  // Namespaces separados (evitando o God Object)
+  controle: ControleGeral;
+  erros: ErrosCiclo;
+  resultados: ResultadosPassos;
 }
 
 export interface ServicosDoMonitor {

@@ -33,7 +33,7 @@ export class PassoVerificaLock implements Passo {
 
   async executar(ctx: ContextoExecucao): Promise<void> {
     ctx.lockAtivo = false;
-    ctx.controleExecucao.processoFantasma = undefined;
+    ctx.controle.processoFantasma = undefined;
 
     const resultado = await this.lockService.checkLock(ctx.config.TASK_TIMEOUT_MS);
 
@@ -51,7 +51,7 @@ export class PassoVerificaLock implements Passo {
 
     // Caso 2: Lock antigo com processo ainda em pé — fantasma
     if (resultado.locked && !resultado.ageRecent) {
-      ctx.controleExecucao.processoFantasma = {
+      ctx.controle.processoFantasma = {
         pid: resultado.pid ?? 0,
       };
       return;

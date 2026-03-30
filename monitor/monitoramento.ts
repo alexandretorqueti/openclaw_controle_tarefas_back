@@ -236,7 +236,7 @@ export class Monitoramento {
       await this.logger.erro(`💥 Erro fatal no ciclo: ${mensagem}`);
     } finally {
       // Liberação de lock se o ciclo terminou sem processos pendentes
-      if (!contexto.lockAtivo && !contexto.controleExecucao.processoFantasma) {
+      if (!contexto.lockAtivo && !contexto.controle.processoFantasma) {
         await this.lockService.releaseLock();
       }
     }

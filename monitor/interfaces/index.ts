@@ -19,7 +19,9 @@ export type {
 
   // Controle
   ProcessoFantasma,
-  ControleExecucao,
+  ControleGeral,
+  ErrosCiclo,
+  ResultadosPassos,
 
   // Arquivos
   ArquivosSessao,

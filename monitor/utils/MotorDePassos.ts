@@ -51,8 +51,8 @@ export class MotorDePassos {
   async executar(
     passoInicial: StepName,
     contexto: ContextoExecucao
-  ): Promise<string[]> {
-    const passosExecutados: string[] = [];
+  ): Promise<StepName[]> {
+    const passosExecutados: StepName[] = [];
     let passoAtualNome: StepName | null = passoInicial;
 
     while (passoAtualNome !== null) {
@@ -64,6 +64,10 @@ export class MotorDePassos {
         );
         break;
       }
+
+      // Adiciona na trilha de auditoria do contexto ANTES de executar
+      // Assim o próprio passo já sabe que está sendo executado e vê todo o passado
+      contexto.historicoPassos.push(passoAtualNome);
 
       // 1. Executa a lógica do passo
       await passo.executar(contexto);

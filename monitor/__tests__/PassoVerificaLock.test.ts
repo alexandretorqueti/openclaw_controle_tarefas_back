@@ -36,7 +36,7 @@ describe('PassoVerificaLock', () => {
     await passo.executar(ctx);
 
     expect(ctx.lockAtivo).toBe(true);
-    expect(ctx.controleExecucao.processoFantasma).toBeUndefined();
+    expect(ctx.controle.processoFantasma).toBeUndefined();
   });
 
   it('deve detectar processo fantasma quando lock é antigo', async () => {
@@ -52,7 +52,7 @@ describe('PassoVerificaLock', () => {
     await passo.executar(ctx);
 
     expect(ctx.lockAtivo).toBe(false);
-    expect(ctx.controleExecucao.processoFantasma).toEqual({ pid: 12345 });
+    expect(ctx.controle.processoFantasma).toEqual({ pid: 12345 });
   });
 
   it('deve limpar lock corrompido', async () => {
@@ -94,6 +94,6 @@ describe('PassoVerificaLock', () => {
     await passo.executar(ctx);
 
     expect(ctx.lockAtivo).toBe(false);
-    expect(ctx.controleExecucao.processoFantasma).toBeUndefined();
+    expect(ctx.controle.processoFantasma).toBeUndefined();
   });
 });

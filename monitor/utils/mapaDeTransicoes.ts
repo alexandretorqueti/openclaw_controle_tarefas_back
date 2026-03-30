@@ -15,7 +15,7 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.VERIFICA_LOCK]: [
     {
-      condition: (c) => c.controleExecucao.processoFantasma != null,
+      condition: (c) => c.controle.processoFantasma != null,
       to: StepName.VERIFICA_TIMEOUT,
     },
     {
@@ -43,7 +43,7 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.INICIALIZA_TAREFA]: [
     {
-      condition: (c) => c.controleExecucao.erroInicializacao === true,
+      condition: (c) => c.erros.inicializacao === true,
       to: null,
     },
     { to: StepName.VALIDA_TAREFA },
@@ -51,7 +51,7 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.VALIDA_TAREFA]: [
     {
-      condition: (c) => c.controleExecucao.erroValidacao === true,
+      condition: (c) => c.erros.validacao === true,
       to: null,
     },
     {
@@ -67,13 +67,13 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.DECOMPOE_TAREFA]: [
     {
-      condition: (c) => c.controleExecucao.erroDecomposicao === true,
+      condition: (c) => c.erros.decomposicao === true,
       to: null,
     },
     {
       condition: (c) =>
-        c.controleExecucao.analiseConcluidaComSucesso === true &&
-        (c.controleExecucao.subtasksCreated ?? 0) > 0,
+        c.resultados.decomposicao?.sucesso === true &&
+        (c.resultados.decomposicao?.subtasksCreated ?? 0) > 0,
       to: null, // Decomposição criou subtarefas — ciclo encerra
     },
     { to: StepName.VERIFICA_DOMINIO },
@@ -81,7 +81,7 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.VERIFICA_DOMINIO]: [
     {
-      condition: (c) => c.controleExecucao.falhaDeDominio === true,
+      condition: (c) => c.erros.dominio === true,
       to: null,
     },
     { to: StepName.PREPARA_SESSAO },
@@ -97,11 +97,11 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
 
   [StepName.PROGRAMADOR]: [
     {
-      condition: (c) => c.controleExecucao.erroFatalIA === true,
+      condition: (c) => c.erros.fatalIA === true,
       to: null,
     },
     {
-      condition: (c) => (c.controleExecucao.loopsExecutados ?? 0) > 5,
+      condition: (c) => (c.controle.loopsExecutados ?? 0) > 5,
       to: null, // Eject por segurança
     },
     { to: StepName.INSPECIONA_WORKSPACE },
@@ -114,14 +114,14 @@ export const mapaDeTransicoes: MapaDeTransicoes = {
   [StepName.ANALISA_TURNO]: [
     {
       condition: (c) =>
-        c.controleExecucao.doneExists === true &&
-        !c.controleExecucao.feedbackForNextTurn,
+        c.resultados.inspecao?.doneExists === true &&
+        !c.resultados.analiseTurno?.feedbackForNextTurn,
       to: StepName.FINALIZA_TAREFA,
     },
     {
       condition: (c) =>
-        c.controleExecucao.feedbackForNextTurn != null ||
-        c.controleExecucao.erroSintaxeJSON === true,
+        c.resultados.analiseTurno?.feedbackForNextTurn != null ||
+        c.erros.sintaxeJSON === true,
       to: StepName.PREPARA_CORRECAO,
     },
     { to: null },

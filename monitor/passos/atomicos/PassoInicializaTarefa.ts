@@ -55,20 +55,20 @@ export class PassoInicializaTarefa implements Passo {
   }
 
   async executar(ctx: ContextoExecucao): Promise<void> {
-    const { tarefaAtual, config, controleExecucao } = ctx;
+    const { tarefaAtual, config, controle, erros } = ctx;
 
     if (!tarefaAtual) return;
 
     await this.logger.info(`⚙️ Inicializando ambiente para tarefa ${tarefaAtual.id}...`);
 
     // 1. LOCK
-    if (!(await this.adquirirLock(tarefaAtual.id, controleExecucao))) return;
+    if (!(await this.adquirirLock(tarefaAtual.id, erros))) return;
 
     // 2. ESTADO
     await this.stateService.registerActiveTask(tarefaAtual.id);
 
     // 3. DISCO
-    if (!(await this.criarDiretorioTrabalho(tarefaAtual.id, config.TASKS_DIR, controleExecucao))) return;
+    if (!(await this.criarDiretorioTrabalho(tarefaAtual.id, config.TASKS_DIR, controle, erros))) return;
 
     // 4. API (degradação graciosa)
     await this.atualizarStatusNaApi(
@@ -80,14 +80,14 @@ export class PassoInicializaTarefa implements Passo {
 
   private async adquirirLock(
     taskId: number | string,
-    controle: ContextoExecucao['controleExecucao']
+    erros: ContextoExecucao['erros']
   ): Promise<boolean> {
     const adquirido = await this.lockService.acquireLock(taskId);
     if (!adquirido) {
       await this.logger.erro(
         `❌ Tarefa ${taskId} já está em processamento por outro worker.`
       );
-      controle.erroInicializacao = true;
+      erros.inicializacao = true;
       return false;
     }
     return true;
@@ -96,7 +96,8 @@ export class PassoInicializaTarefa implements Passo {
   private async criarDiretorioTrabalho(
     taskId: number | string,
     tasksDir: string,
-    controle: ContextoExecucao['controleExecucao']
+    controle: ContextoExecucao['controle'],
+    erros: ContextoExecucao['erros']
   ): Promise<boolean> {
     try {
       const taskDir = this.pathUtil.join(tasksDir, taskId.toString());
@@ -109,7 +110,7 @@ export class PassoInicializaTarefa implements Passo {
       await this.logger.erro(
         `⚠️ Erro fatal ao criar diretório de trabalho: ${mensagem}`
       );
-      controle.erroInicializacao = true;
+      erros.inicializacao = true;
       return false;
     }
   }
