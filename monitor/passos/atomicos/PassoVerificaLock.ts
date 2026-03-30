@@ -1,66 +1,68 @@
 // monitor/passos/atomicos/PassoVerificaLock.ts
 // ─────────────────────────────────────────────────────
-// Passo Atômico: Verifica se existe um lock ativo.
-//
-// Responsabilidade única:
-//   - Checar o estado do lock
-//   - Setar flags no contexto para o motor de rotas decidir
+// Passo Atômico PURO: Verifica se existe um lock ativo.
+// Não conhece o ContextoExecucao. Recebe inputs estritos e
+// devolve um resultado explícito da análise do lock.
 // ─────────────────────────────────────────────────────
 
-import type { ContextoExecucao, Passo, ServicoLock, ServicoEstado } from '../../interfaces';
-import type { Logger } from '../../interfaces/logger';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
+import type { ServicoLock, ServicoEstado } from '../../interfaces';
 import { segundosParaMinutosSegundos } from '../../utils/formatacao';
 
-export interface DependenciasVerificaLock {
-  logger: Logger;
+export interface VerificaLockInput {
+  timeoutMs: number;
+}
+
+export interface VerificaLockOutput {
+  lockAtivo: boolean;
+  processoFantasmaPid?: number;
+}
+
+export interface DependenciasVerificaLock extends DependenciasBase {
   lockService: ServicoLock;
   stateService: ServicoEstado;
 }
 
-export class PassoVerificaLock implements Passo {
-  readonly name = "Verifica Lock";
+export class PassoVerificaLock extends PassoBase<VerificaLockInput, VerificaLockOutput> {
+  readonly nome = 'Verifica Lock';
 
-  private readonly logger: Logger;
   private readonly lockService: ServicoLock;
   private readonly stateService: ServicoEstado;
 
   constructor(deps: DependenciasVerificaLock) {
-    this.logger = deps.logger;
+    super(deps);
     this.lockService = deps.lockService;
     this.stateService = deps.stateService;
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    ctx.lockAtivo = false;
-    ctx.controle.processoFantasma = undefined;
-
-    const resultado = await this.lockService.checkLock(ctx.config.TASK_TIMEOUT_MS);
+  protected async processar(input: VerificaLockInput): Promise<VerificaLockOutput> {
+    const resultado = await this.lockService.checkLock(input.timeoutMs);
 
     // Caso 1: Lock ativo e recente — respeita
     if (resultado.locked && resultado.ageRecent) {
-      ctx.lockAtivo = true;
       const idadeLegivel = resultado.mtime
         ? segundosParaMinutosSegundos((Date.now() - resultado.mtime) / 1000)
         : 'desconhecida';
       await this.logger.info(
         `🔒 Lock recente (${idadeLegivel}). Mantendo execução atual.`
       );
-      return;
+      return { lockAtivo: true };
     }
 
     // Caso 2: Lock antigo com processo ainda em pé — fantasma
     if (resultado.locked && !resultado.ageRecent) {
-      ctx.controle.processoFantasma = {
-        pid: resultado.pid ?? 0,
+      return { 
+        lockAtivo: false,
+        processoFantasmaPid: resultado.pid ?? 0,
       };
-      return;
     }
 
     // Caso 3: Lock corrompido — limpa
     if (resultado.corrupted) {
       await this.logger.info('⚠️ Lock corrompido. Limpando...');
       await this.lockService.forceReleaseLock();
-      return;
+      return { lockAtivo: false };
     }
 
     // Caso 4: Lock órfão (processo morto) — limpa tudo
@@ -68,8 +70,10 @@ export class PassoVerificaLock implements Passo {
       await this.logger.info('🧹 Lock órfão. Limpando...');
       await this.lockService.forceReleaseLock();
       await this.stateService.clearState();
+      return { lockAtivo: false };
     }
 
-    // Caso 5: Sem lock — fluxo normal (ctx.lockAtivo continua false)
+    // Caso 5: Sem lock — fluxo normal
+    return { lockAtivo: false };
   }
 }

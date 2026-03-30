@@ -1,16 +1,24 @@
 // monitor/passos/atomicos/PassoInicializaTarefa.ts
 // ─────────────────────────────────────────────────────
-// Passo Atômico: Adquire lock, registra estado, cria
+// Passo Atômico PURO: Adquire lock, registra estado, cria
 // diretório de trabalho e atualiza status na API.
 // ─────────────────────────────────────────────────────
 
-import type {
-  ContextoExecucao,
-  Passo,
-  ServicoLock,
-  ServicoEstado,
-} from '../../interfaces';
-import type { Logger } from '../../interfaces/logger';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
+import type { TarefaCompleta, ServicoLock, ServicoEstado } from '../../interfaces';
+
+export interface InicializaTarefaInput {
+  tarefa: TarefaCompleta;
+  tasksDir: string;
+  apiUrl: string;
+  statusInProgress: string;
+}
+
+export interface InicializaTarefaOutput {
+  sucesso: boolean;
+  taskDir?: string;
+}
 
 /** Contrato mínimo para operações de filesystem */
 export interface FileSystemMinimo {
@@ -23,8 +31,7 @@ export interface ClienteApiStatus {
   atualizarStatusTarefa(apiUrl: string, taskId: number | string, statusId: number): Promise<void>;
 }
 
-export interface DependenciasInicializaTarefa {
-  logger: Logger;
+export interface DependenciasInicializaTarefa extends DependenciasBase {
   lockService: ServicoLock;
   stateService: ServicoEstado;
   fileSystem: FileSystemMinimo;
@@ -34,10 +41,9 @@ export interface DependenciasInicializaTarefa {
   };
 }
 
-export class PassoInicializaTarefa implements Passo {
-  readonly name = "Inicializa Tarefa";
+export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, InicializaTarefaOutput> {
+  readonly nome = 'Inicializa Tarefa';
 
-  private readonly logger: Logger;
   private readonly lockService: ServicoLock;
   private readonly stateService: ServicoEstado;
   private readonly fileSystem: FileSystemMinimo;
@@ -45,7 +51,7 @@ export class PassoInicializaTarefa implements Passo {
   private readonly pathUtil: { join(...segments: string[]): string };
 
   constructor(deps: DependenciasInicializaTarefa) {
-    this.logger = deps.logger;
+    super(deps);
     this.lockService = deps.lockService;
     this.stateService = deps.stateService;
     this.fileSystem = deps.fileSystem;
@@ -53,40 +59,34 @@ export class PassoInicializaTarefa implements Passo {
     this.pathUtil = deps.path;
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    const { tarefaAtual, config, controle, erros } = ctx;
+  protected async processar(input: InicializaTarefaInput): Promise<InicializaTarefaOutput> {
+    const { tarefa, tasksDir, apiUrl, statusInProgress } = input;
 
-    if (!tarefaAtual) return;
-
-    await this.logger.info(`⚙️ Inicializando ambiente para tarefa ${tarefaAtual.id}...`);
+    await this.logger.info(`⚙️ Inicializando ambiente para tarefa ${tarefa.id}...`);
 
     // 1. LOCK
-    if (!(await this.adquirirLock(tarefaAtual.id, erros))) return;
+    const adquirido = await this.adquirirLock(tarefa.id);
+    if (!adquirido) return { sucesso: false };
 
     // 2. ESTADO
-    await this.stateService.registerActiveTask(tarefaAtual.id);
+    await this.stateService.registerActiveTask(tarefa.id);
 
     // 3. DISCO
-    if (!(await this.criarDiretorioTrabalho(tarefaAtual.id, config.TASKS_DIR, controle, erros))) return;
+    const criacaoDisco = await this.criarDiretorioTrabalho(tarefa.id, tasksDir);
+    if (!criacaoDisco.sucesso) return { sucesso: false };
 
     // 4. API (degradação graciosa)
-    await this.atualizarStatusNaApi(
-      config.API_URL,
-      tarefaAtual.id,
-      config.STATUS.IN_PROGRESS
-    );
+    await this.atualizarStatusNaApi(apiUrl, tarefa.id, statusInProgress);
+
+    return { sucesso: true, taskDir: criacaoDisco.taskDir };
   }
 
-  private async adquirirLock(
-    taskId: number | string,
-    erros: ContextoExecucao['erros']
-  ): Promise<boolean> {
+  private async adquirirLock(taskId: number | string): Promise<boolean> {
     const adquirido = await this.lockService.acquireLock(taskId);
     if (!adquirido) {
       await this.logger.erro(
         `❌ Tarefa ${taskId} já está em processamento por outro worker.`
       );
-      erros.inicializacao = true;
       return false;
     }
     return true;
@@ -94,23 +94,19 @@ export class PassoInicializaTarefa implements Passo {
 
   private async criarDiretorioTrabalho(
     taskId: number | string,
-    tasksDir: string,
-    controle: ContextoExecucao['controle'],
-    erros: ContextoExecucao['erros']
-  ): Promise<boolean> {
+    tasksDir: string
+  ): Promise<{ sucesso: boolean; taskDir?: string }> {
     try {
       const taskDir = this.pathUtil.join(tasksDir, taskId.toString());
       await this.fileSystem.mkdir(taskDir, { recursive: true });
-      controle.taskDir = taskDir;
       await this.logger.info('📁 Diretório de trabalho isolado criado.');
-      return true;
-    } catch (erro: unknown) {
-      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      return { sucesso: true, taskDir };
+    } catch (error: unknown) {
+      const mensagem = error instanceof Error ? error.message : String(error);
       await this.logger.erro(
         `⚠️ Erro fatal ao criar diretório de trabalho: ${mensagem}`
       );
-      erros.inicializacao = true;
-      return false;
+      return { sucesso: false };
     }
   }
 

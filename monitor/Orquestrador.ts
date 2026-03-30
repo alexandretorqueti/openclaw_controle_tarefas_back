@@ -12,6 +12,7 @@ import type { TarefaCompleta, ConfiguracaoMonitor, ContextoExecucao } from './in
 
 // Importando a Lógica Pura (Passos Atômicos)
 import { PassoVerificaLock } from './passos/atomicos/PassoVerificaLock';
+import { PassoVerificaTimeout } from './passos/atomicos/PassoVerificaTimeout';
 import { PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
 import { PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import { PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
@@ -70,60 +71,77 @@ export class OrquestradorTarefas {
         logger,
         lockService: this.deps.servicoLock,
         stateService: this.deps.servicoEstado,
-      }).execute(ctx); // Esse passo ainda atualiza o contexto diretamente (legado)
+      }).execute({ timeoutMs: ctx.config.TASK_TIMEOUT_MS });
+
+      // Atualizamos o contexto centralizadamente
+      ctx.lockAtivo = lockStatus.lockAtivo;
 
       if (ctx.lockAtivo) {
         return; // Lock recente e válido: encerra o ciclo.
       }
 
-      if (ctx.controle.processoFantasma) {
-        await logger.erro(
-          `👻 Processo fantasma detectado (PID: ${ctx.controle.processoFantasma.pid}). Parando orquestrador.`
-        );
+      if (lockStatus.processoFantasmaPid) {
+        ctx.controle.processoFantasma = { pid: lockStatus.processoFantasmaPid };
+        await new PassoVerificaTimeout({ logger }).execute({ processoFantasmaPid: lockStatus.processoFantasmaPid });
         return; // Eject: Intervenção manual.
       }
 
-      await new PassoConfiguraUsuario({
+      const configUsuario = await new PassoConfiguraUsuario({
         logger,
         userService: this.deps.servicoUsuario,
-      }).execute(ctx);
+      }).execute({ nickname: ctx.config.MY_USER_NICKNAME });
+
+      ctx.UserId = configUsuario.userId;
 
       // ==========================================================
       // FASE 2: CAPTURA E INICIALIZAÇÃO
       // ==========================================================
 
-      await new PassoBuscaTarefa({
+      const captura = await new PassoBuscaTarefa({
         logger,
         buscadorTarefa: this.deps.servicoBusca,
-      }).execute(ctx);
+      }).execute({ nickname: ctx.config.MY_USER_NICKNAME });
 
-      const tarefa = ctx.tarefaAtual;
+      const tarefa = captura.tarefa;
+      ctx.tarefaAtual = tarefa;
+
       if (!tarefa) {
         return; // Fila vazia: O trabalhador aguarda.
       }
 
-      await new PassoInicializaTarefa({
+      const inicializacao = await new PassoInicializaTarefa({
         logger,
         lockService: this.deps.servicoLock,
         stateService: this.deps.servicoEstado,
         fileSystem: this.deps.fileSystem,
         clienteApi: this.deps.clienteApi,
         path: this.deps.pathUtil,
-      }).execute(ctx);
+      }).execute({
+        tarefa,
+        tasksDir: ctx.config.TASKS_DIR,
+        apiUrl: ctx.config.API_URL,
+        statusInProgress: ctx.config.STATUS.IN_PROGRESS,
+      });
 
-      if (ctx.erros.inicializacao) {
+      if (!inicializacao.sucesso) {
+        ctx.erros.inicializacao = true;
         return; // Falha grave no FileSystem ou Lock. Aborta.
       }
+      
+      ctx.controle.taskDir = inicializacao.taskDir;
 
       // ==========================================================
       // FASE 3: VALIDAÇÃO DE NEGÓCIO E ROTEAMENTO
       // ==========================================================
 
-      await new PassoSuperValidacao({ logger }).execute(ctx);
+      const superValidacao = await new PassoSuperValidacao({ logger, taskAnalysisService: this.deps.servicoAnaliseTarefa }).execute({ tarefa });
 
-      if (ctx.erros.fatalIA) {
+      if (!superValidacao.valido) {
+        ctx.erros.fatalIA = true;
         return; // Tarefa malformada
       }
+      
+      ctx.analysisPlan = superValidacao.planoDeAnalise || null;
 
       // DECOMPOSIÇÃO: Se for uma "Epic" (não atômica)
       if (tarefa.isAtomic === false) {
@@ -150,12 +168,21 @@ export class OrquestradorTarefas {
       }
 
       // VERIFICAÇÃO DE DOMÍNIO
-      await new PassoVerificaDominio({
+      const dominio = await new PassoVerificaDominio({
         logger,
         gerenciadorFalha: this.deps.gerenciadorFalha,
-      }).execute(ctx);
+      }).execute({
+        tarefa,
+        userId: ctx.UserId,
+        configFalha: {
+          apiUrl: ctx.config.API_URL,
+          tasksDir: ctx.config.TASKS_DIR,
+          errorDir: ctx.config.ERROR_DIR,
+        },
+      });
 
-      if (ctx.erros.dominio) {
+      if (!dominio.dominioValido) {
+        ctx.erros.dominio = true;
         return; // Eject: Tarefa atômica sem domínio.
       }
 

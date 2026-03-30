@@ -1,13 +1,21 @@
 // monitor/passos/atomicos/PassoVerificaDominio.ts
 // ─────────────────────────────────────────────────────
-// Passo Atômico: Valida se a tarefa possui domínio definido.
-//
-// Se não tiver, é um erro de negócio fatal, e o passo já
-// aciona a rotina de falha (mover para erro, atualizar API).
+// Passo Atômico PURO: Valida se a tarefa possui domínio definido.
 // ─────────────────────────────────────────────────────
 
-import type { Logger } from '../../interfaces/logger';
-import type { Passo, ContextoExecucao, TarefaCompleta } from '../../interfaces';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
+import type { TarefaCompleta } from '../../interfaces';
+
+export interface VerificaDominioInput {
+  tarefa: TarefaCompleta;
+  userId: string | null;
+  configFalha: ConfiguracaoFalha;
+}
+
+export interface VerificaDominioOutput {
+  dominioValido: boolean;
+}
 
 export interface ConfiguracaoFalha {
   apiUrl: string;
@@ -15,7 +23,6 @@ export interface ConfiguracaoFalha {
   errorDir: string;
 }
 
-/** Contrato do serviço que processa falhas (atualiza API e move pastas) */
 export interface GerenciadorFalhaTarefa {
   registrarFalha(
     tarefa: TarefaCompleta,
@@ -25,32 +32,28 @@ export interface GerenciadorFalhaTarefa {
   ): Promise<void>;
 }
 
-export interface DependenciasVerificaDominio {
-  logger: Logger;
+export interface DependenciasVerificaDominio extends DependenciasBase {
   gerenciadorFalha: GerenciadorFalhaTarefa;
 }
 
-export class PassoVerificaDominio implements Passo {
-  readonly name = "Verificação de Domínio";
+export class PassoVerificaDominio extends PassoBase<VerificaDominioInput, VerificaDominioOutput> {
+  readonly nome = 'Verificação de Domínio';
 
-  private readonly logger: Logger;
   private readonly gerenciadorFalha: GerenciadorFalhaTarefa;
 
   constructor(deps: DependenciasVerificaDominio) {
-    this.logger = deps.logger;
+    super(deps);
     this.gerenciadorFalha = deps.gerenciadorFalha;
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    const tarefa = ctx.tarefaAtual;
-    if (!tarefa) return;
+  protected async processar(input: VerificaDominioInput): Promise<VerificaDominioOutput> {
+    const { tarefa, userId, configFalha } = input;
 
     if (tarefa.domain) {
       await this.logger.info(`✅ Verificação de domínio aprovada: ${tarefa.domain}.`);
-      return;
+      return { dominioValido: true };
     }
 
-    // Fluxo de erro: Tarefa atômica mas sem domínio (frontend/backend/etc)
     const mensagemErro = 'A tarefa é atômica, mas não foi possível inferir seu domínio (IA não detectou).';
     await this.logger.erro(`❌ Tarefa [${tarefa.id}] sem domínio definido.`);
 
@@ -58,21 +61,16 @@ export class PassoVerificaDominio implements Passo {
       await this.gerenciadorFalha.registrarFalha(
         tarefa,
         new Error(mensagemErro),
-        ctx.UserId,
-        {
-          apiUrl: ctx.config.API_URL,
-          tasksDir: ctx.config.TASKS_DIR,
-          errorDir: ctx.config.ERROR_DIR,
-        }
+        userId,
+        configFalha
       );
     } catch (cleanupError: unknown) {
       const msg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
       await this.logger.erro(
         `⚠️ Falha na rotina de limpeza do erro de domínio: ${msg}`
       );
-    } finally {
-      // Efeito Colateral Explícito no namespace de erros
-      ctx.erros.dominio = true;
     }
+
+    return { dominioValido: false };
   }
 }

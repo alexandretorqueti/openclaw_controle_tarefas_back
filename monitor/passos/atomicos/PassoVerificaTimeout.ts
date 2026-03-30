@@ -1,42 +1,33 @@
 // monitor/passos/atomicos/PassoVerificaTimeout.ts
 // ─────────────────────────────────────────────────────
-// Passo Atômico: Lida com processo fantasma detectado.
-//
-// Quando o VerificaLock detecta um lock antigo com
-// processo vivo, este passo registra a situação e
-// encerra o ciclo para intervenção humana.
+// Passo Atômico PURO: Lida com processo fantasma detectado.
 // ─────────────────────────────────────────────────────
 
-import type { ContextoExecucao, Passo } from '../../interfaces';
-import type { Logger } from '../../interfaces/logger';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
 
-export interface DependenciasVerificaTimeout {
-  logger: Logger;
+export interface VerificaTimeoutInput {
+  processoFantasmaPid: number;
 }
 
-export class PassoVerificaTimeout implements Passo {
-  readonly name = "Verifica Timeout";
+export interface VerificaTimeoutOutput {
+  encerrado: boolean;
+}
 
-  private readonly logger: Logger;
+export class PassoVerificaTimeout extends PassoBase<VerificaTimeoutInput, VerificaTimeoutOutput> {
+  readonly nome = 'Verifica Timeout';
 
-  constructor(deps: DependenciasVerificaTimeout) {
-    this.logger = deps.logger;
+  constructor(deps: DependenciasBase) {
+    super(deps);
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    const fantasma = ctx.controle.processoFantasma;
-
-    if (!fantasma) {
-      await this.logger.info(
-        '⚠️ Verifica Timeout chamado sem processo fantasma no contexto.'
-      );
-      return;
-    }
-
+  protected async processar(input: VerificaTimeoutInput): Promise<VerificaTimeoutOutput> {
     await this.logger.erro(
-      `👻 Processo fantasma detectado (PID: ${fantasma.pid}). ` +
+      `👻 Processo fantasma detectado (PID: ${input.processoFantasmaPid}). ` +
         'Lock antigo com processo ainda em execução. ' +
         'Ciclo encerrado para intervenção manual.'
     );
+
+    return { encerrado: true };
   }
 }

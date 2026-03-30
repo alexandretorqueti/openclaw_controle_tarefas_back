@@ -1,40 +1,45 @@
 // monitor/passos/atomicos/PassoConfiguraUsuario.ts
 // ─────────────────────────────────────────────────────
-// Passo Atômico: Resolve o usuário ativo do monitor.
+// Passo Atômico PURO: Resolve o usuário ativo do monitor.
 // ─────────────────────────────────────────────────────
 
-import type { ContextoExecucao, Passo, ServicoUsuario } from '../../interfaces';
-import type { Logger } from '../../interfaces/logger';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
+import type { ServicoUsuario } from '../../interfaces';
 
-export interface DependenciasConfiguraUsuario {
-  logger: Logger;
+export interface ConfiguraUsuarioInput {
+  nickname: string;
+}
+
+export interface ConfiguraUsuarioOutput {
+  userId: string | null;
+}
+
+export interface DependenciasConfiguraUsuario extends DependenciasBase {
   userService: ServicoUsuario;
 }
 
-export class PassoConfiguraUsuario implements Passo {
-  readonly name = "Configura Usuário";
+export class PassoConfiguraUsuario extends PassoBase<ConfiguraUsuarioInput, ConfiguraUsuarioOutput> {
+  readonly nome = 'Configura Usuário';
 
-  private readonly logger: Logger;
   private readonly userService: ServicoUsuario;
 
   constructor(deps: DependenciasConfiguraUsuario) {
-    this.logger = deps.logger;
+    super(deps);
     this.userService = deps.userService;
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    const nickname = ctx.config.MY_USER_NICKNAME;
-
-    const usuario = await this.userService.getCurrentUser(nickname);
+  protected async processar(input: ConfiguraUsuarioInput): Promise<ConfiguraUsuarioOutput> {
+    const usuario = await this.userService.getCurrentUser(input.nickname);
 
     if (!usuario) {
       await this.logger.erro(
-        `❌ Usuário "${nickname}" não encontrado. Ciclo continuará sem UserId.`
+        `❌ Usuário "${input.nickname}" não encontrado. Ciclo continuará sem UserId.`
       );
-      return;
+      return { userId: null };
     }
 
-    ctx.UserId = usuario.id;
     await this.logger.info(`👤 Usuário configurado: ${usuario.nickname} (${usuario.id})`);
+    return { userId: usuario.id };
   }
 }

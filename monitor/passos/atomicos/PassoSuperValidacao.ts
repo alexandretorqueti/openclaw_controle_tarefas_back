@@ -1,72 +1,69 @@
 // monitor/passos/atomicos/PassoSuperValidacao.ts
 // ─────────────────────────────────────────────────────
-// Passos: SuperValidacao — Validações críticas pós-inicialização.
-// Contrato do modelo: Passo<TarefaCompleta>
+// Passo Atômico PURO: Validações críticas pós-inicialização.
 // ─────────────────────────────────────────────────────
 
-import type { Logger } from '../../interfaces/logger';
-import type { Passo } from '../../interfaces';
-import type { ContextoExecucao, TarefaCompleta, PlanoDeAnalise } from '../../interfaces';
+import { PassoBase } from '../PassoBase';
+import type { DependenciasBase } from '../PassoBase';
+import type { TarefaCompleta, PlanoDeAnalise, ServicoAnaliseTarefa } from '../../interfaces';
 
-/**
- * Passo: SuperValidacao
- *
- * Responsabilidades:
- *   1. Validar que todos os campos obrigatórios da tarefa existem
- *   2. Validar que o projeto é válido
- *   3. Executar análise preliminar da tarefa
- *   4. Gerar plano de implementação
- *
- * Condição de saída:
- *   - Se falhar: erroFatalIA = true, para no passo
- *   - Se sucesso: continua para Decomposição
- */
-export class PassoSuperValidacao implements Passo {
-  readonly name = "SuperValidacao";
+export interface SuperValidacaoInput {
+  tarefa: TarefaCompleta;
+}
 
-  private readonly logger: Logger;
+export interface SuperValidacaoOutput {
+  valido: boolean;
+  planoDeAnalise?: PlanoDeAnalise;
+}
 
-  constructor({ logger }: { logger: Logger }) {
-    this.logger = logger;
+export interface DependenciasSuperValidacao extends DependenciasBase {
+  taskAnalysisService?: ServicoAnaliseTarefa;
+}
+
+export class PassoSuperValidacao extends PassoBase<SuperValidacaoInput, SuperValidacaoOutput> {
+  readonly nome = 'Super Validação';
+  private readonly taskAnalysisService?: ServicoAnaliseTarefa;
+
+  constructor(deps: DependenciasSuperValidacao) {
+    super(deps);
+    this.taskAnalysisService = deps.taskAnalysisService;
   }
 
-  async execute(ctx: ContextoExecucao): Promise<void> {
-    const logPrefix = `[${this.name}]`;
+  protected async processar(input: SuperValidacaoInput): Promise<SuperValidacaoOutput> {
+    const logPrefix = `[${this.nome}]`;
+    const tarefa = input.tarefa;
 
     // 1. Validação de campos obrigatórios
     const camposObrigatorios = ['id', 'title', 'description', 'statusId', 'projectId'];
     for (const campo of camposObrigatorios) {
-      if (!(campo in (ctx.tarefaAtual as any))) {
+      if (!(campo in (tarefa as any))) {
         await this.logger.erro(
-          `${logPrefix} Campo obrigatório faltando: ${campo} na tarefa ${ctx.tarefaAtual?.id}`
+          `${logPrefix} Campo obrigatório faltando: ${campo} na tarefa ${tarefa.id}`
         );
-        ctx.erros.fatalIA = true;
-        return;
+        return { valido: false };
       }
     }
 
     // 2. Validação do projeto
-    if (!ctx.tarefaAtual?.project) {
+    if (!tarefa.project) {
       await this.logger.erro(
-        `${logPrefix} Projeto não é válido para tarefa ${ctx.tarefaAtual?.id}`
+        `${logPrefix} Projeto não é válido para tarefa ${tarefa.id}`
       );
-      ctx.erros.fatalIA = true;
-      return;
+      return { valido: false };
     }
 
     // 3. Análise preliminar da tarefa
-    if (ctx.services.taskAnalysisService) {
-      const plano = await ctx.services.taskAnalysisService.analyze(
-        ctx.tarefaAtual as TarefaCompleta
-      );
-      ctx.analysisPlan = plano as PlanoDeAnalise;
-
+    let plano: PlanoDeAnalise | undefined;
+    if (this.taskAnalysisService) {
+      plano = await this.taskAnalysisService.analyze(tarefa);
       await this.logger.info(
-        `${logPrefix} ✅ Análise concluída para tarefa ${ctx.tarefaAtual?.id}`
+        `${logPrefix} ✅ Análise concluída para tarefa ${tarefa.id}`
       );
     }
 
-    // 4. Preparação para decomposição
-    ctx.controle.loopsExecutados++;
+    return {
+      valido: true,
+      planoDeAnalise: plano,
+    };
   }
 }

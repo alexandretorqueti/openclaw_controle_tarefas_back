@@ -25,7 +25,6 @@ describe('PassoVerificaLock', () => {
 
   it('deve setar lockAtivo=true quando lock está recente', async () => {
     const { passo, lockService } = criarPasso();
-    const ctx = criarContextoMock();
 
     lockService.checkLock.mockResolvedValueOnce({
       locked: true,
@@ -33,15 +32,14 @@ describe('PassoVerificaLock', () => {
       mtime: Date.now() - 5000,
     });
 
-    await passo.execute(ctx);
+    const result = await passo.execute({ timeoutMs: 1000 });
 
-    expect(ctx.lockAtivo).toBe(true);
-    expect(ctx.controle.processoFantasma).toBeUndefined();
+    expect(result.lockAtivo).toBe(true);
+    expect(result.processoFantasmaPid).toBeUndefined();
   });
 
   it('deve detectar processo fantasma quando lock é antigo', async () => {
     const { passo, lockService } = criarPasso();
-    const ctx = criarContextoMock();
 
     lockService.checkLock.mockResolvedValueOnce({
       locked: true,
@@ -49,30 +47,28 @@ describe('PassoVerificaLock', () => {
       pid: 12345,
     });
 
-    await passo.execute(ctx);
+    const result = await passo.execute({ timeoutMs: 1000 });
 
-    expect(ctx.lockAtivo).toBe(false);
-    expect(ctx.controle.processoFantasma).toEqual({ pid: 12345 });
+    expect(result.lockAtivo).toBe(false);
+    expect(result.processoFantasmaPid).toBe(12345);
   });
 
   it('deve limpar lock corrompido', async () => {
     const { passo, lockService } = criarPasso();
-    const ctx = criarContextoMock();
 
     lockService.checkLock.mockResolvedValueOnce({
       locked: false,
       corrupted: true,
     });
 
-    await passo.execute(ctx);
+    const result = await passo.execute({ timeoutMs: 1000 });
 
     expect(lockService.forceReleaseLock).toHaveBeenCalledTimes(1);
-    expect(ctx.lockAtivo).toBe(false);
+    expect(result.lockAtivo).toBe(false);
   });
 
   it('deve limpar lock órfão e estado', async () => {
     const { passo, lockService, stateService } = criarPasso();
-    const ctx = criarContextoMock();
 
     lockService.checkLock.mockResolvedValueOnce({
       locked: false,
@@ -80,7 +76,7 @@ describe('PassoVerificaLock', () => {
       alive: false,
     });
 
-    await passo.execute(ctx);
+    await passo.execute({ timeoutMs: 1000 });
 
     expect(lockService.forceReleaseLock).toHaveBeenCalledTimes(1);
     expect(stateService.clearState).toHaveBeenCalledTimes(1);
@@ -88,12 +84,11 @@ describe('PassoVerificaLock', () => {
 
   it('deve manter contexto limpo quando não há lock', async () => {
     const { passo } = criarPasso();
-    const ctx = criarContextoMock();
 
     // Mock padrão já retorna { locked: false, corrupted: false }
-    await passo.execute(ctx);
+    const result = await passo.execute({ timeoutMs: 1000 });
 
-    expect(ctx.lockAtivo).toBe(false);
-    expect(ctx.controle.processoFantasma).toBeUndefined();
+    expect(result.lockAtivo).toBe(false);
+    expect(result.processoFantasmaPid).toBeUndefined();
   });
 });

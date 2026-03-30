@@ -4,7 +4,7 @@ export { PassoVerificaLock } from './PassoVerificaLock';
 export type { DependenciasVerificaLock } from './PassoVerificaLock';
 
 export { PassoVerificaTimeout } from './PassoVerificaTimeout';
-export type { DependenciasVerificaTimeout } from './PassoVerificaTimeout';
+export type { VerificaTimeoutInput, VerificaTimeoutOutput } from './PassoVerificaTimeout';
 
 export { PassoConfiguraUsuario } from './PassoConfiguraUsuario';
 export type { DependenciasConfiguraUsuario } from './PassoConfiguraUsuario';
