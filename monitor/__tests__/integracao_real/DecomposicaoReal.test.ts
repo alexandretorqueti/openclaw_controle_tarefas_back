@@ -1,13 +1,13 @@
 // monitor/__tests__/integracao_real/DecomposicaoReal.test.ts
-// Teste REAL de decomposição usando IA com analista-junior e qwen3.5:35b-a3b
+// Teste REAL de decomposição usando IA com analista-junior e qwen3.5:9b
 
 import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
 import { criarTarefaFake } from '../fixtures/fabricaMocks';
 
 // Configurações do teste
 const CONFIG = {
-  AGENTE_ANALISTA: 'analistamonitortarefas',
-  MODELO_AUXILIAR: null,
+  AGENTE_ANALISTA: 'analista-junior',
+  MODELO_AUXILIAR: 'qwen3.5:9b',
   BASE_DIR: '/home/alexandrebragatorqueti/testes_reais_IA',
   FRONT_DIR: '/home/alexandrebragatorqueti/testes_reais_IA/front_teste',
   BACK_DIR: '/home/alexandrebragatorqueti/testes_reais_IA/back_teste',
@@ -23,13 +23,11 @@ const TAREFA_MOCK = criarTarefaFake({
   domain: null,
 });
 
-describe('Decomposição REAL com IA (analista-junior + qwen3.5:35b-a3b)', () => {
-  // Pular se não houver chave da API OpenClaw
-  const hasApiKey = !!process.env.OPENCLAW_API_KEY;
-  if (!hasApiKey) {
-    console.warn('⚠️  OPENCLAW_API_KEY não configurada. Pulando teste de IA real.');
-    return;
-  }
+const hasApiKey = !!process.env.OPENCLAW_API_KEY;
+const describeOrSkip = hasApiKey ? describe : describe.skip;
+
+describeOrSkip('Decomposição REAL com IA (analista-junior + qwen3.5:9b)', () => {
+  // Se não houver chave, describe.skip será usado e este bloco não executará
 
   beforeAll(async () => {
     // Garantir que diretórios existam
