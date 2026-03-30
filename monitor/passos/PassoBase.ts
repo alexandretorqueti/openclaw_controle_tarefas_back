@@ -1,13 +1,13 @@
 // monitor/passos/PassoBase.ts
 // ─────────────────────────────────────────────────────
-// Template Method Pattern com Generics.
+// Template Method Pattern com Generics (Input/Output).
 //
-// Todo passo herda de PassoBase<TInput, TOutput>.
-// O esqueleto (log, métricas, tratamento de erro) fica
-// trancado aqui. O filho só implementa `processar()`.
+// O passo PURO. Não conhece o ContextoExecucao.
+// Recebe uma entrada estrita, devolve uma saída estrita.
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../interfaces/logger';
+import type { StepName } from '../interfaces';
 
 export interface DependenciasBase {
   logger: Logger;
@@ -15,15 +15,13 @@ export interface DependenciasBase {
 
 /**
  * Classe abstrata que define o contrato e o ciclo de vida
- * de qualquer passo do motor de monitoramento.
+ * da lógica de negócio de um passo.
  *
  * @template TInput  - Tipo dos dados que o passo recebe
  * @template TOutput - Tipo dos dados que o passo devolve
  */
 export abstract class PassoBase<TInput, TOutput> {
-  /** Nome legível do passo (usado em logs e no catálogo) */
-  abstract readonly nome: string;
-
+  abstract readonly nome: StepName;
   protected readonly logger: Logger;
 
   constructor(deps: DependenciasBase) {
@@ -31,35 +29,35 @@ export abstract class PassoBase<TInput, TOutput> {
   }
 
   /**
-   * Método público — o "esqueleto" que ninguém sobrescreve.
+   * O "esqueleto" público (fechado para modificação).
    * Cuida de logging, métricas e tratamento de erro.
    */
   public async execute(input: TInput): Promise<TOutput> {
     const inicio = Date.now();
-
-    await this.logger.info(`▶️  Iniciando passo: ${this.nome}`);
+    await this.logger.info(`▶️  Iniciando processamento: ${this.nome}`);
 
     try {
       const resultado = await this.processar(input);
       const duracaoMs = Date.now() - inicio;
 
       await this.logger.info(
-        `✅ Passo "${this.nome}" concluído em ${duracaoMs}ms`
+        `✅ Processamento "${this.nome}" concluído em ${duracaoMs}ms`
       );
 
       return resultado;
     } catch (erro: unknown) {
       const mensagem = erro instanceof Error ? erro.message : String(erro);
       await this.logger.erro(
-        `💥 Erro no passo "${this.nome}": ${mensagem}`
+        `💥 Falha no processamento "${this.nome}": ${mensagem}`
       );
-      throw erro;
+      throw erro; // Repassa o erro para o Wrapper/Motor lidar
     }
   }
 
   /**
    * Método protegido que cada passo concreto DEVE implementar.
-   * Recebe dados tipados, devolve resultado tipado.
+   * Onde a mágica (IA, banco, regras) acontece.
    */
   protected abstract processar(input: TInput): Promise<TOutput>;
 }
+

@@ -86,6 +86,29 @@ export function criarPromptFactoryMock(): jest.Mocked<FabricaPrompts> {
 }
 
 // ═══════════════════════════════════════════════════════
+// SERVIÇOS DE IA (LLM e OpenClaw) - SEMPRE MOCKADOS
+// ═══════════════════════════════════════════════════════
+
+export function criarServicoOpenClawMock() {
+  return {
+    executar: jest.fn().mockResolvedValue({
+      sucesso: true,
+      rawOutput: '{"acao":"ok"}',
+    }),
+    abortar: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+export function criarServicoAnalistaMock() {
+  return {
+    decompor: jest.fn().mockResolvedValue({
+      sucesso: true,
+      quantidadeSubtarefas: 2,
+    }),
+  };
+}
+
+// ═══════════════════════════════════════════════════════
 // CONFIGURAÇÃO
 // ═══════════════════════════════════════════════════════
 
@@ -164,10 +187,10 @@ export function criarContextoMock(
 // ═══════════════════════════════════════════════════════
 
 export function criarTarefaFake(
-  overrides: Partial<TarefaCompleta> = {}
+  overrides: any = {}
 ): TarefaCompleta {
   return {
-    id: 1,
+    id: overrides.id || 1,
     title: 'Implementar login',
     description: 'Criar sistema de autenticação',
     isAtomic: true,

@@ -13,8 +13,12 @@ export { PassoBuscaTarefa } from './PassoBuscaTarefa';
 export type { DependenciasBuscaTarefa, BuscadorTarefa } from './PassoBuscaTarefa';
 
 export { PassoInicializaTarefa } from './PassoInicializaTarefa';
-export type {
-  DependenciasInicializaTarefa,
-  FileSystemMinimo,
-  ClienteApiStatus,
-} from './PassoInicializaTarefa';
+export type { DependenciasInicializaTarefa, FileSystemMinimo, ClienteApiStatus } from './PassoInicializaTarefa';
+
+export { PassoSuperValidacao } from './PassoSuperValidacao';
+
+export { LogicaDecomposicao } from './PassoDecompoeTarefa';
+export type { DependenciasDecompoeTarefa, ServicoAnalistaTarefa, DecomposicaoOutput, DecomposicaoInput } from './PassoDecompoeTarefa';
+
+export { PassoVerificaDominio } from './PassoVerificaDominio';
+export type { DependenciasVerificaDominio, GerenciadorFalhaTarefa, ConfiguracaoFalha } from './PassoVerificaDominio';

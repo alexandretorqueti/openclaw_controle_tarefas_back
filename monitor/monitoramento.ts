@@ -57,13 +57,18 @@ import { PassoVerificaTimeout } from './passos/atomicos/PassoVerificaTimeout';
 import { PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
 import { PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import { PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
+import { PassoSuperValidacao } from './passos/atomicos/PassoSuperValidacao';
+import { PassoDecompoeTarefaAdapter } from './passos/adapters/DecomposicaoAdapter';
+import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 
 // ─────────────────────────────────────────────────────
-// 4. ADAPTER — Conecta a busca de tarefa ao sistema legado
+// 4. ADAPTERS — Conecta ao sistema legado
 // ─────────────────────────────────────────────────────
 
 import type { BuscadorTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import type { ClienteApiStatus } from './passos/atomicos/PassoInicializaTarefa';
+import type { ServicoAnalistaTarefa, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
+import type { GerenciadorFalhaTarefa, ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { TarefaCompleta } from './interfaces';
 import axios from 'axios';
 
@@ -106,6 +111,41 @@ class ClienteApiStatusViaAxios implements ClienteApiStatus {
     statusId: number
   ): Promise<void> {
     await axios.put(`${apiUrl}/api/tasks/${taskId}`, { statusId });
+  }
+}
+
+/**
+ * Adapter para chamar o serviço legado de decomposição (CallAnalyst)
+ */
+class ServicoAnalistaLegacy implements ServicoAnalistaTarefa {
+  async decompor(tarefa: TarefaCompleta, userId: string | null): Promise<DecomposicaoOutput> {
+    const { createLegacyCallAnalyst } = require('../src/steps/adapters/legacyCallAnalyst');
+    const callAnalyst = createLegacyCallAnalyst(userId);
+    const resultado = await callAnalyst(tarefa);
+
+    return {
+      sucesso: resultado?.success ?? false,
+      quantidadeSubtarefas: resultado?.subtasksCreated ?? 0,
+    };
+  }
+}
+
+/**
+ * Adapter para acionar a rotina legada de handleTaskFailure
+ */
+class GerenciadorFalhaLegacy implements GerenciadorFalhaTarefa {
+  async registrarFalha(
+    tarefa: TarefaCompleta,
+    erro: Error,
+    userId: string | null,
+    configFalha: ConfiguracaoFalha
+  ): Promise<void> {
+    const { handleTaskFailure } = require('../src/steps/adapters/legacyTaskFailure');
+    await handleTaskFailure(tarefa, erro, userId, {
+      API_URL: configFalha.apiUrl,
+      TASKS_DIR: configFalha.tasksDir,
+      ERROR_DIR: configFalha.errorDir,
+    });
   }
 }
 
@@ -170,6 +210,17 @@ export class Monitoramento {
         fileSystem: require('fs').promises,
         clienteApi: new ClienteApiStatusViaAxios(),
         path: require('path'),
+      }),
+      new PassoSuperValidacao({
+        logger: this.logger,
+      }),
+      new PassoDecompoeTarefaAdapter({
+        logger: this.logger,
+        analista: new ServicoAnalistaLegacy(),
+      }),
+      new PassoVerificaDominio({
+        logger: this.logger,
+        gerenciadorFalha: new GerenciadorFalhaLegacy(),
       }),
     ];
 
