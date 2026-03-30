@@ -6,10 +6,6 @@
 
 import { PassoBase } from '../PassoBase';
 import type { DependenciasBase } from '../PassoBase';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-
-const execAsync = promisify(exec);
 
 export interface ExecutarComandoInput {
   comando: string;
@@ -24,11 +20,21 @@ export interface ExecutarComandoOutput {
   mensagemErro?: string;
 }
 
+export interface ServicoTerminal {
+  executar(comando: string, opcoes: { cwd: string; timeout: number }): Promise<{ stdout: string; stderr: string }>;
+}
+
+export interface DependenciasExecutarComando extends DependenciasBase {
+  terminal: ServicoTerminal;
+}
+
 export class PassoExecutarComando extends PassoBase<ExecutarComandoInput, ExecutarComandoOutput> {
   readonly nome = 'Executar Comando de Terminal';
+  private readonly terminal: ServicoTerminal;
 
-  constructor(deps: DependenciasBase) {
+  constructor(deps: DependenciasExecutarComando) {
     super(deps);
+    this.terminal = deps.terminal;
   }
 
   protected async processar(input: ExecutarComandoInput): Promise<ExecutarComandoOutput> {
@@ -37,7 +43,7 @@ export class PassoExecutarComando extends PassoBase<ExecutarComandoInput, Execut
     try {
       const timeout = input.timeoutMs || 120_000; // 2 minutos padrão para builds
       
-      const { stdout, stderr } = await execAsync(input.comando, {
+      const { stdout, stderr } = await this.terminal.executar(input.comando, {
         cwd: input.diretorioDeTrabalho,
         timeout,
       });
@@ -62,3 +68,4 @@ export class PassoExecutarComando extends PassoBase<ExecutarComandoInput, Execut
     }
   }
 }
+

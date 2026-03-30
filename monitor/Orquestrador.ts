@@ -282,7 +282,17 @@ export class OrquestradorTarefas {
 
       if (analise.workspaceValidado) {
         // RODA OS BUILDS E TESTES
-        const executor = new PassoExecutarComando({ logger });
+        const executor = new PassoExecutarComando({ 
+          logger,
+          terminal: {
+            executar: async (comando, opcoes) => {
+              const { exec } = require('child_process');
+              const { promisify } = require('util');
+              const execAsync = promisify(exec);
+              return execAsync(comando, opcoes);
+            }
+          }
+        });
         
         await logger.info('🔨 Iniciando rotina de Build/Lint...');
         const build = await executor.execute({

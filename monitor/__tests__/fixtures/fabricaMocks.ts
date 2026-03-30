@@ -91,9 +91,9 @@ export function criarPromptFactoryMock(): jest.Mocked<FabricaPrompts> {
 
 export function criarServicoOpenClawMock() {
   return {
-    executar: jest.fn().mockResolvedValue({
+    executarTurno: jest.fn().mockResolvedValue({
       sucesso: true,
-      rawOutput: '{"acao":"ok"}',
+      output: '{"acao":"ok"}',
     }),
     abortar: jest.fn().mockResolvedValue(undefined),
   };
