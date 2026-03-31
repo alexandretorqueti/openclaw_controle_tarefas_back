@@ -65,7 +65,7 @@ export interface ServicoAnaliseTarefa {
 
 /** Contrato da fábrica de prompts */
 export interface FabricaPrompts {
-  buildPrompt(task: TarefaCompleta, plan: PlanoDeAnalise): string;
+  gerarPromptParaVerificarAtomicidadeeDominio(task: TarefaCompleta): string;
 }
 
 // ═══════════════════════════════════════════════════════

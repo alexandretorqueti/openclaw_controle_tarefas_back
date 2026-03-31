@@ -226,12 +226,118 @@ export class Monitoramento {
     const userServiceReal = container.resolve('userService') as any;
     const taskAnalysisService = container.resolve('taskAnalysisService') as ServicoAnaliseTarefa;
     const promptFactory = container.resolve('promptFactory') as FabricaPrompts;
-
+    const llmServiceClass = container.resolve('llmService') as any;
+    const llmService = new llmServiceClass();
     // ─── Adapter para UserService ───
     const userService: ServicoUsuario = {
       getCurrentUser: async (nickname: string) => {
         // O serviço real tem getUserByNickname, não getCurrentUser
         return await userServiceReal.getUserByNickname(nickname);
+      }
+    };
+
+    // ─── Serviço LLM para determinar domínio ───
+    const servicoLlmAuxiliar = {
+      determinarDominioTarefa: async (
+        titulo: string,
+        descricao: string,
+        contextoProjeto: any,
+        prompt: string
+      ): Promise<'backend' | 'frontend' | 'indefinido'> => {
+        try {
+          const promptCompleto = prompt;
+
+          const resposta = await llmService.analyze(promptCompleto);
+          
+          if (!resposta) {
+            return 'indefinido';
+          }
+
+          // Extrair a resposta (pode ser objeto ou string)
+          const respostaTexto = typeof resposta === 'string' 
+            ? resposta.toLowerCase().trim()
+            : JSON.stringify(resposta).toLowerCase();
+
+          if (respostaTexto.includes('backend')) {
+            return 'backend';
+          } else if (respostaTexto.includes('frontend')) {
+            return 'frontend';
+          } else {
+            return 'indefinido';
+          }
+        } catch (error) {
+          console.error('❌ Erro ao determinar domínio com LLM:', error);
+          return 'indefinido';
+        }
+      }
+    };
+
+    // ─── Serviço LLM para determinar atomicidade ───
+    const servicoLlmAtomicidade = {
+      determinarAtomicidadeTarefa: async (
+        titulo: string,
+        descricao: string,
+        contextoProjeto: any,
+        prompt: string
+      ): Promise<{ isAtomic: boolean; certeza: number; razao: string }> => {
+        try {
+          const promptCompleto = `
+Título da tarefa: ${titulo}
+Descrição: ${descricao}
+Contexto do projeto: ${JSON.stringify(contextoProjeto, null, 2)}
+
+${prompt}
+
+Analise a tarefa acima e determine se é ATÔMICA (pode ser executada por um único agente) 
+ou se precisa ser DECOMPOSTA em subtarefas.
+
+Responda APENAS no formato JSON:
+{
+  "isAtomic": true/false,
+  "certeza": 0-100,
+  "razao": "explicação breve"
+}
+          `;
+
+          const resposta = await llmService.analyze(promptCompleto);
+          
+          if (!resposta) {
+            return { isAtomic: true, certeza: 50, razao: 'LLM não respondeu' };
+          }
+
+          // Verificar se resposta já é objeto
+          if (typeof resposta === 'object' && resposta !== null) {
+            return {
+              isAtomic: Boolean(resposta.isAtomic),
+              certeza: Math.min(100, Math.max(0, Number(resposta.certeza) || 50)),
+              razao: String(resposta.razao || 'Sem explicação')
+            };
+          }
+
+          // Tentar parsear se for string
+          try {
+            const parsed = JSON.parse(String(resposta));
+            return {
+              isAtomic: Boolean(parsed.isAtomic),
+              certeza: Math.min(100, Math.max(0, Number(parsed.certeza) || 50)),
+              razao: String(parsed.razao || 'Sem explicação')
+            };
+          } catch {
+            // Fallback: analisar texto
+            const texto = String(resposta).toLowerCase();
+            const isAtomic = !texto.includes('decompor') && 
+                            !texto.includes('complexa') && 
+                            !texto.includes('múltiplas');
+            return { 
+              isAtomic, 
+              certeza: 60, 
+              razao: 'Determinado por análise textual' 
+            };
+          }
+        } catch (error) {
+          console.error('❌ Erro ao determinar atomicidade com LLM:', error);
+          return { isAtomic: true, certeza: 50, razao: 'Erro no LLM' };
+        }
       }
     };
 
@@ -251,6 +357,9 @@ export class Monitoramento {
       servicoUsuario: userService,
       servicoAnaliseTarefa: taskAnalysisService,
       servicoSnapshot: servicoSnapshot,
+      servicoLlmAuxiliar: servicoLlmAuxiliar,
+      servicoLlmAtomicidade: servicoLlmAtomicidade,
+      fabricaPrompts: promptFactory,
       clienteApi: new ClienteApiStatusViaAxios(),
       fileSystem: require('fs').promises,
       pathUtil: require('path'),

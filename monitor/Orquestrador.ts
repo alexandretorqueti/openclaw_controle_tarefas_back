@@ -19,6 +19,7 @@ import { PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
 import { PassoSuperValidacao } from './passos/atomicos/PassoSuperValidacao';
 import { LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
+import { PassoVerificaAtomicidade } from './passos/atomicos/PassoVerificaAtomicidade';
 import { MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
 import { MacroFaseProgramador } from './passos/macro/FaseProgramador';
 import { MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
@@ -45,8 +46,11 @@ export interface DependenciasGlobais {
   servicoOpenClaw: any;
   servicoDisco: any;
   servicoSnapshot: any;
+  servicoLlmAuxiliar?: any; // Para determinar domínio
+  servicoLlmAtomicidade?: any; // Para determinar atomicidade
   jsonValidator: any;
   gerenciadorFalha: any;
+  fabricaPrompts?: any; // Para gerar prompts
   // utils
   criarContexto: () => ContextoExecucao;
 }
@@ -146,8 +150,29 @@ export class OrquestradorTarefas {
       
       ctx.analysisPlan = superValidacao.planoDeAnalise || null;
 
+      // VERIFICAÇÃO DE ATOMICIDADE (se não definida no banco)
+      let isAtomic = tarefa.isAtomic;
+      if (isAtomic === undefined || isAtomic === null) {
+        const passoAtomicidade = new PassoVerificaAtomicidade({
+          logger,
+          servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
+          fabricaPrompts: FabricaPromptsIA,
+        });
+
+        const resultadoAtomicidade = await passoAtomicidade.execute({ tarefa });
+        isAtomic = resultadoAtomicidade.isAtomic;
+        
+        // Armazena no contexto para uso posterior
+        ctx.tarefaAtual.isAtomic = isAtomic;
+        
+        await logger.info(
+          `🔍 Atomicidade determinada: ${isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'} ` +
+          `(Certeza: ${resultadoAtomicidade.certeza}%)`
+        );
+      }
+
       // DECOMPOSIÇÃO: Se for uma "Epic" (não atômica)
-      if (tarefa.isAtomic === false) {
+      if (isAtomic === false) {
         const passoDecomposicao = new LogicaDecomposicao({
           logger,
           analista: this.deps.servicoAnalista,
@@ -184,6 +209,8 @@ export class OrquestradorTarefas {
       const dominio = await new PassoVerificaDominio({
         logger,
         gerenciadorFalha: this.deps.gerenciadorFalha,
+        servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
+        fabricaPrompts: FabricaPromptsIA,
       }).execute({
         tarefa,
         userId: ctx.UserId,
@@ -197,6 +224,12 @@ export class OrquestradorTarefas {
       if (!dominio.dominioValido) {
         ctx.erros.dominio = true;
         return; // Eject: Tarefa atômica sem domínio.
+      }
+
+      // Se domínio foi determinado pela LLM, armazena no contexto
+      if (dominio.dominio) {
+        ctx.tarefaAtual.domain = dominio.dominio;
+        await logger.info(`✅ Domínio armazenado no contexto: ${dominio.dominio}`);
       }
 
       // ==========================================================
