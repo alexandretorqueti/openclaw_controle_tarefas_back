@@ -228,7 +228,7 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     expect(resultadoValidacao.valido).toBe(true);
     expect(resultadoValidacao.planoDeAnalise).toBeDefined();
     expect(resultadoValidacao.planoDeAnalise?.taskType).toBe('feature');
-    expect(taskAnalysisService.analyze).toHaveBeenCalledWith(tarefaEncontrada);
+    expect(taskAnalysisService.analyzeTaskScope).toHaveBeenCalledWith(tarefaEncontrada);
     
     const planoAnalise = resultadoValidacao.planoDeAnalise;
     

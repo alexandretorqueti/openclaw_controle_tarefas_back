@@ -162,8 +162,15 @@ export class OrquestradorTarefas {
           prompt: promptDecomposicao,
         });
 
+        if (resultDecomposicao.sucesso && resultDecomposicao.quantidadeSubtarefas === 0) {
+          ctx.erros.decomposicao = false;
+          ctx.tarefaAtual.isAtomic = true; // Marca a tarefa como atômica para evitar futuras tentativas de decomposição
+          await logger.erro('A IA decidiu não decompor a tarefa. A tarefa é atômica, segue fluxo normal.');
+          return; // Tudo certo!
+        }
+
         // Mutações explícitas
-        if (!resultDecomposicao.sucesso || resultDecomposicao.quantidadeSubtarefas === 0) {
+        if (!resultDecomposicao.sucesso) {
           ctx.erros.decomposicao = true;
           await logger.erro('IA falhou ao decompor tarefa. Abortando esteira.');
           return; // Deu erro na IA, para o fluxo.

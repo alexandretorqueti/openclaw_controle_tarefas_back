@@ -55,7 +55,7 @@ export class PassoSuperValidacao extends PassoBase<SuperValidacaoInput, SuperVal
     // 3. Análise preliminar da tarefa
     let plano: PlanoDeAnalise | undefined;
     if (this.taskAnalysisService) {
-      plano = await this.taskAnalysisService.analyze(tarefa);
+      plano = await this.taskAnalysisService.analyzeTaskScope(tarefa, tarefa.project);
       await this.logger.info(
         `${logPrefix} ✅ Análise concluída para tarefa ${tarefa.id}`
       );

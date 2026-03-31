@@ -60,7 +60,7 @@ export interface ServicoUsuario {
 
 /** Contrato do serviço de análise de tarefa */
 export interface ServicoAnaliseTarefa {
-  analyze(task: TarefaCompleta): Promise<PlanoDeAnalise>;
+  analyzeTaskScope(task: TarefaCompleta, project: Project): Promise<PlanoDeAnalise>;
 }
 
 /** Contrato da fábrica de prompts */
