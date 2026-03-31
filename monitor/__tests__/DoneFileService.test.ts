@@ -33,7 +33,7 @@ describe('DoneFileService', () => {
     doneFileService = new DoneFileService({
       logger: mockLogger,
       fileSystem: mockFileSystem,
-      path: mockPath
+      path: mockPath,
     });
   });
   
@@ -134,6 +134,8 @@ describe('DoneFileService', () => {
       mockFileSystem.stat
         .mockResolvedValueOnce({ isDirectory: () => false }); // test1.spec.ts
       
+      mockFileSystem.readdir.mockResolvedValueOnce([]); // Nenhum outro subdiretório relevante
+
       // Executar
       const resultado = await doneFileService.findDoneFile('/task/dir', '/project/base');
       
