@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────
 
 import type { TarefaCompleta } from '../interfaces';
+import { Project } from '@prisma/client';
 
 export interface ContextoProjeto {
   pastaBase: string;
@@ -19,45 +20,132 @@ export interface ContextoProjeto {
 export class FabricaPromptsIA {
   
   // ==========================================================
-  // 1. ARQUITETO (Planejamento)
+  // 1. ARQUITETO (Planejamento - Versão Aprimorada do Legado)
   // ==========================================================
   public static gerarPromptArquiteto(
     tarefa: TarefaCompleta,
     projeto: ContextoProjeto,
-    caminhoPlano: string
+    caminhoPlano: string,
+    tipoTarefa: string = 'development',
+    listaArquivos: string[] = [],
+    secaoComentarios: string = ''
   ): string {
     const ctxFisico = this.montarContextoPastas(projeto);
+    
+    // Filtra arquivos relevantes (máximo 500)
+    const arquivosFiltrados = this.filtrarArquivosRelevantes(listaArquivos);
+    const arquivosTruncados = arquivosFiltrados.slice(0, 500).join('\n');
+    
+    // Contexto de portas
+    let ctxPortas = '';
+    if (projeto.frontendPort || projeto.backendPort) {
+      ctxPortas = `\n[INFRAESTRUTURA DE PORTAS]\n`;
+      if (projeto.frontendPort) ctxPortas += `- Frontend roda na porta: ${projeto.frontendPort}\n`;
+      if (projeto.backendPort) ctxPortas += `- Backend roda na porta: ${projeto.backendPort}\n`;
+      ctxPortas += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
+    }
+
+    // Instruções específicas por tipo de tarefa
+    const instrucoesPorTipo = this.gerarInstrucoesPorTipo(tipoTarefa, caminhoPlano);
 
     return `
-Você é o Arquiteto de Software Líder deste projeto.
-Sua única responsabilidade neste turno é gerar um PLANO TÉCNICO DE AÇÃO para o Desenvolvedor seguir.
+Você é o Arquiteto de Software Líder do projeto.
+Tipo de Tarefa: [${tipoTarefa.toUpperCase()}]
 
-[CONTEXTO DA TAREFA]
-- Título: ${tarefa.title}
-- Domínio: ${tarefa.domain || 'FULLSTACK'}
-- Descrição original:
-${tarefa.description}
+[CONTEXTO DO PROJETO]
+${ctxFisico}${ctxPortas}
 
-[INFRAESTRUTURA DO PROJETO]
-${ctxFisico}
+[ESTRUTURA DE ARQUIVOS (Primeiros 500 arquivos relevantes)]
+${arquivosTruncados}
 
-[SEU OBJETIVO OBRIGATÓRIO]
-1. Analise o que precisa ser feito.
-2. Formule um passo a passo técnico, direto e indubitável (ex: "1. No arquivo X, adicione a rota Y").
-3. NÃO programe. Não crie código fonte. O seu trabalho é ESTRITAMENTE de planejamento.
-4. Use a ferramenta de arquivos para escrever todo o seu plano detalhado EXATAMENTE neste caminho absoluto:
-   📍 ${caminhoPlano}
-5. Se houver ambiguidades na descrição, tome a decisão de arquitetura mais segura e moderna. Não dê opções ao desenvolvedor.
+[TAREFA ATUAL]
+Título: ${tarefa.title}
+Domínio: ${tarefa.domain || 'FULLSTACK'}
+Descrição: ${tarefa.description}${secaoComentarios}
 
-[QUANDO TERMINAR]
-Quando o arquivo do plano estiver salvo no disco, responda OBRIGATORIAMENTE com um bloco JSON neste formato exato (sem formatação markdown extra):
-\`\`\`json
-{
-  "sucesso": true,
-  "mensagem": "Plano arquitetural concluído e salvo com sucesso."
-}
-\`\`\`
+[REGRAS CRÍTICAS DE SISTEMA]
+- EXPLIQUE SEU RACIOCÍNIO PRIMEIRO: Antes de agir, você DEVE explicar brevemente o seu plano de ação para resolver o problema.
+- AÇÃO: Após raciocinar, aja estritamente utilizando as ferramentas JSON fornecidas (ex: ferramenta 'write').
+- Se a ferramenta 'write' falhar, você DEVE imprimir o plano ou relatório completo no seu output de texto, cercado por tags <PLANO> ... </PLANO>.
+
+${instrucoesPorTipo}
+
+Inicie agora o seu fluxo de trabalho estrito. Comece detalhando seu raciocínio.
 `.trim();
+  }
+
+  // ==========================================================
+  // 1.1. Prompt para Análise da Resposta do Arquiteto
+  // ==========================================================
+  public static gerarPromptAnaliseArquiteto(
+    respostaArquiteto: string,
+    tarefa: TarefaCompleta,
+    projeto: Project,
+    evidencias: any
+  ): string {
+    // Monta o contexto de evidências físicas
+    let contextoEvidencias = "";
+    if (evidencias.hasRealChanges || evidencias.existsDoneFile) {
+      const modCount = evidencias.changes?.modified?.length || 0;
+      const creCount = evidencias.changes?.created?.length || 0;
+      contextoEvidencias = `
+      [🚨 ALERTA CRÍTICO DE SISTEMA - LEIA COM ATENÇÃO]
+      O monitoramento físico do sistema de arquivos PROVA INCONTESTAVELMENTE que o Arquiteto ALTEROU CÓDIGO FONTE nesta rodada (modificou ${modCount} arquivos e criou ${creCount} arquivos)${evidencias.existsDoneFile ? ' e gerou o arquivo .done' : ''}.
+      Isso significa que é ALTAMENTE PROVÁVEL que ele não tenha apenas planejado, mas sim EXECUTADO a tarefa.
+      Analise o texto dele com um FORTE VIÉS DE EXECUÇÃO CONCLUÍDA. Procure no texto a confirmação do que ele fez.
+      Mesmo que ele use verbos no imperativo para explicar a solução, a prova física indica que ELE JÁ APLICOU as mudanças.`;
+    } else {
+      contextoEvidencias = `
+      [INFO DO SISTEMA] 
+      Não houve alterações reais nos arquivos de código. É altamente provável que ele tenha apenas gerado um plano de ação (instruções) para o Desenvolvedor seguir.`;
+    }
+
+    return `
+      Você é um analista de respostas de arquitetos de software.
+      Analise a resposta abaixo de um arquiteto e determine:
+
+      1. O arquiteto JÁ EXECUTOU a tarefa? (implementou código, alterou arquivos)
+      2. O arquiteto apenas GEROU UM PLANO? (descreveu passos, mas não executou)
+      3. O arquiteto NÃO CONSEGUIU ANALISAR? (resposta vazia, incompleta, erro)
+      4. O arquiteto AFIRMA QUE A TAREFA JÁ FOI EXECUTADA ANTERIORMENTE? (resposta com "hadExecuted": true)
+
+      ${contextoEvidencias}
+
+      CONTEXTO:
+      - Tarefa: ${tarefa.title}
+      - Descrição: ${tarefa.description}
+      - Projeto: ${projeto?.name || 'N/A'}
+
+      RESPOSTA DO ARQUITETO:
+      ${respostaArquiteto}
+
+      Analise PALAVRA POR PALAVRA.
+      
+      Responda EXCLUSIVAMENTE em JSON:
+      {
+        "hasExecuted": true/false,
+        "hasPlan": true/false,
+        "confidence": 0-100,
+        "executionDetails": "Descrição do que foi executado, se aplicável",
+        "planDetails": "Descrição do plano gerado, se aplicável",
+        "analysisFailed": true/false,
+        "hadExecuted": true/false
+      }
+
+      CRITÉRIOS CLAROS E EXCLUSIVOS:
+      1. "hasExecuted": true SE o arquiteto descreve a solução E o ALERTA DE SISTEMA confirma que arquivos mudaram.
+         - Palavras-chave do texto: "modifiquei", "alterei", "implementei", "resolvido", "código atualizado", "feito".
+         
+      2. "hasPlan": true SE o arquiteto descreve passos FUTUROS e o ALERTA DE SISTEMA diz que não houve alterações.
+         - Palavras-chave do texto: "deve", "precisa", "siga", "passo a passo", "modifique", "o desenvolvedor deve".
+         
+      3. "analysisFailed": true SE a resposta for vazia, incompreensível, ou não relacionada.
+
+      REGRA DE OURO CRÍTICA: 
+      - A EVIDÊNCIA FÍSICA (Alerta de Sistema) tem PESO MÁXIMO. 
+      - Se o sistema diz que arquivos foram alterados, incline sua análise para "hasExecuted": true e confira se o texto bate com a ação.
+      - Se o sistema diz que NÃO houve alterações, incline para "hasPlan": true (pois ele apenas falou, mas não agiu).
+    `.trim();
   }
 
   // ==========================================================
@@ -189,5 +277,76 @@ REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se 
     if (projeto.frontendPort) ctx += `- Porta Frontend: ${projeto.frontendPort}\n`;
     if (projeto.backendPort) ctx += `- Porta Backend: ${projeto.backendPort}\n`;
     return ctx;
+  }
+
+  private static filtrarArquivosRelevantes(listaArquivos: string[]): string[] {
+    // Padrões para ignorar
+    const padroesIgnorar = [
+      /\/prisma\/migrations\//,
+      /\/node_modules\//,
+      /\.git\//,
+      /\/(dist|build|out)\//,
+      /backup/i,
+      /\.(lock|log|md|txt)$/,
+      /\.(png|jpe?g|svg|gif|ico|pdf|zip|gz)$/,
+      /\.(db|sqlite|sqlite3)$/,
+      /\.map$/,
+      /\.d\.ts\.map$/,
+      /\.vscode\//,
+      /coverage\//
+    ];
+
+    // Extensões relevantes
+    const extensoesRelevantes = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.json'];
+
+    return listaArquivos.filter(arquivo => {
+      // Deve ter extensão relevante
+      const temExtensaoRelevante = extensoesRelevantes.some(ext => arquivo.endsWith(ext));
+      
+      // Não deve bater em padrões de ignorar
+      const naoIgnorado = !padroesIgnorar.some(pattern => pattern.test(arquivo));
+      
+      // Ignorar configurações de ferramentas
+      const naoConfigFerramenta = !arquivo.match(/\.(config|setup|rc|babelrc)\.(js|json|ts)$/);
+
+      return temExtensaoRelevante && naoIgnorado && naoConfigFerramenta;
+    });
+  }
+
+  private static gerarInstrucoesPorTipo(tipoTarefa: string, caminhoPlano: string): string {
+    const instrucoes = {
+      development: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
+* Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
+* Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
+* Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${caminhoPlano}
+* NÃO DÊ MAIS DE UMA OPÇÃO AO DESENVOLVEDOR. SE HOUVER MAIS DE UM CAMINHO ESCOLHA O MELHOR.
+* NÃO PEÇA AO DESENVOLVEDOR PARA REALIZAR TESTES. OS TESTES SERÃO FEITOS EM OUTRA ETAPA.
+* PROIBIDO criar ou editar arquivos de código-fonte.
+* PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
+* Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
+      `,
+      
+      analysis: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (ANÁLISE) ===
+1. Esta é uma tarefa EXCLUSIVA de leitura e investigação. NÃO modifique códigos.
+2. Use a ferramenta 'read' ou 'exec' (comandos bash como cat, grep) para inspecionar os arquivos solicitados.
+3. Use a ferramenta 'write' para gerar um RELATÓRIO COMPLETO com suas descobertas EXATAMENTE neste arquivo: ${caminhoPlano}
+4. Após gerar e salvar o relatório, você DEVE finalizar a tarefa executando o comando \`touch .done\` no diretório da tarefa usando a ferramenta 'exec'.
+5. Redija seu relatório e mensagens no PASSADO (ex: "verifiquei", "encontrei", "descobri") para provar que a ação foi concluída.
+6. Responda com: "Análise concluída. Tarefa finalizada pelo arquiteto."
+      `,
+      
+      automation: `
+=== SEU FLUXO DE TRABALHO OBRIGATÓRIO (AUTOMAÇÃO) ===
+1. Avalie se o script ou comando de automação pode ser rodado por você agora mesmo (ex: comandos shell simples, limpeza, git).
+2. Se puder resolver agora, EXECUTE a ação usando a ferramenta 'exec'.
+3. Use a ferramenta 'write' para registrar o resultado da execução no arquivo: ${caminhoPlano}
+4. Se você executou com sucesso, finalize criando o marcador de conclusão via ferramenta 'exec' rodando \`touch .done\`.
+5. Se for complexo demais e exigir codificação pesada, crie apenas um plano de ação (como em 'development') e NÃO crie o arquivo .done.
+      `
+    };
+
+    return instrucoes[tipoTarefa as keyof typeof instrucoes] || instrucoes.development;
   }
 }

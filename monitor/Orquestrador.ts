@@ -35,6 +35,7 @@ import { DependenciasDecompoeTarefa, LogicaDecomposicao } from './passos/atomico
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { PassoVerificaAtomicidade, VerificaAtomicidadeOutput } from './passos/atomicos/PassoVerificaAtomicidade';
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
+import { DependenciasAnaliseArquiteto, AnaliseArquitetoInput, AnaliseArquitetoOutput, MacroFaseAnaliseArquiteto } from './passos/macro/FaseAnaliseArquiteto';
 import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutput, MacroFaseProgramador } from './passos/macro/FaseProgramador';
 import { DependenciasAnaliseProgramador, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
 import { FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
@@ -312,7 +313,40 @@ export class OrquestradorTarefas {
         return; // Eject
       }
 
-      await logger.info('🛠️ Plano validado e salvo. Pronto para o Programador!');
+      await logger.info('🔍 Analisando resposta do arquiteto...');
+      const dependenciasAnaliseArquiteto : DependenciasAnaliseArquiteto = {
+        logger,
+        analiseTarefa: this.deps.servicoAnaliseTarefa,
+        snapshot: this.deps.servicoSnapshot,
+        arquivos: this.deps.servicoArquivos,
+      }
+      // FASE DE ANÁLISE DO ARQUITETO (Nova fase)
+      const passoAnaliseArquiteto: MacroFaseAnaliseArquiteto = new MacroFaseAnaliseArquiteto(dependenciasAnaliseArquiteto);
+      const analiseArquitetoInput: AnaliseArquitetoInput = {
+        tarefaAtual: tarefa,
+        planoAnalise: ctx.analysisPlan,
+        respostaArquiteto: resultArquiteto.planDetails || '',
+        caminhoPlanoArquiteto: caminhoPlanoParaSalvar,
+        snapshotInicial,
+        diretorioBase: this.deps.config.BASE_DIR,
+      };
+      const analiseArquiteto: AnaliseArquitetoOutput = await passoAnaliseArquiteto.execute(analiseArquitetoInput);
+
+      if (!analiseArquiteto.sucesso) {
+        await logger.erro('A análise do arquiteto falhou. Continuando com fallback...');
+        // Fallback: passa para programador mesmo com erro
+      }
+
+      // DECISÃO DE FLUXO BASEADA NA ANÁLISE
+      if (analiseArquiteto.arquitetoExecutou && !analiseArquiteto.precisaProgramador) {
+        await logger.info(`✅ Arquiteto já executou a tarefa (${analiseArquiteto.confianca}% confiança). Finalizando ciclo.`);
+        
+        // Pular programador e ir direto para análise/finalização
+        const mensagemFinal = `✅ Tarefa executada pelo arquiteto: ${analiseArquiteto.detalhesExecucao || 'Implementação concluída'}`;
+        return await this.finalizarTarefa(ctx, tarefa, mensagemFinal, logger);
+      }
+
+      await logger.info(`📋 Arquiteto gerou plano (${analiseArquiteto.confianca}% confiança). Passando para programador.`);
 
       // PASSO DO PROGRAMADOR (Macro Passo)
       const passoProgramador : MacroFaseProgramador = new MacroFaseProgramador({
@@ -321,9 +355,12 @@ export class OrquestradorTarefas {
         jsonValidator: this.deps.jsonValidator,
       } as DependenciasFaseProgramador);
 
+      // Usar plano do arquiteto ou descrição original se análise falhou
+      const planoParaProgramador = analiseArquiteto.planoDetalhado || resultArquiteto.planDetails || tarefa.description;
+      
       const promptProgramador: string = FabricaPromptsIA.gerarPromptProgramador(
         tarefa as TarefaCompleta,
-        resultArquiteto.planDetails || 'Sem plano.' as string,
+        planoParaProgramador,
         ctx.controle.taskDir || '' as string
       );
 
@@ -436,6 +473,38 @@ export class OrquestradorTarefas {
       if (!ctx.lockAtivo && !ctx.controle.processoFantasma) {
         await this.deps.servicoLock.releaseLock();
       }
+    }
+  }
+
+  /**
+   * Método auxiliar para finalizar tarefa quando arquiteto já executou
+   */
+  private async finalizarTarefa(
+    ctx: ContextoExecucao,
+    tarefa: TarefaCompleta,
+    mensagemFinal: string,
+    logger: Logger
+  ): Promise<void> {
+    await logger.info(`🚀 Finalizando tarefa executada pelo arquiteto...`);
+
+    // Pular análise do programador e ir direto para finalização
+    const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
+      logger,
+      clienteApi: this.deps.clienteApi,
+      apiUrl: this.deps.config.API_URL,
+      userId: ctx.UserId,
+    } as DependenciasFinalizacao);
+
+    const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
+      tarefaAtual: tarefa,
+      novoStatus: ctx.config.STATUS.COMPLETED,
+      mensagemFechamento: mensagemFinal,
+    } as FinalizacaoInput);
+
+    if (!finalizacao.sucesso) {
+      await logger.erro('Falha ao finalizar tarefa executada pelo arquiteto.');
+    } else {
+      await logger.info(`🎉 Tarefa [${tarefa.id}] finalizada pelo arquiteto!`);
     }
   }
 }

@@ -17,6 +17,12 @@ export interface SnapshotComparison {
   hasChanges: boolean;
 }
 
+export interface compareSnapshotsInput {
+  initialSnapshot: Snapshot;
+  currentSnapshot: Snapshot;
+}
+  
+
 export interface WorkspaceSnapshotServiceDeps {
   logger: Logger;
   fileSystem: {
@@ -90,9 +96,10 @@ export class WorkspaceSnapshotService {
    * @param currentSnapshot Snapshot atual
    * @returns Objeto com arrays de arquivos modificados, criados e deletados
    */
+
+  
   compareSnapshots(
-    { initialSnapshot, currentSnapshot }: 
-    { initialSnapshot: Snapshot, currentSnapshot: Snapshot }
+    { initialSnapshot, currentSnapshot }: compareSnapshotsInput
   ): SnapshotComparison {
     const modified: string[] = [];
     const created: string[] = [];
