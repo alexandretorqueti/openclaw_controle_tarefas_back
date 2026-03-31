@@ -19,7 +19,8 @@ export interface DependenciasConfiguraUsuario extends DependenciasBase {
   userService: ServicoUsuario;
 }
 
-export class PassoConfiguraUsuario extends PassoBase<ConfiguraUsuarioInput, ConfiguraUsuarioOutput> {
+export class PassoConfiguraUsuario 
+  extends PassoBase<ConfiguraUsuarioInput, ConfiguraUsuarioOutput> {
   readonly nome = 'Configura Usuário';
 
   private readonly userService: ServicoUsuario;

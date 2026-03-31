@@ -15,7 +15,7 @@ describe('PassoSuperValidacao', () => {
 
     expect(resultado.valido).toBe(true);
     expect(resultado.planoDeAnalise?.taskType).toBe('feature');
-    expect(taskAnalysisService.analyzeTaskScope).toHaveBeenCalledWith(input.tarefa);
+    expect(taskAnalysisService.analyzeTaskScope).toHaveBeenCalledWith(input.tarefa, input.tarefa.project);
   });
 
   it('deve reprovar tarefa se faltar campo obrigatório', async () => {

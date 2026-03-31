@@ -15,6 +15,15 @@ export interface InicializaTarefaInput {
   statusInProgress: string;
 }
 
+export interface DependenciasInicializaTarefa extends DependenciasBase {
+  lockService: ServicoLock;
+  stateService: ServicoEstado;
+  fileSystem: FileSystemMinimo;
+  clienteApi: ClienteApiStatus;
+  path: {
+    join(...segments: string[]): string;
+  };
+}
 export interface InicializaTarefaOutput {
   sucesso: boolean;
   taskDir?: string;
@@ -29,16 +38,6 @@ export interface FileSystemMinimo {
 export interface ClienteApiStatus {
   buscarStatusPorNome(apiUrl: string, nome: string): Promise<{ id: number } | null>;
   atualizarStatusTarefa(apiUrl: string, taskId: number | string, statusId: number): Promise<void>;
-}
-
-export interface DependenciasInicializaTarefa extends DependenciasBase {
-  lockService: ServicoLock;
-  stateService: ServicoEstado;
-  fileSystem: FileSystemMinimo;
-  clienteApi: ClienteApiStatus;
-  path: {
-    join(...segments: string[]): string;
-  };
 }
 
 export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, InicializaTarefaOutput> {

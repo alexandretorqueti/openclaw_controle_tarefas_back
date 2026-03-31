@@ -3,8 +3,11 @@
 // Demonstra a lógica de gerar cenários e testar cada um.
 
 import { OrquestradorTarefas } from '../../Orquestrador';
-import { criarLoggerMock } from '../fixtures/fabricaMocks';
+import { criarFileServiceMock, criarLoggerMock } from '../fixtures/fabricaMocks';
 import type { Logger } from '../../interfaces/logger';
+import { logger } from '../../../src/services/validationService';
+import { file } from 'zod/v4';
+
 
 // Mock global do child_process para interceptar comandos de build/test
 jest.mock('child_process', () => ({
@@ -161,7 +164,7 @@ function gerarCenariosImportantes(): Cenario[] {
       mocks.fileSystem.mkdir.mockResolvedValue(undefined);
       mocks.clienteApi.buscarStatusPorNome.mockResolvedValue({ id: 2 });
       mocks.clienteApi.atualizarStatusTarefa.mockResolvedValue(undefined);
-      mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({ taskType: 'feature' });
+      mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({ taskType: 'feature' });
     },
     validar: (ctx, logs, mocks) => {
       expect(logs).toContainEqual(expect.stringContaining('sem domínio definido'));
@@ -196,7 +199,7 @@ function gerarCenariosImportantes(): Cenario[] {
       mocks.fileSystem.mkdir.mockResolvedValue(undefined);
       mocks.clienteApi.buscarStatusPorNome.mockResolvedValue({ id: 2 });
       mocks.clienteApi.atualizarStatusTarefa.mockResolvedValue(undefined);
-      mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({ taskType: 'feature' });
+      mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({ taskType: 'feature' });
       mocks.servicoOpenClaw.executarTurno.mockResolvedValue({
         sucesso: true,
         output: '```json\n{"acao":"feito"}\n```',
@@ -267,7 +270,7 @@ describe('Cenários Importantes do Orquestrador', () => {
           buscarProxima: jest.fn(),
         },
         servicoAnaliseTarefa: {
-          analyze: jest.fn(),
+          analyzeTaskScope: jest.fn(),
         },
         servicoAnalista: {
           decompor: jest.fn(),
@@ -286,6 +289,16 @@ describe('Cenários Importantes do Orquestrador', () => {
         },
         gerenciadorFalha: {
           registrarFalha: jest.fn().mockResolvedValue(undefined),
+        },
+        servicoSnapshot: {
+          takeSnapshot: jest.fn(),
+          compareSnapshots: jest.fn(),
+          getModifiedFiles: jest.fn(),
+          logger: criarLoggerMock(),
+          fileSystem: {
+            readdir: jest.fn().mockResolvedValue([]),
+            stat: jest.fn().mockResolvedValue({ mtimeMs: Date.now() })
+          }
         },
       };
       
@@ -344,6 +357,7 @@ describe('Cenários Importantes do Orquestrador', () => {
         servicoDisco: mocks.servicoDisco,
         jsonValidator: mocks.jsonValidator,
         gerenciadorFalha: mocks.gerenciadorFalha,
+        servicoSnapshot: mocks.servicoSnapshot,
         criarContexto,
       });
       

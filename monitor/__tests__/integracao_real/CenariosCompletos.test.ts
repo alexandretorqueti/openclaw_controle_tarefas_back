@@ -6,8 +6,6 @@
 import { OrquestradorTarefas } from '../../Orquestrador';
 import { criarLoggerMock } from '../fixtures/fabricaMocks';
 import type { Logger } from '../../interfaces/logger';
-import { stat } from 'node:fs';
-import { project } from '../../../src/services/prismaService';
 
 // Mock global do child_process para interceptar comandos de build/test
 jest.mock('child_process', () => ({
@@ -338,7 +336,7 @@ function gerarCenarios(): Cenario[] {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({ taskType: 'feature' });
+      mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({ taskType: 'feature' });
     },
     validar: (ctx, logs, mocks) => {
       // Super validação falha por campo faltando (statusId? já temos)
@@ -368,7 +366,7 @@ function gerarCenarios(): Cenario[] {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({ taskType: 'epic' });
+      mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({ taskType: 'epic' });
       mocks.servicoAnalista.decompor.mockResolvedValue({ precisaDividir: false, subtarefas: [] });
     },
     validar: (ctx, logs, mocks) => {
@@ -403,7 +401,7 @@ function gerarCenarios(): Cenario[] {
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-      mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({ taskType: 'epic' });
+      mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({ taskType: 'epic' });
       mocks.servicoAnalista.decompor.mockRejectedValue(new Error('IA timeout'));
     },
     validar: (ctx, logs, mocks) => {
@@ -614,7 +612,7 @@ function configurarMocksBaseComTarefaValida(mocks: MocksContainer) {
     projectId: 1,
 
   });
-  mocks.servicoAnaliseTarefa.analyze.mockResolvedValue({
+  mocks.servicoAnaliseTarefa.analyzeTaskScope.mockResolvedValue({
     taskType: 'feature',
     requiresReport: false,
     definitionOfDone: ['Código implementado', 'Testes passando'],
@@ -764,7 +762,7 @@ describe('Cenários Completos do Orquestrador', () => {
           buscarProxima: jest.fn(),
         },
         servicoAnaliseTarefa: {
-          analyze: jest.fn(),
+          analyzeTaskScope: jest.fn(),
         },
         servicoAnalista: {
           decompor: jest.fn(),

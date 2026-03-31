@@ -1,3 +1,4 @@
+
 // monitor/monitoramento.ts
 // ═══════════════════════════════════════════════════════════════
 // ENTRY POINT — Motor de Monitoramento e Execução de Tarefas por IA
@@ -424,3 +425,4 @@ if (require.main === module) {
     process.exit(1);
   });
 }
+

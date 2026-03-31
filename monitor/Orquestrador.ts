@@ -1,3 +1,4 @@
+
 // monitor/Orquestrador.ts
 // ─────────────────────────────────────────────────────
 // ORQUESTRADOR IMPERATIVO (Imperative Orchestration)
@@ -8,25 +9,39 @@
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from './interfaces/logger';
-import type { TarefaCompleta, ConfiguracaoMonitor, ContextoExecucao } from './interfaces';
+
+import type { TarefaCompleta, ConfiguracaoMonitor, ContextoExecucao, ProcessoFantasma } from './interfaces';
 
 // Importando a Lógica Pura (Passos Atômicos)
-import { PassoVerificaLock } from './passos/atomicos/PassoVerificaLock';
-import { PassoVerificaTimeout } from './passos/atomicos/PassoVerificaTimeout';
-import { PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
-import { PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
-import { PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
-import { PassoSuperValidacao } from './passos/atomicos/PassoSuperValidacao';
-import { LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
+import { 
+  DependenciasVerificaLock, 
+  PassoVerificaLock, 
+  VerificaLockInput, 
+  VerificaLockOutput 
+} from './passos/atomicos/PassoVerificaLock';
+import { DependenciasInicializaTarefa, InicializaTarefaInput } from './passos/atomicos/PassoInicializaTarefa';
+import { ConfiguraUsuarioInput } from './passos/atomicos/PassoConfiguraUsuario';
+import { PassoVerificaTimeout, VerificaTimeoutInput } from './passos/atomicos/PassoVerificaTimeout';
+import { DependenciasVerificaAtomicidade, VerificaAtomicidadeInput} from './passos/atomicos/PassoVerificaAtomicidade';
+import { DecomposicaoInput, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
+import { VerificaDominioInput, VerificaDominioOutput, DependenciasVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
+import { WorkspaceSnapshotServiceDeps, SnapshotInput, Snapshot, WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
+import { AnaliseProgramadorInput, AnaliseProgramadorOutput } from './passos/macro/FaseAnaliseProgramador';
+import { ConfiguraUsuarioOutput, DependenciasConfiguraUsuario, PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
+import { BuscaTarefaInput, BuscaTarefaOutput, DependenciasBuscaTarefa, PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
+import { InicializaTarefaOutput, PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
+import { DependenciasSuperValidacao, PassoSuperValidacao, SuperValidacaoInput, SuperValidacaoOutput } from './passos/atomicos/PassoSuperValidacao';
+import { DependenciasDecompoeTarefa, LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
-import { PassoVerificaAtomicidade } from './passos/atomicos/PassoVerificaAtomicidade';
-import { MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
-import { MacroFaseProgramador } from './passos/macro/FaseProgramador';
-import { MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
-import { MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
-import { PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
+import { PassoVerificaAtomicidade, VerificaAtomicidadeOutput } from './passos/atomicos/PassoVerificaAtomicidade';
+import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
+import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutput, MacroFaseProgramador } from './passos/macro/FaseProgramador';
+import { DependenciasAnaliseProgramador, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
+import { FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
+import { DependenciasExecutarComando, ExecutarComandoInput, ExecutarComandoOutput, PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
 import { FabricaPromptsIA } from './utils/FabricaPrompts';
-import { WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
+import { DependenciasBase } from './passos';
+import { DependenciasFinalizacao } from './passos/macro/FaseFinaliza';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -45,7 +60,7 @@ export interface DependenciasGlobais {
   servicoAnalista: any;
   servicoOpenClaw: any;
   servicoDisco: any;
-  servicoSnapshot: any;
+  servicoSnapshot: WorkspaceSnapshotService;
   servicoLlmAuxiliar?: any; // Para determinar domínio
   servicoLlmAtomicidade?: any; // Para determinar atomicidade
   jsonValidator: any;
@@ -74,11 +89,14 @@ export class OrquestradorTarefas {
 
       await logger.debug('🔄 Iniciando ciclo...');
 
-      const lockStatus = await new PassoVerificaLock({
+      const lockStatus : VerificaLockOutput = await new PassoVerificaLock({
         logger,
         lockService: this.deps.servicoLock,
         stateService: this.deps.servicoEstado,
-      }).execute({ timeoutMs: ctx.config.TASK_TIMEOUT_MS });
+        } as DependenciasVerificaLock
+      ).execute(
+        { timeoutMs: ctx.config.TASK_TIMEOUT_MS } as VerificaLockInput
+      );
 
       // Atualizamos o contexto centralizadamente
       ctx.lockAtivo = lockStatus.lockAtivo;
@@ -88,15 +106,23 @@ export class OrquestradorTarefas {
       }
 
       if (lockStatus.processoFantasmaPid) {
-        ctx.controle.processoFantasma = { pid: lockStatus.processoFantasmaPid };
-        await new PassoVerificaTimeout({ logger }).execute({ processoFantasmaPid: lockStatus.processoFantasmaPid });
+        ctx.controle.processoFantasma = { pid: lockStatus.processoFantasmaPid } as ProcessoFantasma;
+          await new PassoVerificaTimeout(
+          { logger } as DependenciasBase
+        )
+        .execute(
+          { 
+            processoFantasmaPid: lockStatus.processoFantasmaPid 
+          } as VerificaTimeoutInput
+        );
         return; // Eject: Intervenção manual.
       }
 
-      const configUsuario = await new PassoConfiguraUsuario({
+      const configUsuario: ConfiguraUsuarioOutput = await new PassoConfiguraUsuario({
         logger,
         userService: this.deps.servicoUsuario,
-      }).execute({ nickname: ctx.config.MY_USER_NICKNAME });
+      } as DependenciasConfiguraUsuario)
+      .execute({ nickname: ctx.config.MY_USER_NICKNAME } as ConfiguraUsuarioInput);
 
       ctx.UserId = configUsuario.userId;
 
@@ -104,10 +130,10 @@ export class OrquestradorTarefas {
       // FASE 2: CAPTURA E INICIALIZAÇÃO
       // ==========================================================
 
-      const captura = await new PassoBuscaTarefa({
+      const captura: BuscaTarefaOutput = await new PassoBuscaTarefa({
         logger,
         buscadorTarefa: this.deps.servicoBusca,
-      }).execute({ nickname: ctx.config.MY_USER_NICKNAME });
+      } as DependenciasBuscaTarefa).execute({ nickname: ctx.config.MY_USER_NICKNAME } as BuscaTarefaInput);
 
       const tarefa = captura.tarefa;
       ctx.tarefaAtual = tarefa;
@@ -116,19 +142,19 @@ export class OrquestradorTarefas {
         return; // Fila vazia: O trabalhador aguarda.
       }
 
-      const inicializacao = await new PassoInicializaTarefa({
+      const inicializacao: InicializaTarefaOutput = await new PassoInicializaTarefa({
         logger,
         lockService: this.deps.servicoLock,
         stateService: this.deps.servicoEstado,
         fileSystem: this.deps.fileSystem,
         clienteApi: this.deps.clienteApi,
         path: this.deps.pathUtil,
-      }).execute({
+      } as DependenciasInicializaTarefa).execute({
         tarefa,
         tasksDir: ctx.config.TASKS_DIR,
         apiUrl: ctx.config.API_URL,
         statusInProgress: ctx.config.STATUS.IN_PROGRESS,
-      });
+      } as InicializaTarefaInput);
 
       if (!inicializacao.sucesso) {
         ctx.erros.inicializacao = true;
@@ -141,7 +167,10 @@ export class OrquestradorTarefas {
       // FASE 3: VALIDAÇÃO DE NEGÓCIO E ROTEAMENTO
       // ==========================================================
 
-      const superValidacao = await new PassoSuperValidacao({ logger, taskAnalysisService: this.deps.servicoAnaliseTarefa }).execute({ tarefa });
+      const superValidacao : SuperValidacaoOutput = await new PassoSuperValidacao(
+        { logger, taskAnalysisService: this.deps.servicoAnaliseTarefa } as DependenciasSuperValidacao 
+      )
+      .execute({ tarefa } as SuperValidacaoInput);
 
       if (!superValidacao.valido) {
         ctx.erros.fatalIA = true;
@@ -153,13 +182,15 @@ export class OrquestradorTarefas {
       // VERIFICAÇÃO DE ATOMICIDADE (se não definida no banco)
       let isAtomic = tarefa.isAtomic;
       if (isAtomic === undefined || isAtomic === null) {
-        const passoAtomicidade = new PassoVerificaAtomicidade({
+        const passoAtomicidade: PassoVerificaAtomicidade = new PassoVerificaAtomicidade(
+        {
           logger,
           servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
           fabricaPrompts: FabricaPromptsIA,
-        });
+        } as DependenciasVerificaAtomicidade);
 
-        const resultadoAtomicidade = await passoAtomicidade.execute({ tarefa });
+        const resultadoAtomicidade: VerificaAtomicidadeOutput = await passoAtomicidade
+        .execute({ tarefa } as VerificaAtomicidadeInput);
         isAtomic = resultadoAtomicidade.isAtomic;
         
         // Armazena no contexto para uso posterior
@@ -173,19 +204,19 @@ export class OrquestradorTarefas {
 
       // DECOMPOSIÇÃO: Se for uma "Epic" (não atômica)
       if (isAtomic === false) {
-        const passoDecomposicao = new LogicaDecomposicao({
+        const passoDecomposicao: LogicaDecomposicao = new LogicaDecomposicao({
           logger,
           analista: this.deps.servicoAnalista,
-        });
+        } as DependenciasDecompoeTarefa);
 
-        const promptDecomposicao = FabricaPromptsIA.gerarPromptDecomposicao(tarefa);
+        const promptDecomposicao : string = FabricaPromptsIA.gerarPromptDecomposicao(tarefa as TarefaCompleta);
 
         // Executamos o passo puro
-        const resultDecomposicao = await passoDecomposicao.execute({
-          tarefaAtual: tarefa,
+        const resultDecomposicao: DecomposicaoOutput = await passoDecomposicao.execute({
+          tarefaAtual: tarefa as TarefaCompleta,
           userId: ctx.UserId,
           prompt: promptDecomposicao,
-        });
+        } as DecomposicaoInput);
 
         if (resultDecomposicao.sucesso && resultDecomposicao.quantidadeSubtarefas === 0) {
           ctx.erros.decomposicao = false;
@@ -206,12 +237,13 @@ export class OrquestradorTarefas {
       }
 
       // VERIFICAÇÃO DE DOMÍNIO
-      const dominio = await new PassoVerificaDominio({
+      const dominio: VerificaDominioOutput = await new PassoVerificaDominio({
         logger,
         gerenciadorFalha: this.deps.gerenciadorFalha,
         servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
         fabricaPrompts: FabricaPromptsIA,
-      }).execute({
+      } as DependenciasVerificaDominio).execute(
+      {
         tarefa,
         userId: ctx.UserId,
         configFalha: {
@@ -219,7 +251,7 @@ export class OrquestradorTarefas {
           tasksDir: ctx.config.TASKS_DIR,
           errorDir: ctx.config.ERROR_DIR,
         },
-      });
+      } as VerificaDominioInput);
 
       if (!dominio.dominioValido) {
         ctx.erros.dominio = true;
@@ -238,31 +270,42 @@ export class OrquestradorTarefas {
 
       await logger.info(`🚀 Tarefa [${tarefa.id}] validada e pronta para a IA! (Fase 4)`);
 
-      const caminhoPlanoParaSalvar = this.deps.pathUtil.join(ctx.controle.taskDir || '', 'architect_plan.json');
+      const caminhoPlanoParaSalvar: string = this.deps.pathUtil.join(ctx.controle.taskDir || '' as string, 'architect_plan.json' as string);
+
+      // CAPTURAR SNAPSHOT INICIAL (antes do analista)
+      await logger.info('📸 Capturando snapshot inicial do workspace...');
+      const snapshotService: WorkspaceSnapshotService = new WorkspaceSnapshotService({
+        logger,
+        fileSystem: this.deps.fileSystem,
+      } as WorkspaceSnapshotServiceDeps);
+      const snapshotInicial: Snapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
+      ctx.initialSnapshot = snapshotInicial;
+      await logger.info(`✅ Snapshot inicial capturado: ${snapshotInicial.size} arquivos`);
+
 
       // PASSO DO ARQUITETO (Macro Passo)
-      const passoArquiteto = new MacroFaseArquiteto({
+      const passoArquiteto: MacroFaseArquiteto = new MacroFaseArquiteto({
         logger,
         openClaw: this.deps.servicoOpenClaw,
         disco: this.deps.servicoDisco,
         jsonValidator: this.deps.jsonValidator,
-      });
+      } as DependenciasFaseArquiteto);
 
-      const promptArquiteto = FabricaPromptsIA.gerarPromptArquiteto(
-        tarefa,
+      const promptArquiteto: string = FabricaPromptsIA.gerarPromptArquiteto(
+        tarefa as TarefaCompleta,
         {
-          pastaBase: this.deps.config.BASE_DIR,
+          pastaBase: this.deps.config.BASE_DIR as string,
           // Mapeie dados de projetos caso existam
         },
         caminhoPlanoParaSalvar
       );
 
-      const resultArquiteto = await passoArquiteto.execute({
+      const resultArquiteto: FaseArquitetoOutput = await passoArquiteto.execute({
         tarefaAtual: tarefa,
         planoAnalise: ctx.analysisPlan,
         promptInicial: promptArquiteto,
         caminhoPlanoParaSalvar,
-      });
+      } as FaseArquitetoInput);
 
       if (!resultArquiteto.sucesso) {
         await logger.erro('O Arquiteto falhou criticamente.');
@@ -271,33 +314,23 @@ export class OrquestradorTarefas {
 
       await logger.info('🛠️ Plano validado e salvo. Pronto para o Programador!');
 
-      // CAPTURAR SNAPSHOT INICIAL (antes do programador)
-      await logger.info('📸 Capturando snapshot inicial do workspace...');
-      const snapshotService = new WorkspaceSnapshotService({
-        logger,
-        fileSystem: this.deps.fileSystem,
-      });
-      const snapshotInicial = await snapshotService.takeSnapshot(this.deps.config.BASE_DIR);
-      ctx.initialSnapshot = snapshotInicial;
-      await logger.info(`✅ Snapshot inicial capturado: ${snapshotInicial.size} arquivos`);
-
       // PASSO DO PROGRAMADOR (Macro Passo)
-      const passoProgramador = new MacroFaseProgramador({
+      const passoProgramador : MacroFaseProgramador = new MacroFaseProgramador({
         logger,
         openClaw: this.deps.servicoOpenClaw,
         jsonValidator: this.deps.jsonValidator,
-      });
+      } as DependenciasFaseProgramador);
 
-      const promptProgramador = FabricaPromptsIA.gerarPromptProgramador(
-        tarefa,
-        resultArquiteto.planDetails || 'Sem plano.',
-        ctx.controle.taskDir || ''
+      const promptProgramador: string = FabricaPromptsIA.gerarPromptProgramador(
+        tarefa as TarefaCompleta,
+        resultArquiteto.planDetails || 'Sem plano.' as string,
+        ctx.controle.taskDir || '' as string
       );
 
-      const resultProgramador = await passoProgramador.execute({
+      const resultProgramador: FaseProgramadorOutput = await passoProgramador.execute({
         tarefaAtual: tarefa,
         planoArquiteto: promptProgramador,
-      });
+      } as FaseProgramadorInput);
 
       if (!resultProgramador.sucesso) {
         await logger.erro('O Programador falhou ou estourou o limite de turnos.');
@@ -309,8 +342,8 @@ export class OrquestradorTarefas {
       // ==========================================================
 
       await logger.info(`🔎 Programador declarou que terminou. Inspecionando o trabalho...`);
-
-      const analisadorDisco = new MacroFaseAnaliseProgramador({
+      
+      const analisadorDisco : MacroFaseAnaliseProgramador = new MacroFaseAnaliseProgramador({
         logger,
         arquivos: {
           existe: async (caminho: string) => {
@@ -322,22 +355,22 @@ export class OrquestradorTarefas {
             }
           },
         },
-        snapshotService,
-      });
+        snapshotService: this.deps.servicoSnapshot,
+      } as DependenciasAnaliseProgramador);
 
-      const analise = await analisadorDisco.execute({
+      const analise: AnaliseProgramadorOutput = await analisadorDisco.execute({
         tarefaAtual: tarefa,
         caminhoTaskDir: ctx.controle.taskDir || '',
         snapshotInicial,
         diretorioBase: this.deps.config.BASE_DIR,
-      });
+      } as AnaliseProgramadorInput);
 
       let mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';
       let novoStatus = ctx.config.STATUS.IN_PROGRESS;
 
       if (analise.workspaceValidado) {
         // RODA OS BUILDS E TESTES
-        const executor = new PassoExecutarComando({ 
+        const executor: PassoExecutarComando = new PassoExecutarComando({ 
           logger,
           terminal: {
             executar: async (comando, opcoes) => {
@@ -347,19 +380,19 @@ export class OrquestradorTarefas {
               return execAsync(comando, opcoes);
             }
           }
-        });
+        } as DependenciasExecutarComando);
         
         await logger.info('🔨 Iniciando rotina de Build/Lint...');
-        const build = await executor.execute({
+        const build: ExecutarComandoOutput = await executor.execute({
           comando: 'npm run build', // ou tsc --noEmit, dependendo do repositório configurado
           diretorioDeTrabalho: this.deps.config.BASE_DIR, 
-        });
+        } as ExecutarComandoInput);
 
         await logger.info('🧪 Iniciando rotina de Testes Automatizados...');
         const testes = await executor.execute({
           comando: 'npm run test',
           diretorioDeTrabalho: this.deps.config.BASE_DIR, 
-        });
+        } as ExecutarComandoInput);
 
         if (build.sucesso && testes.sucesso) {
           mensagemFinal = `✅ Tudo verde! Código passou em todos os testes e builds.\n\nLogs:\n${testes.stdout.substring(0, 500)}...`;
@@ -374,19 +407,24 @@ export class OrquestradorTarefas {
       // FASE 6: FINALIZAÇÃO
       // ==========================================================
 
-      const passoFinaliza = new MacroFaseFinalizacao({
+      const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
         logger,
         clienteApi: this.deps.clienteApi,
         apiUrl: this.deps.config.API_URL,
         userId: ctx.UserId,
-      });
+      } as DependenciasFinalizacao);
 
-      await passoFinaliza.execute({
+      const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
         tarefaAtual: tarefa,
         novoStatus,
         mensagemFechamento: mensagemFinal,
-      });
+      } as FinalizacaoInput);
 
+      if (!finalizacao.sucesso) {
+        await logger.erro('O Orquestrador falhou ao finalizar a tarefa.');
+        return; // Eject
+      }
+      
       // Se chegamos aqui, o ciclo dessa tarefa chegou ao fim!
       await logger.info(`🎉 Ciclo da Tarefa [${tarefa.id}] completamente finalizado!`);
 
@@ -401,3 +439,4 @@ export class OrquestradorTarefas {
     }
   }
 }
+

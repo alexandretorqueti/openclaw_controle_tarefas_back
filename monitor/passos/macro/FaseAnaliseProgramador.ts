@@ -9,7 +9,7 @@
 import type { Logger } from '../../interfaces/logger';
 import { PassoBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
-import type { Snapshot, SnapshotComparison } from '../../services/WorkspaceSnapshotService';
+import type { Snapshot, SnapshotComparison, SnapshotInput } from '../../services/WorkspaceSnapshotService';
 
 export interface AnaliseProgramadorInput {
   tarefaAtual: TarefaCompleta;
@@ -32,21 +32,19 @@ export interface ServicoArquivos {
   existe(caminho: string): Promise<boolean>;
 }
 
-export interface ServicoSnapshot {
-  takeSnapshot(dir: string, ignoreList?: string[]): Promise<Snapshot>;
-  compareSnapshots(initial: Snapshot, current: Snapshot): SnapshotComparison;
-}
+import { WorkspaceSnapshotService } from '../../services/WorkspaceSnapshotService';
 
 export interface DependenciasAnaliseProgramador {
   logger: Logger;
   arquivos: ServicoArquivos;
-  snapshotService?: ServicoSnapshot; // Opcional: se fornecido, usa comparação de snapshots
+  snapshotService?: WorkspaceSnapshotService; // Opcional: se fornecido, usa comparação de snapshots
 }
 
-export class MacroFaseAnaliseProgramador extends PassoBase<AnaliseProgramadorInput, AnaliseProgramadorOutput> {
+export class MacroFaseAnaliseProgramador 
+  extends PassoBase<AnaliseProgramadorInput, AnaliseProgramadorOutput> {
   readonly nome = 'Análise do Programador (Inspeção)';
   private readonly arquivos: ServicoArquivos;
-  private readonly snapshotService?: ServicoSnapshot;
+  private readonly snapshotService?: WorkspaceSnapshotService;
 
   constructor(deps: DependenciasAnaliseProgramador) {
     super(deps);
@@ -56,7 +54,6 @@ export class MacroFaseAnaliseProgramador extends PassoBase<AnaliseProgramadorInp
 
   protected async processar(input: AnaliseProgramadorInput): Promise<AnaliseProgramadorOutput> {
     await this.logger.info(`🔎 Inspecionando o workspace da tarefa [${input.tarefaAtual.id}]...`);
-
     // 1. Verificação tradicional do arquivo .done (fallback)
     const arquivoDone = `${input.caminhoTaskDir}/.done`;
     const doneExists = await this.arquivos.existe(arquivoDone);
@@ -68,8 +65,14 @@ export class MacroFaseAnaliseProgramador extends PassoBase<AnaliseProgramadorInp
       await this.logger.info(`📸 Comparando snapshots do diretório: ${diretorioParaComparar}`);
       
       try {
-        const snapshotAtual = await this.snapshotService.takeSnapshot(diretorioParaComparar);
-        const comparacao = this.snapshotService.compareSnapshots(input.snapshotInicial, snapshotAtual);
+        const snapshotAtual : Snapshot = await this.snapshotService.takeSnapshot
+        (
+          { dir: diretorioParaComparar } as SnapshotInput
+        );
+        const comparacao : SnapshotComparison = this.snapshotService.compareSnapshots
+        (
+          { initialSnapshot: input.snapshotInicial, currentSnapshot: snapshotAtual }
+        );
         
         await this.logger.info(
           `📊 Comparação concluída: ${comparacao.totalChanges} mudanças ` +

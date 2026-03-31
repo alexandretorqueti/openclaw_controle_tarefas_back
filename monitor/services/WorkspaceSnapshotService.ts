@@ -1,3 +1,4 @@
+
 // monitor/services/WorkspaceSnapshotService.ts
 // ─────────────────────────────────────────────────────
 // Serviço para capturar e comparar snapshots do workspace
@@ -23,15 +24,20 @@ export interface WorkspaceSnapshotServiceDeps {
     stat: (path: string) => Promise<{ mtimeMs: number }>;
   };
 }
-
+export interface SnapshotInput {
+    dir: string;
+    ignoreList?: string[];
+  }
 export class WorkspaceSnapshotService {
-  private readonly logger: Logger;
-  private readonly fileSystem: WorkspaceSnapshotServiceDeps['fileSystem'];
+  readonly logger: Logger;
+  readonly fileSystem: WorkspaceSnapshotServiceDeps['fileSystem'];
 
   constructor(deps: WorkspaceSnapshotServiceDeps) {
     this.logger = deps.logger;
     this.fileSystem = deps.fileSystem;
   }
+
+  
 
   /**
    * Tira um retrato de todos os arquivos do diretório e suas datas de modificação.
@@ -39,7 +45,11 @@ export class WorkspaceSnapshotService {
    * @param ignoreList Lista de nomes de diretórios/arquivos para ignorar
    * @returns Snapshot (Map<caminho, mtimeMs>)
    */
-  async takeSnapshot(dir: string, ignoreList: string[] = ['node_modules', '.git', 'dist', 'build', '.next']): Promise<Snapshot> {
+  async takeSnapshot( {
+      dir, 
+      ignoreList = ['node_modules', '.git', 'dist', 'build', '.next']
+    }: SnapshotInput
+    ): Promise<Snapshot> {
     await this.logger.debug(`📸 Capturando snapshot do diretório: ${dir}`);
     const snapshot = new Map<string, number>();
 
@@ -80,7 +90,10 @@ export class WorkspaceSnapshotService {
    * @param currentSnapshot Snapshot atual
    * @returns Objeto com arrays de arquivos modificados, criados e deletados
    */
-  compareSnapshots(initialSnapshot: Snapshot, currentSnapshot: Snapshot): SnapshotComparison {
+  compareSnapshots(
+    { initialSnapshot, currentSnapshot }: 
+    { initialSnapshot: Snapshot, currentSnapshot: Snapshot }
+  ): SnapshotComparison {
     const modified: string[] = [];
     const created: string[] = [];
     const deleted: string[] = [];
@@ -129,8 +142,8 @@ export class WorkspaceSnapshotService {
     dir: string,
     ignoreList: string[] = ['node_modules', '.git', 'dist', 'build', '.next', '.db', '.log']
   ): Promise<string[]> {
-    const currentSnapshot = await this.takeSnapshot(dir, ignoreList);
-    const comparison = this.compareSnapshots(initialSnapshot, currentSnapshot);
+    const currentSnapshot = await this.takeSnapshot({ dir, ignoreList });
+    const comparison = this.compareSnapshots({ initialSnapshot, currentSnapshot });
     
     return [...comparison.modified, ...comparison.created];
   }

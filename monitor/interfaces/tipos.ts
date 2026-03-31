@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────
 
 import type { Project, Task, Prisma } from '@prisma/client';
+import { Snapshot } from '../services/WorkspaceSnapshotService';
 
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
@@ -66,6 +67,9 @@ export interface ServicoAnaliseTarefa {
 /** Contrato da fábrica de prompts */
 export interface FabricaPrompts {
   gerarPromptParaVerificarAtomicidadeeDominio(task: TarefaCompleta): string;
+  gerarPromptArquiteto(tarefa: TarefaCompleta, projeto: Project, caminhoPlano: string): string;
+  gerarPromptProgramador(tarefa: TarefaCompleta, planoArquiteto: string, caminhoTaskDir: string): string;
+  gerarPromptDecomposicao(tarefa: TarefaCompleta): string;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -202,7 +206,7 @@ export interface ContextoExecucao {
   lockAtivo: boolean;
   project?: Project | null;
   files: ArquivosSessao;
-  initialSnapshot?: unknown;
+  initialSnapshot?: Snapshot | null;
   analysisPlan: PlanoDeAnalise | null;
   developerPrompt?: string;
   currentInput?: string;

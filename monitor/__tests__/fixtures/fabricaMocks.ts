@@ -65,7 +65,7 @@ export function criarUserServiceMock(): jest.Mocked<ServicoUsuario> {
 
 export function criarTaskAnalysisServiceMock(): jest.Mocked<ServicoAnaliseTarefa> {
   return {
-    analyze: jest.fn().mockResolvedValue({
+    analyzeTaskScope: jest.fn().mockResolvedValue({
       taskType: 'feature',
       expectedLayers: ['backend'],
     }),
@@ -81,7 +81,10 @@ export function criarFileServiceMock(): jest.Mocked<ServicoArquivosTarefa> {
 
 export function criarPromptFactoryMock(): jest.Mocked<FabricaPrompts> {
   return {
-    buildPrompt: jest.fn().mockReturnValue('prompt de teste'),
+    gerarPromptParaVerificarAtomicidadeeDominio: jest.fn().mockReturnValue('prompt de teste'),
+    gerarPromptArquiteto: jest.fn().mockReturnValue('prompt de teste'),
+    gerarPromptProgramador: jest.fn().mockReturnValue('prompt de teste'),
+    gerarPromptDecomposicao: jest.fn().mockReturnValue('prompt de teste'),
   };
 }
 

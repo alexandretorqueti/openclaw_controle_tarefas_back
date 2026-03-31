@@ -1,0 +1,1 @@
+- No orquestrador, tipar todos os parâmetros e recebimentos dos passos.

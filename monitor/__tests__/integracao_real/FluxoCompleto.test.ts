@@ -101,7 +101,7 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     userService.getCurrentUser.mockResolvedValue({ id: 'user-123', nickname: CONFIG.NICKNAME });
     lockService.checkLock.mockResolvedValue({ locked: false, corrupted: false });
     lockService.acquireLock.mockResolvedValue(true);
-    taskAnalysisService.analyze.mockResolvedValue({
+    taskAnalysisService.analyzeTaskScope.mockResolvedValue({
       taskType: 'feature',
       requiresReport: false,
       expectedLayers: ['frontend', 'backend'],
@@ -228,7 +228,7 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     expect(resultadoValidacao.valido).toBe(true);
     expect(resultadoValidacao.planoDeAnalise).toBeDefined();
     expect(resultadoValidacao.planoDeAnalise?.taskType).toBe('feature');
-    expect(taskAnalysisService.analyzeTaskScope).toHaveBeenCalledWith(tarefaEncontrada);
+    expect(taskAnalysisService.analyzeTaskScope).toHaveBeenCalledWith(tarefaEncontrada, tarefaEncontrada.project);
     
     const planoAnalise = resultadoValidacao.planoDeAnalise;
     
