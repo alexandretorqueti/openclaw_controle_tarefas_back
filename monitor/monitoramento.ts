@@ -80,7 +80,13 @@ class ServicoDiscoLegacy {
  * Adapter para chamar a API real do OpenClaw usando container legado
  */
 class ServicoOpenClawLegacy {
-  async executarTurno(input: ChamarIAInput): Promise<{ sucesso: boolean; output: string }> {
+  async executarTurno(input: ChamarIAInput): Promise<{ 
+    sucesso: boolean; 
+    output: string;
+    rawOutput?: string;
+    toolCall?: Record<string, any>;
+    toolResult?: Record<string, any>;
+  }> {
     const OpenClawService = require('../src/services/openclawService');
     const configuracao = config as ConfiguracaoMonitor;
     
@@ -110,6 +116,9 @@ class ServicoOpenClawLegacy {
     return {
       sucesso: resultado?.success ?? false,
       output: resultado?.rawOutput ?? '',
+      rawOutput: resultado?.rawOutput ?? '',
+      // toolCall e toolResult não são extraídos pelo serviço atual
+      // Podem ser implementados posteriormente com parsing do rawOutput
     };
   }
 }

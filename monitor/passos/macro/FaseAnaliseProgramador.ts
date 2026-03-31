@@ -1,130 +1,144 @@
 // monitor/passos/macro/FaseAnaliseProgramador.ts
 // ─────────────────────────────────────────────────────
 // Macro Passo: Análise do Programador (Inspeciona Workspace)
-// O orquestrador usa isso após o Programador sinalizar "feito".
-// Ele compara snapshots (antes/depois) para detectar mudanças reais,
-// com fallback para o arquivo .done para compatibilidade.
+// Atualizado para usar o novo sistema completo de inspeção
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../../interfaces/logger';
 import { PassoBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
-import type { Snapshot, SnapshotComparison, SnapshotInput } from '../../services/WorkspaceSnapshotService';
+import type { Snapshot } from '../../services/WorkspaceSnapshotService';
+import type { MacroFaseInspecaoWorkspace, InspecaoWorkspaceInput, InspecaoWorkspaceOutput } from './FaseInspecaoWorkspace';
 
 export interface AnaliseProgramadorInput {
   tarefaAtual: TarefaCompleta;
   caminhoTaskDir: string;
-  snapshotInicial?: Snapshot; // Snapshot capturado antes do programador
-  diretorioBase?: string; // Diretório base do projeto para comparação (opcional, usa caminhoTaskDir se não fornecido)
+  snapshotInicial?: Snapshot;
+  diretorioBase?: string;
+  rawOutput?: string;
+  toolCall?: Record<string, any>;
+  toolResult?: Record<string, any>;
 }
 
 export interface AnaliseProgramadorOutput {
   workspaceValidado: boolean;
   arquivosAlterados?: boolean;
   mensagem?: string;
-  comparacao?: SnapshotComparison;
-  arquivosModificados?: string[];
-  arquivosCriados?: string[];
-  arquivosDeletados?: string[];
+  hasDoneFile?: boolean;
+  hasRealChanges?: boolean;
+  fileChanges?: {
+    modified: string[];
+    created: string[];
+    deleted: string[];
+    total: number;
+  };
+  evidence?: any;
+  errosCriticos?: string;
 }
-
-export interface ServicoArquivos {
-  existe(caminho: string): Promise<boolean>;
-}
-
-import { WorkspaceSnapshotService } from '../../services/WorkspaceSnapshotService';
 
 export interface DependenciasAnaliseProgramador {
   logger: Logger;
-  arquivos: ServicoArquivos;
-  snapshotService?: WorkspaceSnapshotService; // Opcional: se fornecido, usa comparação de snapshots
+  inspecaoWorkspace: MacroFaseInspecaoWorkspace;
 }
 
 export class MacroFaseAnaliseProgramador 
   extends PassoBase<AnaliseProgramadorInput, AnaliseProgramadorOutput> {
-  readonly nome = 'Análise do Programador (Inspeção)';
-  private readonly arquivos: ServicoArquivos;
-  private readonly snapshotService?: WorkspaceSnapshotService;
+  readonly nome = 'Análise do Programador (Inspeção Completa)';
+  private readonly inspecaoWorkspace: MacroFaseInspecaoWorkspace;
 
   constructor(deps: DependenciasAnaliseProgramador) {
     super(deps);
-    this.arquivos = deps.arquivos;
-    this.snapshotService = deps.snapshotService;
+    this.inspecaoWorkspace = deps.inspecaoWorkspace;
+  }
+
+  public async execute(input: AnaliseProgramadorInput): Promise<AnaliseProgramadorOutput> {
+    return await this.processar(input);
   }
 
   protected async processar(input: AnaliseProgramadorInput): Promise<AnaliseProgramadorOutput> {
-    await this.logger.info(`🔎 Inspecionando o workspace da tarefa [${input.tarefaAtual.id}]...`);
-    // 1. Verificação tradicional do arquivo .done (fallback)
-    const arquivoDone = `${input.caminhoTaskDir}/.done`;
-    const doneExists = await this.arquivos.existe(arquivoDone);
-
-    // 2. Se temos serviço de snapshot e snapshot inicial, fazer comparação avançada
-    if (this.snapshotService && input.snapshotInicial) {
-      const diretorioParaComparar = input.diretorioBase || input.caminhoTaskDir;
-      
-      await this.logger.info(`📸 Comparando snapshots do diretório: ${diretorioParaComparar}`);
-      
-      try {
-        const snapshotAtual : Snapshot = await this.snapshotService.takeSnapshot
-        (
-          { dir: diretorioParaComparar } as SnapshotInput
-        );
-        const comparacao : SnapshotComparison = this.snapshotService.compareSnapshots
-        (
-          { initialSnapshot: input.snapshotInicial, currentSnapshot: snapshotAtual }
-        );
-        
-        await this.logger.info(
-          `📊 Comparação concluída: ${comparacao.totalChanges} mudanças ` +
-          `(${comparacao.created.length} criados, ${comparacao.modified.length} modificados, ${comparacao.deleted.length} deletados)`
-        );
-
-        const temMudancasReais = comparacao.totalChanges > 0;
-        
-        if (temMudancasReais) {
-          await this.logger.info(`✅ Mudanças reais detectadas no workspace!`);
-          return {
-            workspaceValidado: true,
-            arquivosAlterados: true,
-            comparacao,
-            arquivosModificados: comparacao.modified,
-            arquivosCriados: comparacao.created,
-            arquivosDeletados: comparacao.deleted,
-          };
-        } else if (doneExists) {
-          // Sem mudanças mas tem .done (programador pode ter feito algo que não alterou arquivos)
-          await this.logger.info(`✅ Arquivo .done encontrado (sem mudanças detectadas).`);
-          return {
-            workspaceValidado: true,
-            arquivosAlterados: false,
-            comparacao,
-          };
-        } else {
-          await this.logger.erro(`❌ Nenhuma mudança detectada e nenhum .done encontrado. A IA mentiu.`);
-          return {
-            workspaceValidado: false,
-            mensagem: 'O programador disse que terminou, mas não detectei mudanças no workspace nem arquivo .done.',
-            comparacao,
-          };
-        }
-      } catch (error: any) {
-        await this.logger.erro(`❌ Erro na comparação de snapshots: ${error.message}`);
-        // Fallback para verificação do .done
-      }
-    }
-
-    // 3. Fallback: verificação tradicional do .done
-    if (doneExists) {
-      await this.logger.info(`✅ Arquivo .done encontrado! O programador realmente entregou valor.`);
-      return {
-        workspaceValidado: true,
-        arquivosAlterados: true,
-      };
-    } else {
-      await this.logger.erro(`❌ Workspace analisado, mas nenhum .done foi encontrado. A IA mentiu.`);
+    await this.logger.info(`🔎 Iniciando análise completa do workspace para tarefa [${input.tarefaAtual.id}]...`);
+    
+    // 1. Executar inspeção completa do workspace
+    const inspecaoInput: InspecaoWorkspaceInput = {
+      tarefaAtual: input.tarefaAtual,
+      snapshotInicial: input.snapshotInicial || new Map(),
+      taskDir: input.caminhoTaskDir,
+      rawOutput: input.rawOutput,
+      toolCall: input.toolCall,
+      toolResult: input.toolResult
+    };
+    
+    const inspecaoResult: InspecaoWorkspaceOutput = await this.inspecaoWorkspace.execute(inspecaoInput);
+    
+    if (!inspecaoResult.sucesso) {
+      await this.logger.erro(`❌ Falha na inspeção do workspace: ${inspecaoResult.errosCriticos}`);
       return {
         workspaceValidado: false,
-        mensagem: 'O programador disse que terminou, mas não encontrei artefatos de entrega no disco.',
+        mensagem: `Falha na inspeção: ${inspecaoResult.errosCriticos}`,
+        errosCriticos: inspecaoResult.errosCriticos
+      };
+    }
+    
+    // 2. Avaliar resultados da inspeção
+    const { hasDoneFile, hasRealChanges, fileChanges, evidence } = inspecaoResult;
+    
+    // 3. Tomar decisão baseada em evidências
+    if (hasDoneFile) {
+      // Tem arquivo .done - validação positiva
+      await this.logger.info(`✅ Arquivo .done encontrado! Programador entregou artefato de conclusão.`);
+      
+      if (hasRealChanges) {
+        await this.logger.info(`✅ Mudanças reais detectadas (${fileChanges.total} arquivos). Entrega validada.`);
+      } else {
+        await this.logger.info(`⚠️ Arquivo .done encontrado mas sem alterações detectadas. Pode ser tarefa de análise.`);
+      }
+      
+      return {
+        workspaceValidado: true,
+        arquivosAlterados: hasRealChanges,
+        hasDoneFile,
+        hasRealChanges,
+        fileChanges,
+        evidence
+      };
+    } else if (hasRealChanges) {
+      // Tem alterações mas não tem .done - precisa verificar se é suficiente
+      await this.logger.info(`⚠️ Alterações detectadas (${fileChanges.total} arquivos) mas sem arquivo .done.`);
+      
+      // Verificar se há evidências suficientes mesmo sem .done
+      const temEvidenciasSuficientes = fileChanges.total >= 1; // Pelo menos uma alteração
+      
+      if (temEvidenciasSuficientes) {
+        await this.logger.info(`✅ Alterações suficientes detectadas. Workspace validado mesmo sem .done.`);
+        return {
+          workspaceValidado: true,
+          arquivosAlterados: true,
+          hasDoneFile: false,
+          hasRealChanges: true,
+          fileChanges,
+          evidence
+        };
+      } else {
+        await this.logger.erro(`❌ Alterações insuficientes e sem .done. Programador não entregou valor.`);
+        return {
+          workspaceValidado: false,
+          mensagem: 'Programador não entregou artefato de conclusão (.done) e alterações insuficientes.',
+          hasDoneFile: false,
+          hasRealChanges: true,
+          fileChanges,
+          evidence
+        };
+      }
+    } else {
+      // Sem .done e sem alterações - falha
+      await this.logger.erro(`❌ Nenhum artefato de entrega encontrado. Programador não executou a tarefa.`);
+      return {
+        workspaceValidado: false,
+        mensagem: 'Nenhum arquivo .done encontrado e nenhuma alteração detectada no workspace.',
+        hasDoneFile: false,
+        hasRealChanges: false,
+        fileChanges,
+        evidence
       };
     }
   }

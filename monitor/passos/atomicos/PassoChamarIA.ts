@@ -18,11 +18,20 @@ export interface ChamarIAInput {
 export interface ChamarIAOutput {
   sucesso: boolean;
   respostaRaw: string;
+  rawOutput?: string;
+  toolCall?: Record<string, any>;
+  toolResult?: Record<string, any>;
   erro?: string;
 }
 
 export interface ServicoOpenClaw {
-  executarTurno(input: ChamarIAInput): Promise<{ sucesso: boolean; output: string }>;
+  executarTurno(input: ChamarIAInput): Promise<{ 
+    sucesso: boolean; 
+    output: string;
+    rawOutput?: string;
+    toolCall?: Record<string, any>;
+    toolResult?: Record<string, any>;
+  }>;
 }
 
 export interface DependenciasChamarIA extends DependenciasBase {
@@ -55,6 +64,9 @@ export class PassoChamarIA extends PassoBase<ChamarIAInput, ChamarIAOutput> {
       return {
         sucesso: true,
         respostaRaw: resultado.output,
+        rawOutput: resultado.rawOutput,
+        toolCall: resultado.toolCall,
+        toolResult: resultado.toolResult,
       };
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);

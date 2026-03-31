@@ -25,6 +25,9 @@ export interface FaseProgramadorOutput {
   sucesso: boolean;
   mensagemFinal?: string;
   errosCriticos?: string;
+  rawOutput?: string;
+  toolCall?: Record<string, any>;
+  toolResult?: Record<string, any>;
 }
 
 export interface DependenciasFaseProgramador {
@@ -52,6 +55,11 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
     
     // Prompt inicial injetado no Orquestrador
     let promptAtual = input.planoArquiteto || "Plano Indisponível";
+    
+    // Variáveis para armazenar informações do último turno bem-sucedido
+    let ultimoRawOutput: string | undefined;
+    let ultimoToolCall: Record<string, any> | undefined;
+    let ultimoToolResult: Record<string, any> | undefined;
 
     // Loop de auto-correção do Programador (max 5 tentativas)
     while (!codigoAprovado && tentativa <= 5) {
@@ -66,8 +74,19 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
 
       if (!resultadoIA.sucesso) {
         await this.logger.erro(`💥 Programador falhou na comunicação com OpenClaw.`);
-        return { sucesso: false, errosCriticos: 'OpenClaw falhou ou deu timeout.' };
+        return { 
+          sucesso: false, 
+          errosCriticos: 'OpenClaw falhou ou deu timeout.',
+          rawOutput: ultimoRawOutput,
+          toolCall: ultimoToolCall,
+          toolResult: ultimoToolResult
+        };
       }
+
+      // Salvar informações do turno atual
+      ultimoRawOutput = resultadoIA.rawOutput;
+      ultimoToolCall = resultadoIA.toolCall;
+      ultimoToolResult = resultadoIA.toolResult;
 
       // 2. Passo atômico: Extrair Feedback do Programador
       const passoValidacao = new PassoExtrairValidarJSON<any>({
@@ -99,9 +118,20 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
 
     if (!codigoAprovado) {
       await this.logger.erro(`💥 Programador estourou o limite de 5 turnos.`);
-      return { sucesso: false, errosCriticos: 'Limite de turnos atingido sem conclusão.' };
+      return { 
+        sucesso: false, 
+        errosCriticos: 'Limite de turnos atingido sem conclusão.',
+        rawOutput: ultimoRawOutput,
+        toolCall: ultimoToolCall,
+        toolResult: ultimoToolResult
+      };
     }
 
-    return { sucesso: true };
+    return { 
+      sucesso: true,
+      rawOutput: ultimoRawOutput,
+      toolCall: ultimoToolCall,
+      toolResult: ultimoToolResult
+    };
   }
 }

@@ -26,7 +26,6 @@ import { DependenciasVerificaAtomicidade, VerificaAtomicidadeInput} from './pass
 import { DecomposicaoInput, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioInput, VerificaDominioOutput, DependenciasVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { WorkspaceSnapshotServiceDeps, SnapshotInput, Snapshot, WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
-import { AnaliseProgramadorInput, AnaliseProgramadorOutput } from './passos/macro/FaseAnaliseProgramador';
 import { ConfiguraUsuarioOutput, DependenciasConfiguraUsuario, PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
 import { BuscaTarefaInput, BuscaTarefaOutput, DependenciasBuscaTarefa, PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import { InicializaTarefaOutput, PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
@@ -37,12 +36,15 @@ import { PassoVerificaAtomicidade, VerificaAtomicidadeOutput } from './passos/at
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
 import { DependenciasAnaliseArquiteto, AnaliseArquitetoInput, AnaliseArquitetoOutput, MacroFaseAnaliseArquiteto } from './passos/macro/FaseAnaliseArquiteto';
 import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutput, MacroFaseProgramador } from './passos/macro/FaseProgramador';
-import { DependenciasAnaliseProgramador, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
+import { DependenciasAnaliseProgramador, AnaliseProgramadorInput, AnaliseProgramadorOutput, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
 import { FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
 import { DependenciasExecutarComando, ExecutarComandoInput, ExecutarComandoOutput, PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
 import { FabricaPromptsIA } from './utils/FabricaPrompts';
 import { DependenciasBase } from './passos';
 import { DependenciasFinalizacao } from './passos/macro/FaseFinaliza';
+import { DoneFileServiceDeps } from './services/DoneFileService';
+import { EvidenceServiceDeps } from './services/EvidenceService';
+import { DependenciasInspecaoWorkspace, MacroFaseInspecaoWorkspace } from './passos/macro/FaseInspecaoWorkspace';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -374,25 +376,59 @@ export class OrquestradorTarefas {
         return; // Eject
       }
 
+      // Salvar informações do programador no contexto para análise
+      if (!ctx.resultados) ctx.resultados = {};
+      if (!ctx.resultados.programador) ctx.resultados.programador = {};
+      
+      ctx.resultados.programador.rawOutput = resultProgramador.rawOutput;
+      ctx.resultados.programador.toolCall = resultProgramador.toolCall;
+      ctx.resultados.programador.toolResult = resultProgramador.toolResult;
+
       // ==========================================================
       // FASE 5: INSPEÇÃO, BUILDS E TESTES
       // ==========================================================
 
       await logger.info(`🔎 Programador declarou que terminou. Inspecionando o trabalho...`);
       
+      // Criar serviços de inspeção
+      // Adapter para o módulo path (pathUtil -> path)
+      const pathAdapter = {
+        join: (...parts: string[]) => {
+          if (typeof this.deps.pathUtil?.join === 'function') {
+            return this.deps.pathUtil.join(...parts);
+          }
+          // Fallback simples se pathUtil não tiver join
+          return parts.join('/');
+        }
+      };
+      
+      const doneFileServiceDeps : DoneFileServiceDeps = {
+        logger,
+        fileSystem: this.deps.fileSystem,
+        path: this.deps.pathUtil
+      }
+      // Criar serviços de inspeção
+      const doneFileService = new (await import('./services/DoneFileService')).DoneFileService(doneFileServiceDeps);
+            
+
+      const evidenceServiceDeps : EvidenceServiceDeps = {
+        logger
+      }
+      const evidenceService = new (await import('./services/EvidenceService')).EvidenceService(evidenceServiceDeps);
+      
+      const macroFaseInspecaoWorkspaceDeps : DependenciasInspecaoWorkspace = {
+        logger,
+        snapshotService: this.deps.servicoSnapshot,
+        doneFileService,
+        evidenceService
+      }
+      // Criar fase de inspeção do workspace
+      const faseInspecaoWorkspace : MacroFaseInspecaoWorkspace = new (await import('./passos/macro/FaseInspecaoWorkspace')).MacroFaseInspecaoWorkspace(macroFaseInspecaoWorkspaceDeps);
+      
+      // Criar fase de análise do programador (usando inspeção completa)
       const analisadorDisco : MacroFaseAnaliseProgramador = new MacroFaseAnaliseProgramador({
         logger,
-        arquivos: {
-          existe: async (caminho: string) => {
-            try {
-              await this.deps.fileSystem.access(caminho);
-              return true;
-            } catch {
-              return false;
-            }
-          },
-        },
-        snapshotService: this.deps.servicoSnapshot,
+        inspecaoWorkspace: faseInspecaoWorkspace
       } as DependenciasAnaliseProgramador);
 
       const analise: AnaliseProgramadorOutput = await analisadorDisco.execute({
@@ -400,6 +436,9 @@ export class OrquestradorTarefas {
         caminhoTaskDir: ctx.controle.taskDir || '',
         snapshotInicial,
         diretorioBase: this.deps.config.BASE_DIR,
+        rawOutput: ctx.resultados?.programador?.rawOutput,
+        toolCall: ctx.resultados?.programador?.toolCall,
+        toolResult: ctx.resultados?.programador?.toolResult
       } as AnaliseProgramadorInput);
 
       let mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';
