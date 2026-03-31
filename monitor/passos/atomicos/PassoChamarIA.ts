@@ -11,7 +11,7 @@ import type { DependenciasBase } from '../PassoBase';
 export interface ChamarIAInput {
   prompt: string;
   agente: string;
-  timeoutMs?: number;
+  timeoutMs?: number | 60000;
   arquivosContexto?: string[]; // Arquivos a serem anexados
 }
 

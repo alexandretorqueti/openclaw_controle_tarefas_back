@@ -12,13 +12,19 @@ import type { TarefaCompleta, PlanoDeAnalise } from '../../interfaces';
 
 // Importa os Passos Atômicos que ele vai usar
 import { PassoChamarIA } from '../atomicos/PassoChamarIA';
-import type { ServicoOpenClaw } from '../atomicos/PassoChamarIA';
+import type { 
+  ChamarIAInput, 
+  ChamarIAOutput, 
+  DependenciasChamarIA, 
+  ServicoOpenClaw 
+} from '../atomicos/PassoChamarIA';
 
 import { PassoExtrairValidarJSON } from '../atomicos/PassoExtrairValidarJSON';
 import type { FabricaJSONValidator } from '../atomicos/PassoExtrairValidarJSON';
 
 import { PassoManipularArquivo } from '../atomicos/PassoManipularArquivo';
 import type { ServicoDisco } from '../atomicos/PassoManipularArquivo';
+import { Project } from '@prisma/client';
 
 export interface FaseArquitetoInput {
   tarefaAtual: TarefaCompleta;
@@ -55,22 +61,32 @@ export class MacroFaseArquiteto extends PassoBase<FaseArquitetoInput, FaseArquit
 
   protected async processar(input: FaseArquitetoInput): Promise<FaseArquitetoOutput> {
     await this.logger.info(`🏗️ Fase Arquiteto iniciada para a tarefa [${input.tarefaAtual.id}].`);
-
+    const { 
+      tarefaAtual, 
+      planoAnalise, 
+      promptInicial,
+      caminhoPlanoParaSalvar } : FaseArquitetoInput = input;
     let planoValido = false;
     let tentativa = 1;
-    let promptAtual = input.promptInicial;
-    let resultadoIA;
-
+    let promptAtual: string = input.promptInicial;
+    let resultadoIA: ChamarIAOutput | null = null;
+    const projeto : Project = tarefaAtual.project;
     // Loop de auto-correção interno do Arquiteto (max 3 tentativas)
     while (!planoValido && tentativa <= 3) {
       await this.logger.info(`🔄 Arquiteto: Tentativa ${tentativa}/3`);
 
       // 1. Passo atômico de IA
-      const passoIA = new PassoChamarIA({ logger: this.logger, openClaw: this.openClaw });
+      const passoIA: PassoChamarIA = new PassoChamarIA
+      (
+        { 
+          logger: this.logger, 
+          openClaw: this.openClaw 
+        } as DependenciasChamarIA
+      );
       resultadoIA = await passoIA.execute({
         prompt: promptAtual,
-        agente: 'senior-architect',
-      });
+        agente: projeto.agent,
+      } as ChamarIAInput);
 
       if (!resultadoIA.sucesso) {
         await this.logger.erro(`💥 Arquiteto falhou na comunicação com OpenClaw.`);
