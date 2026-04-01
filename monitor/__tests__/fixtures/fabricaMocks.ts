@@ -139,6 +139,7 @@ export function criarConfigMock(
     STATUS: {
       IN_PROGRESS: 'Em Andamento',
       COMPLETED: 'Concluída',
+      FAILED: 'Falhou',
     },
     ...overrides,
   };

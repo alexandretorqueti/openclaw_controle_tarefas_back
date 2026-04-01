@@ -104,6 +104,14 @@ export interface ControleGeral {
   taskDir?: string | null;
   promptVez?: string | null;
   agenteAlocado?: string | null;
+  
+  // Controle de sessão para correção iterativa
+  sessaoAtiva?: boolean;
+  sessaoId?: string | null;
+  tentativasCorrecao?: number;
+  maxTentativasCorrecao?: number;
+  feedbackPendente?: string | null;
+  instrucoesCorrecao?: string | null;
 }
 
 /** Flags de erro centralizadas (fáceis de checar no mapa de transições) */
@@ -190,6 +198,7 @@ export interface ConfiguracaoMonitor {
   STATUS: {
     IN_PROGRESS: string;
     COMPLETED: string;
+    FAILED: string;
   };
 }
 

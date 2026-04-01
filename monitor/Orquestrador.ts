@@ -443,6 +443,14 @@ export class OrquestradorTarefas {
 
       let mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';
       let novoStatus = ctx.config.STATUS.IN_PROGRESS;
+      let manterSessao = false;
+      let feedbackParaProgramador = '';
+
+      // Inicializar controle de sessão se necessário
+      if (!ctx.controle.tentativasCorrecao) {
+        ctx.controle.tentativasCorrecao = 0;
+        ctx.controle.maxTentativasCorrecao = 3; // Máximo de 3 tentativas de correção
+      }
 
       if (analise.workspaceValidado) {
         // RODA OS BUILDS E TESTES
@@ -473,32 +481,99 @@ export class OrquestradorTarefas {
         if (build.sucesso && testes.sucesso) {
           mensagemFinal = `✅ Tudo verde! Código passou em todos os testes e builds.\n\nLogs:\n${testes.stdout.substring(0, 500)}...`;
           novoStatus = ctx.config.STATUS.COMPLETED;
+          // Sessão pode ser encerrada
+          ctx.controle.sessaoAtiva = false;
+          ctx.controle.feedbackPendente = null;
+          ctx.controle.instrucoesCorrecao = null;
         } else {
-          mensagemFinal = `❌ O código falhou na esteira de CI/CD local!\nBuild: ${build.sucesso ? 'Ok' : 'Falhou'}\nTestes: ${testes.sucesso ? 'Ok' : 'Falhou'}\n\nLogs:\n${(testes.stderr || build.stderr).substring(0, 1000)}`;
-          // Podemos enviar isso de volta para o Programador num loop de auto-correção maior aqui!
+          // Cenário c: Build ou testes falharam
+          const erroBuild = !build.sucesso ? `Build falhou:\n${build.stderr?.substring(0, 500) || 'Erro desconhecido'}` : '';
+          const erroTestes = !testes.sucesso ? `Testes falharam:\n${testes.stderr?.substring(0, 500) || 'Erro desconhecido'}` : '';
+          
+          mensagemFinal = `❌ O código falhou na esteira de CI/CD local!\n${erroBuild}${erroTestes}`;
+          
+          // Preparar feedback específico para o programador
+          feedbackParaProgramador = `O sistema não está buildando/testando corretamente.\n\n`;
+          if (!build.sucesso) {
+            feedbackParaProgramador += `**Erro de build:**\n\`\`\`\n${build.stderr?.substring(0, 300) || 'Erro desconhecido'}\n\`\`\`\n`;
+          }
+          if (!testes.sucesso) {
+            feedbackParaProgramador += `**Erro de testes:**\n\`\`\`\n${testes.stderr?.substring(0, 300) || 'Erro desconhecido'}\n\`\`\`\n`;
+          }
+          feedbackParaProgramador += `\nPor favor, corrija os erros acima e tente novamente.`;
+          
+          // Atualizar análise com informações de falha de build/teste
+          analise.precisaCorrecao = true;
+          analise.tipoFalha = !build.sucesso ? 'BUILD_FALHOU' : 'TESTES_FALHARAM';
+          analise.mensagemCorrecao = feedbackParaProgramador;
+          analise.manterSessao = true;
+          manterSessao = true;
+        }
+      } else if (analise.precisaCorrecao) {
+        // Cenários a, b, d: Precisa de correção específica
+        ctx.controle.tentativasCorrecao += 1;
+        
+        if (ctx.controle.tentativasCorrecao <= ctx.controle.maxTentativasCorrecao!) {
+          // Ainda há tentativas disponíveis
+          await logger.info(`🔄 Tentativa de correção ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao} para o programador.`);
+          
+          feedbackParaProgramador = `${analise.mensagemCorrecao}\n\n${analise.instrucoesEspecificas || ''}`;
+          manterSessao = analise.manterSessao || true;
+          
+          // Armazenar feedback para enviar ao programador
+          ctx.controle.feedbackPendente = feedbackParaProgramador;
+          ctx.controle.instrucoesCorrecao = analise.instrucoesEspecificas;
+          ctx.controle.sessaoAtiva = true;
+          
+          mensagemFinal = `🔄 Correção solicitada: ${analise.tipoFalha}. Tentativa ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}`;
+          novoStatus = ctx.config.STATUS.IN_PROGRESS; // Mantém em progresso
+        } else {
+          // Esgotou tentativas de correção
+          await logger.erro(`❌ Esgotadas ${ctx.controle.maxTentativasCorrecao} tentativas de correção. Encerrando tarefa.`);
+          
+          mensagemFinal = `❌ Tarefa rejeitada após ${ctx.controle.maxTentativasCorrecao} tentativas de correção.\nÚltimo erro: ${analise.mensagemCorrecao}`;
+          novoStatus = ctx.config.STATUS.FAILED; // Marca como falha
+          ctx.controle.sessaoAtiva = false;
+          ctx.controle.feedbackPendente = null;
+          ctx.controle.instrucoesCorrecao = null;
         }
       }
 
       // ==========================================================
-      // FASE 6: FINALIZAÇÃO
+      // FASE 6: FINALIZAÇÃO OU CONTINUAÇÃO DA SESSÃO
       // ==========================================================
 
-      const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
+      if (!manterSessao) {
+        // Encerrar sessão e finalizar tarefa
+        const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
         logger,
         clienteApi: this.deps.clienteApi,
         apiUrl: this.deps.config.API_URL,
         userId: ctx.UserId,
       } as DependenciasFinalizacao);
 
-      const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
-        tarefaAtual: tarefa,
-        novoStatus,
-        mensagemFechamento: mensagemFinal,
-      } as FinalizacaoInput);
+        const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
+          tarefaAtual: tarefa,
+          novoStatus,
+          mensagemFechamento: mensagemFinal,
+        } as FinalizacaoInput);
 
-      if (!finalizacao.sucesso) {
-        await logger.erro('O Orquestrador falhou ao finalizar a tarefa.');
-        return; // Eject
+        if (!finalizacao.sucesso) {
+          await logger.erro('O Orquestrador falhou ao finalizar a tarefa.');
+          return; // Eject
+        }
+      } else {
+        // Sessão precisa ser mantida para correção
+        await logger.info(`🔄 Mantendo sessão ativa para correção. Feedback pendente: ${ctx.controle.feedbackPendente?.substring(0, 100)}...`);
+        
+        // Aqui precisaríamos integrar com o sistema de sessões do OpenClaw
+        // Por enquanto, apenas logamos que a sessão deveria ser mantida
+        await logger.info(`💡 Para implementação completa: integrar com sistema de sessões do OpenClaw para manter sessão ${ctx.controle.sessaoId || 'não definida'} ativa.`);
+        
+        // Em um sistema real, aqui enviaríamos o feedbackParaProgramador de volta para a sessão do OpenClaw
+        if (feedbackParaProgramador) {
+          await logger.info(`📤 Feedback para programador (simulado):\n${feedbackParaProgramador.substring(0, 300)}...`);
+        }
       }
       
       // Se chegamos aqui, o ciclo dessa tarefa chegou ao fim!

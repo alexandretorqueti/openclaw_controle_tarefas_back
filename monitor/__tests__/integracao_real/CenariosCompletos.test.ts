@@ -56,6 +56,7 @@ const CONFIG_BASE = {
   STATUS: {
     IN_PROGRESS: 'Em Andamento',
     COMPLETED: 'Concluída',
+    FAILED: 'Falhou',
   },
 };
 

@@ -34,6 +34,13 @@ export interface AnaliseProgramadorOutput {
   };
   evidence?: any;
   errosCriticos?: string;
+  
+  // Novos campos para controle de sessão e feedback específico
+  precisaCorrecao?: boolean;
+  tipoFalha?: 'SEM_DONE' | 'SEM_ALTERACOES' | 'ALTERACOES_INSUFICIENTES' | 'NADA_FEITO' | 'BUILD_FALHOU' | 'TESTES_FALHARAM';
+  mensagemCorrecao?: string;
+  manterSessao?: boolean;
+  instrucoesEspecificas?: string;
 }
 
 export interface DependenciasAnaliseProgramador {
@@ -82,63 +89,100 @@ export class MacroFaseAnaliseProgramador
     // 2. Avaliar resultados da inspeção
     const { hasDoneFile, hasRealChanges, fileChanges, evidence } = inspecaoResult;
     
-    // 3. Tomar decisão baseada em evidências
+    // 3. Tomar decisão baseada em evidências com feedback específico
     if (hasDoneFile) {
       // Tem arquivo .done - validação positiva
       await this.logger.info(`✅ Arquivo .done encontrado! Programador entregou artefato de conclusão.`);
       
       if (hasRealChanges) {
         await this.logger.info(`✅ Mudanças reais detectadas (${fileChanges.total} arquivos). Entrega validada.`);
+        
+        return {
+          workspaceValidado: true,
+          arquivosAlterados: true,
+          hasDoneFile,
+          hasRealChanges,
+          fileChanges,
+          evidence,
+          precisaCorrecao: false,
+          manterSessao: false // Sessão pode ser encerrada, tarefa completa
+        };
       } else {
-        await this.logger.info(`⚠️ Arquivo .done encontrado mas sem alterações detectadas. Pode ser tarefa de análise.`);
+        // Cenário b: Criou .done mas não alterou arquivos
+        await this.logger.info(`⚠️ Arquivo .done encontrado mas sem alterações detectadas.`);
+        
+        return {
+          workspaceValidado: false,
+          arquivosAlterados: false,
+          hasDoneFile: true,
+          hasRealChanges: false,
+          fileChanges,
+          evidence,
+          precisaCorrecao: true,
+          tipoFalha: 'SEM_ALTERACOES',
+          mensagemCorrecao: 'Você criou o arquivo .done mas não houve alterações nos arquivos do código.',
+          instrucoesEspecificas: 'Por favor, use as ferramentas de edição de código (write, edit) para fazer as alterações necessárias na tarefa. O arquivo .done indica que você finalizou, mas não há mudanças no código para validar.',
+          manterSessao: true // Mantém sessão para correção
+        };
       }
-      
-      return {
-        workspaceValidado: true,
-        arquivosAlterados: hasRealChanges,
-        hasDoneFile,
-        hasRealChanges,
-        fileChanges,
-        evidence
-      };
     } else if (hasRealChanges) {
-      // Tem alterações mas não tem .done - precisa verificar se é suficiente
+      // Tem alterações mas não tem .done
       await this.logger.info(`⚠️ Alterações detectadas (${fileChanges.total} arquivos) mas sem arquivo .done.`);
       
       // Verificar se há evidências suficientes mesmo sem .done
       const temEvidenciasSuficientes = fileChanges.total >= 1; // Pelo menos uma alteração
       
       if (temEvidenciasSuficientes) {
-        await this.logger.info(`✅ Alterações suficientes detectadas. Workspace validado mesmo sem .done.`);
+        // Cenário a: Alterou arquivos mas não criou .done
+        await this.logger.info(`✅ Alterações suficientes detectadas, mas falta .done.`);
+        
         return {
-          workspaceValidado: true,
+          workspaceValidado: false, // Não valida completamente sem .done
           arquivosAlterados: true,
           hasDoneFile: false,
           hasRealChanges: true,
           fileChanges,
-          evidence
+          evidence,
+          precisaCorrecao: true,
+          tipoFalha: 'SEM_DONE',
+          mensagemCorrecao: 'Você alterou arquivos, mas faltou criar o arquivo .done.',
+          instrucoesEspecificas: `Por favor, crie o arquivo .done na pasta da tarefa (${input.caminhoTaskDir}) para indicar que finalizou o trabalho. Use o comando: write { path: "${input.caminhoTaskDir}/.done", content: "Tarefa concluída em ${new Date().toISOString()}" }`,
+          manterSessao: true // Mantém sessão para criação do .done
         };
       } else {
-        await this.logger.erro(`❌ Alterações insuficientes e sem .done. Programador não entregou valor.`);
+        // Alterações insuficientes
+        await this.logger.erro(`❌ Alterações insuficientes e sem .done.`);
+        
         return {
           workspaceValidado: false,
           mensagem: 'Programador não entregou artefato de conclusão (.done) e alterações insuficientes.',
           hasDoneFile: false,
           hasRealChanges: true,
           fileChanges,
-          evidence
+          evidence,
+          precisaCorrecao: true,
+          tipoFalha: 'ALTERACOES_INSUFICIENTES',
+          mensagemCorrecao: 'Alterações detectadas são insuficientes para validar o trabalho.',
+          instrucoesEspecificas: 'Por favor, faça alterações mais significativas no código ou crie o arquivo .done para indicar conclusão.',
+          manterSessao: true // Mantém sessão para mais trabalho
         };
       }
     } else {
-      // Sem .done e sem alterações - falha
-      await this.logger.erro(`❌ Nenhum artefato de entrega encontrado. Programador não executou a tarefa.`);
+      // Cenário d: Nada feito - nem .done nem alterações
+      await this.logger.erro(`❌ Nenhum artefato de entrega encontrado.`);
+      
       return {
         workspaceValidado: false,
         mensagem: 'Nenhum arquivo .done encontrado e nenhuma alteração detectada no workspace.',
         hasDoneFile: false,
         hasRealChanges: false,
         fileChanges,
-        evidence
+        evidence,
+        precisaCorrecao: true,
+        tipoFalha: 'NADA_FEITO',
+        mensagemCorrecao: 'Não detectei nenhuma alteração no código nem arquivo .done criado.',
+        instrucoesEspecificas: 'Por favor, comece a trabalhar na tarefa usando as ferramentas de código (write, edit, exec) ou crie o arquivo .done se já tiver concluído.',
+        manterSessao: true // Mantém sessão para iniciar trabalho
       };
     }
   }

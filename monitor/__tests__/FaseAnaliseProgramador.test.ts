@@ -104,11 +104,12 @@ describe('MacroFaseAnaliseProgramador', () => {
     const resultado = await fase.execute(input);
 
     expect(inspecaoWorkspace.execute).toHaveBeenCalled();
-    // Com a nova lógica: se tem alterações reais (hasRealChanges=true) e pelo menos 1 arquivo alterado,
-    // workspaceValidado pode ser true mesmo sem .done
-    // O teste original esperava false, mas a lógica mudou para ser mais flexível
-    expect(resultado.workspaceValidado).toBe(true); // Agora é true porque tem alterações
+    // Com a nova lógica: se tem alterações mas não tem .done, workspaceValidado é false
+    // e retorna feedback específico para correção
+    expect(resultado.workspaceValidado).toBe(false);
+    expect(resultado.precisaCorrecao).toBe(true);
+    expect(resultado.tipoFalha).toBe('SEM_DONE');
     expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Alterações detectadas'));
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Workspace validado mesmo sem .done'));
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('mas sem arquivo .done'));
   });
 });
