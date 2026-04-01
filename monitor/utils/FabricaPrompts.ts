@@ -9,13 +9,7 @@
 import type { TarefaCompleta } from '../interfaces';
 import { Project } from '@prisma/client';
 
-export interface ContextoProjeto {
-  pastaBase: string;
-  frontendPath?: string;
-  backendPath?: string;
-  frontendPort?: number;
-  backendPort?: number;
-}
+
 
 export class FabricaPromptsIA {
   
@@ -24,7 +18,7 @@ export class FabricaPromptsIA {
   // ==========================================================
   public static gerarPromptArquiteto(
     tarefa: TarefaCompleta,
-    projeto: ContextoProjeto,
+    projeto: Project,
     caminhoPlano: string,
     tipoTarefa: string = 'development',
     listaArquivos: string[] = [],
@@ -270,7 +264,7 @@ REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se 
   // ==========================================================
   // HELPERS
   // ==========================================================
-  private static montarContextoPastas(projeto: ContextoProjeto): string {
+  private static montarContextoPastas(projeto: Project): string {
     let ctx = `- Pasta Base: ${projeto.pastaBase}\n`;
     if (projeto.frontendPath) ctx += `- Caminho Frontend: ${projeto.pastaBase}/${projeto.frontendPath}\n`;
     if (projeto.backendPath) ctx += `- Caminho Backend: ${projeto.pastaBase}/${projeto.backendPath}\n`;

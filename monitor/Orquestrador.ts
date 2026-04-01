@@ -225,7 +225,6 @@ export class OrquestradorTarefas {
           ctx.erros.decomposicao = false;
           ctx.tarefaAtual.isAtomic = true; // Marca a tarefa como atômica para evitar futuras tentativas de decomposição
           await logger.erro('A IA decidiu não decompor a tarefa. A tarefa é atômica, segue fluxo normal.');
-          return; // Tudo certo!
         }
 
         // Mutações explícitas
@@ -236,7 +235,9 @@ export class OrquestradorTarefas {
         }
 
         // Sucesso total na decomposição: A mãe não precisa ser executada (subtasks criadas)
-        return; 
+        if (resultDecomposicao.sucesso && resultDecomposicao.quantidadeSubtarefas > 0) {
+          return; 
+        }
       }
 
       // VERIFICAÇÃO DE DOMÍNIO
@@ -273,7 +274,11 @@ export class OrquestradorTarefas {
 
       await logger.info(`🚀 Tarefa [${tarefa.id}] validada e pronta para a IA! (Fase 4)`);
 
-      const caminhoPlanoParaSalvar: string = this.deps.pathUtil.join(ctx.controle.taskDir || '' as string, 'architect_plan.json' as string);
+      const caminhoPlanoParaSalvar: string = this.deps
+      .pathUtil.join
+      (
+        ctx.controle.taskDir || '' as string, 'architect_plan.json' as string
+      );
 
       // CAPTURAR SNAPSHOT INICIAL (antes do analista)
       await logger.info('📸 Capturando snapshot inicial do workspace...');
@@ -296,11 +301,11 @@ export class OrquestradorTarefas {
 
       const promptArquiteto: string = FabricaPromptsIA.gerarPromptArquiteto(
         tarefa as TarefaCompleta,
-        {
-          pastaBase: this.deps.config.BASE_DIR as string,
-          // Mapeie dados de projetos caso existam
-        },
-        caminhoPlanoParaSalvar
+        ctx.tarefaAtual.project,
+        caminhoPlanoParaSalvar,
+        ctx.analysisPlan?.taskType || 'development',
+        [],
+        ''
       );
 
       const resultArquiteto: FaseArquitetoOutput = await passoArquiteto.execute({

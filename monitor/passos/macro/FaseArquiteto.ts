@@ -68,7 +68,7 @@ export class MacroFaseArquiteto extends PassoBase<FaseArquitetoInput, FaseArquit
       caminhoPlanoParaSalvar } : FaseArquitetoInput = input;
     let planoValido = false;
     let tentativa = 1;
-    let promptAtual: string = input.promptInicial;
+    let promptAtual: string = promptInicial;
     let resultadoIA: ChamarIAOutput | null = null;
     const projeto : Project = tarefaAtual.project;
     // Loop de auto-correção interno do Arquiteto (max 3 tentativas)
@@ -107,7 +107,7 @@ export class MacroFaseArquiteto extends PassoBase<FaseArquitetoInput, FaseArquit
         const passoDisco = new PassoManipularArquivo({ logger: this.logger, disco: this.disco });
         await passoDisco.execute({
           acao: 'escrever',
-          caminhoAbsoluto: input.caminhoPlanoParaSalvar,
+          caminhoAbsoluto: caminhoPlanoParaSalvar,
           conteudo: JSON.stringify(validacao.dados, null, 2),
         });
 

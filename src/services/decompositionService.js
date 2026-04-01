@@ -139,7 +139,8 @@ class DecompositionService {
           sseService.broadcast('task_updated', parentTaskWithSubtasks);
         }
       } catch (sseError) {
-        logger.logError(`Erro ao emitir eventos SSE para decomposição da tarefa ${parentTaskId}:`, sseError);
+        const errorMessage = `Erro ao emitir eventos SSE para decomposição da tarefa ${parentTaskId}: ${sseError.message}`;
+        logger.logError(errorMessage);
         // Não falhar a decomposição por causa do SSE
       }
 
@@ -147,7 +148,8 @@ class DecompositionService {
       return result;
 
     } catch (error) {
-      logger.logError(`Erro na decomposição da tarefa ${parentTaskId}:`, error);
+      const errorMessage = `Erro na decomposição da tarefa ${parentTaskId}: ${error.message}`;
+      logger.logError(errorMessage);
       throw error;
     }
   }
@@ -230,7 +232,8 @@ class DecompositionService {
       };
 
     } catch (error) {
-      logger.logError(`Erro ao verificar decomposição da tarefa ${taskId}:`, error);
+      const errorMessage = `Erro ao verificar decomposição da tarefa ${taskId}: ${error.message}`;
+      logger.logError(errorMessage);
       throw error;
     }
   }
@@ -262,7 +265,8 @@ class DecompositionService {
       return subtasks;
 
     } catch (error) {
-      logger.logError(`Erro ao obter subtarefas da tarefa ${parentTaskId}:`, error);
+      const errorMessage = `Erro ao obter subtarefas da tarefa ${parentTaskId}: ${error.message}`;
+      logger.logError(errorMessage);
       throw error;
     }
   }

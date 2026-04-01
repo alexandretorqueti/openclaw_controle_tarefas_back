@@ -21,7 +21,7 @@
 // ─────────────────────────────────────────────────────
 
 import '../src/bootstrap';
-import container = require('../src/container');
+import * as container from '../src/container';
 import config from '../src/aux/config';
 
 import type {

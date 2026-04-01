@@ -123,40 +123,55 @@ class Logger {
 
   /**
    * Log an error with full context
-   * @param {Error} error - Error object
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
+   * @param {Error|string} error - Error object or error message
+   * @param {Object} [req] - Express request object (optional)
+   * @param {Object} [res] - Express response object (optional)
    * @param {string} errorType - Type of error
    * @param {string} correlationId - Correlation ID
    * @returns {Promise<Object>} Created log entry
    */
   static async logError(error, req, res, errorType = ERROR_TYPES.SYSTEM, correlationId = null) {
-    const clientIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+    // Handle case where error is actually a string message (backward compatibility)
+    let errorObj = error;
+    let message = '';
+    
+    if (typeof error === 'string') {
+      message = error;
+      errorObj = new Error(error);
+    } else if (error instanceof Error) {
+      message = error.message || 'Unknown error';
+    } else {
+      message = String(error);
+      errorObj = new Error(message);
+    }
+    
+    // Handle missing req/res for background jobs
+    const clientIp = req ? (req.ip || req.headers?.['x-forwarded-for'] || req.connection?.remoteAddress) : 'N/A';
     
     return await Logger.createLog({
       level: LOG_LEVELS.ERROR,
-      endpoint: req.originalUrl || req.url,
-      method: req.method,
-      statusCode: res.statusCode || 500,
-      message: error.message || 'Unknown error',
+      endpoint: req ? (req.originalUrl || req.url) : 'background-job',
+      method: req?.method || 'N/A',
+      statusCode: res?.statusCode || 500,
+      message: message,
       errorType,
-      stackTrace: error.stack,
-      requestBody: req.body,
-      requestQuery: req.query,
-      requestParams: req.params,
-      headers: req.headers,
+      stackTrace: errorObj.stack,
+      requestBody: req?.body || null,
+      requestQuery: req?.query || null,
+      requestParams: req?.params || null,
+      headers: req?.headers || null,
       clientIp,
-      userId: req.user?.id || null,
+      userId: req?.user?.id || null,
       correlationId,
-      responseTime: Date.now() - (req._startTime || Date.now())
+      responseTime: req ? (Date.now() - (req._startTime || Date.now())) : 0
     });
   }
 
   /**
    * Log a validation error
    * @param {Object} validationError - Zod validation error
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
+   * @param {Object} [req] - Express request object (optional)
+   * @param {Object} [res] - Express response object (optional)
    * @returns {Promise<Object>} Created log entry
    */
   static async logValidationError(validationError, req, res) {
@@ -169,8 +184,8 @@ class Logger {
   /**
    * Log a database error
    * @param {Error} error - Database error
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
+   * @param {Object} [req] - Express request object (optional)
+   * @param {Object} [res] - Express response object (optional)
    * @returns {Promise<Object>} Created log entry
    */
   static async logDatabaseError(error, req, res) {
@@ -180,8 +195,8 @@ class Logger {
   /**
    * Log a business logic error
    * @param {string} message - Error message
-   * @param {Object} req - Express request object
-   * @param {Object} res - Express response object
+   * @param {Object} [req] - Express request object (optional)
+   * @param {Object} [res] - Express response object (optional)
    * @returns {Promise<Object>} Created log entry
    */
   static async logBusinessError(message, req, res) {

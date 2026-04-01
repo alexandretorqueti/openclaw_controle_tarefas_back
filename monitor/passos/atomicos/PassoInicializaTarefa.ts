@@ -96,7 +96,7 @@ export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, Inic
     tasksDir: string
   ): Promise<{ sucesso: boolean; taskDir?: string }> {
     try {
-      const taskDir = this.pathUtil.join(tasksDir, taskId.toString());
+      const taskDir = tasksDir;
       await this.fileSystem.mkdir(taskDir, { recursive: true });
       await this.logger.info('📁 Diretório de trabalho isolado criado.');
       return { sucesso: true, taskDir };

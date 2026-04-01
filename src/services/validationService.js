@@ -115,7 +115,8 @@ class ValidationService {
           `Timeout na validação da tarefa ${task.id}`
         );
       } catch (error) {
-        this.logger.logError(`Erro na chamada LLM para tarefa ${task.id}:`, error);
+        const errorMessage = `Erro na chamada LLM para tarefa ${task.id}: ${error.message}`;
+        this.logger.logError(errorMessage);
         return this.getFallbackValidation(task);
       }
 
@@ -132,7 +133,8 @@ class ValidationService {
       return validationResult;
 
     } catch (error) {
-      this.logger.logError(`Erro na validação da tarefa ${task.id}:`, error);
+      const errorMessage = `Erro na validação da tarefa ${task.id}: ${error.message}`;
+      this.logger.logError(errorMessage);
       return this.getFallbackValidation(task, error.message);
     }
   }
@@ -268,7 +270,8 @@ class ValidationService {
           ...result
         });
       } catch (error) {
-        this.logger.logError(`Erro na validação em lote da tarefa ${task.id}:`, error);
+        const errorMessage = `Erro na validação em lote da tarefa ${task.id}: ${error.message}`;
+        this.logger.logError(errorMessage);
         results.push({
           taskId: task.id,
           taskTitle: task.title,
