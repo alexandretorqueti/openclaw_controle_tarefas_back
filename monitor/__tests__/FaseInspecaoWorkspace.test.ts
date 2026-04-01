@@ -9,8 +9,7 @@ import { MacroFaseInspecaoWorkspace } from '../passos/macro/FaseInspecaoWorkspac
 const mockLogger = {
   info: jest.fn(),
   erro: jest.fn(),
-  debug: jest.fn(),
-  warn: jest.fn()
+  debug: jest.fn()
 };
 
 // Mock do snapshot service
@@ -29,9 +28,7 @@ const mockDoneFileService = {
   createDoneFile: jest.fn(),
   logger: mockLogger,
   fileSystem: {} as any,
-  path: { join: (...parts: string[]) => parts.join('/') },
-  searchInDirectory: jest.fn(),
-  findRelevantSubdirectories: jest.fn()
+  path: { join: (...parts: string[]) => parts.join('/') }
 };
 
 // Mock do evidence service
@@ -56,7 +53,7 @@ describe('MacroFaseInspecaoWorkspace', () => {
     faseInspecao = new MacroFaseInspecaoWorkspace({
       logger: mockLogger,
       snapshotService: mockSnapshotService,
-      doneFileService: mockDoneFileService,
+      doneFileService: mockDoneFileService as any, // Type assertion para evitar erro com métodos privados
       evidenceService: mockEvidenceService
     });
   });
@@ -297,8 +294,8 @@ describe('MacroFaseInspecaoWorkspace', () => {
       // Executar
       await faseInspecao.execute(inputPadrao);
       
-      // Verificar log de inconsistência
-      expect(mockLogger.warn).toHaveBeenCalledWith(
+      // Verificar log de inconsistência (agora usa info em vez de warn)
+      expect(mockLogger.info).toHaveBeenCalledWith(
         expect.stringContaining('Inconsistências nas evidências')
       );
     });

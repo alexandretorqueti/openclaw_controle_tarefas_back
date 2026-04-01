@@ -138,17 +138,17 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
       await this.logger.info(`📊 Coletando e estruturando evidências...`);
       
       // Cria evidência base
-      let evidence = this.evidenceService.createEmptyEvidence(tarefaAtual.id);
+      let evidence = await this.evidenceService.createEmptyEvidence(tarefaAtual.id);
       
       // Aplica evidência de .done
-      evidence = this.evidenceService.applyDoneFileEvidence(evidence, doneFilePath);
+      evidence = await this.evidenceService.applyDoneFileEvidence(evidence, doneFilePath);
       
       // Aplica evidência de alterações de arquivos
-      evidence = this.evidenceService.applyFileChangesEvidence(evidence, fileChanges);
+      evidence = await this.evidenceService.applyFileChangesEvidence(evidence, fileChanges);
       
       // Aplica evidência de execução (tool calls/results)
       if (toolCall || toolResult) {
-        evidence = this.evidenceService.applyExecutionEvidence(
+        evidence = await this.evidenceService.applyExecutionEvidence(
           evidence,
           toolCall || {},
           toolResult || {},
@@ -164,7 +164,7 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
       
       const consistencia = this.evidenceService.validateEvidenceConsistency(evidence);
       if (!consistencia.valid) {
-        await this.logger.warn(`⚠️ Inconsistências nas evidências: ${consistencia.inconsistencies.join('; ')}`);
+        await this.logger.info(`⚠️ Inconsistências nas evidências: ${consistencia.inconsistencies.join('; ')}`);
       }
       
       // 5. RESUMO FINAL

@@ -320,7 +320,7 @@ export class OrquestradorTarefas {
         logger,
         analiseTarefa: this.deps.servicoAnaliseTarefa,
         snapshot: this.deps.servicoSnapshot,
-        arquivos: this.deps.servicoArquivos,
+        fileSystem: this.deps.fileSystem,
       }
       // FASE DE ANÁLISE DO ARQUITETO (Nova fase)
       const passoAnaliseArquiteto: MacroFaseAnaliseArquiteto = new MacroFaseAnaliseArquiteto(dependenciasAnaliseArquiteto);

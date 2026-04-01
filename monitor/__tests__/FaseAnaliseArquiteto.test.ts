@@ -32,9 +32,9 @@ const mockSnapshot = {
   getModifiedFiles: jest.fn()
 };
 
-// Mock do serviço de arquivos
-const mockArquivos = {
-  existe: jest.fn()
+// Mock do fileSystem para análise do arquiteto
+const mockFileSystemAnalise = {
+  access: jest.fn()
 };
 
 describe('MacroFaseAnaliseArquiteto', () => {
@@ -47,7 +47,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
       logger: mockLogger,
       analiseTarefa: mockAnaliseTarefa,
       snapshot: mockSnapshot,
-      arquivos: mockArquivos
+      fileSystem: mockFileSystemAnalise
     });
   });
   
@@ -78,7 +78,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve analisar resposta do arquiteto quando ele apenas planejou', async () => {
       // Configurar mocks
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -108,7 +108,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
       expect(resultado.planoDetalhado).toBe('Plano detalhado para o desenvolvedor');
       
       // Verificar chamadas
-      expect(mockArquivos.existe).toHaveBeenCalledWith('/tmp/plano-arquiteto.done');
+      expect(mockFileSystemAnalise.access).toHaveBeenCalledWith('/tmp/plano-arquiteto.done');
       expect(mockSnapshot.takeSnapshot).toHaveBeenCalledWith({
         dir: '/test/project',
         ignoreList: ['node_modules', '.git', 'dist', 'build', '.next']
@@ -128,7 +128,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve detectar que arquiteto executou a tarefa (com evidências físicas)', async () => {
       // Configurar mocks
-      mockArquivos.existe.mockResolvedValue(true); // .done file exists
+      mockFileSystemAnalise.access.mockResolvedValue(undefined); // .done file exists
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([
         ['/test/project/file1.ts', 123456790], // Modified
         ['/test/project/newfile.ts', 123456789] // Created
@@ -166,7 +166,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve corrigir análise quando IA diz que executou mas não há evidências', async () => {
       // Configurar mocks - IA diz que executou, mas não há evidências
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -207,7 +207,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
       };
       
       // Configurar mocks - tarefa de análise com .done file
-      mockArquivos.existe.mockResolvedValue(true); // .done file exists
+      mockFileSystemAnalise.access.mockResolvedValue(undefined); // .done file exists
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -237,7 +237,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve passar para programador quando análise falhar', async () => {
       // Configurar mocks - análise falhou
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -268,7 +268,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve lidar com erro no serviço de análise', async () => {
       // Configurar mocks com erro
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -292,7 +292,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
     
     test('deve validar evidências quando arquiteto afirma que já havia executado anteriormente', async () => {
       // Configurar mocks - arquiteto diz que já executou antes
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],
@@ -338,7 +338,7 @@ describe('MacroFaseAnaliseArquiteto', () => {
       };
       
       // Configurar mocks básicos
-      mockArquivos.existe.mockResolvedValue(false);
+      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
       mockSnapshot.takeSnapshot.mockResolvedValue(new Map());
       mockSnapshot.compareSnapshots.mockReturnValue({
         modified: [],

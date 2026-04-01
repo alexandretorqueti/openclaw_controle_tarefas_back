@@ -640,8 +640,8 @@ function configurarMocksSucessoAteAnaliseProgramador(mocks: MocksContainer) {
     });
   });
   
-  // Análise do programador (arquivo .done existe)
-  mocks.servicoDisco.existe.mockResolvedValue(true);
+  // Análise do programador - agora usa DoneFileService via inspecaoWorkspace
+  // O mock de fileSystem já está configurado para retornar arquivo .done
 }
 
 function configurarMocksSucessoAteBuildTestes(mocks: MocksContainer) {
@@ -689,12 +689,33 @@ function configurarMocksSucessoCompleto(mocks: MocksContainer) {
     .mockResolvedValueOnce(snapshotInicial) // Primeira chamada: snapshot inicial
     .mockResolvedValue(snapshotAtual);      // Chamadas subsequentes: snapshot atual
   
+  // Para cenário de sucesso completo, o programador deve ter feito alterações
+  // Configurar para detectar alterações nos arquivos
   mocks.servicoSnapshot.compareSnapshots.mockReturnValue({
-    modified: [],
+    modified: ['/tmp/test_cenarios/src/app.js'],
     created: [],
     deleted: [],
-    totalChanges: 0,
-    hasChanges: false,
+    totalChanges: 1,
+    hasChanges: true,
+  });
+  
+  // Configurar mocks para DoneFileService
+  // Quando listar diretório, retornar arquivo .done
+  mocks.fileSystem.readdir.mockImplementation((path) => {
+    if (path.includes('/tasks')) {
+      // No diretório de tarefas, retornar arquivo .done
+      return Promise.resolve(['1001.done', 'prompt-1001.txt']);
+    }
+    // Para outros diretórios, retornar vazio
+    return Promise.resolve([]);
+  });
+  
+  // Configurar stat para diretórios
+  mocks.fileSystem.stat.mockImplementation((path) => {
+    if (path.includes('/tmp/test_cenarios')) {
+      return Promise.resolve({ isDirectory: () => true });
+    }
+    return Promise.reject(new Error('Arquivo não existe'));
   });
 }
 

@@ -5,30 +5,31 @@
 
 import { DoneFileService } from '../services/DoneFileService';
 
-// Mock do logger
-const mockLogger = {
-  info: jest.fn(),
-  erro: jest.fn(),
-  debug: jest.fn()
-};
-
-// Mock do fileSystem
-const mockFileSystem = {
-  readdir: jest.fn(),
-  access: jest.fn(),
-  stat: jest.fn()
-};
-
-// Mock do path
-const mockPath = {
-  join: jest.fn((...parts) => parts.join('/'))
-};
+// Mocks serão criados fresh para cada teste no beforeEach
 
 describe('DoneFileService', () => {
   let doneFileService: DoneFileService;
+  let mockLogger: any;
+  let mockFileSystem: any;
+  let mockPath: any;
   
   beforeEach(() => {
-    jest.clearAllMocks();
+    // Criar mocks frescos para cada teste
+    mockLogger = {
+      info: jest.fn(),
+      erro: jest.fn(),
+      debug: jest.fn()
+    };
+    
+    mockFileSystem = {
+      readdir: jest.fn(),
+      access: jest.fn(),
+      stat: jest.fn()
+    };
+    
+    mockPath = {
+      join: jest.fn((...parts) => parts.join('/'))
+    };
     
     doneFileService = new DoneFileService({
       logger: mockLogger,
@@ -77,22 +78,32 @@ describe('DoneFileService', () => {
     });
     
     test('deve encontrar .done em subdiretório relevante (terceira prioridade)', async () => {
-      // Configurar mocks - taskDir e projectBase não têm .done, subdir tem
-      mockFileSystem.access
-        .mockResolvedValueOnce(undefined) // taskDir existe
-        .mockResolvedValueOnce(undefined) // projectBase existe
-        .mockResolvedValueOnce(undefined); // subdir existe
+      // Configurar mocks com implementações
+      mockFileSystem.access.mockResolvedValue(undefined);
       
-      mockFileSystem.readdir
-        .mockResolvedValueOnce(['file1.txt']) // taskDir sem .done
-        .mockResolvedValueOnce(['src', 'package.json']) // projectBase sem .done
-        .mockResolvedValueOnce(['src', 'tests', 'node_modules']) // projectBase entries
-        .mockResolvedValueOnce(['.done', 'index.js']); // subdir com .done
+      // Mock readdir baseado no caminho
+      mockFileSystem.readdir.mockImplementation((path) => {
+        if (path === '/task/dir') {
+          return Promise.resolve(['file1.txt']); // taskDir sem .done
+        } else if (path === '/project/base') {
+          return Promise.resolve(['src', 'package.json']); // projectBase sem .done
+        } else if (path === '/project/base/src') {
+          return Promise.resolve(['.done', 'index.js']); // subdir com .done
+        }
+        return Promise.resolve([]);
+      });
       
-      mockFileSystem.stat
-        .mockResolvedValueOnce({ isDirectory: () => true }) // src é diretório
-        .mockResolvedValueOnce({ isDirectory: () => true }) // tests é diretório
-        .mockResolvedValueOnce({ isDirectory: () => false }); // node_modules é ignorado
+      // Mock stat para diretórios
+      mockFileSystem.stat.mockImplementation((path) => {
+        const name = path.split('/').pop() || '';
+        if (name === 'src' || name === 'tests') {
+          return Promise.resolve({ isDirectory: () => true });
+        } else if (name === 'node_modules') {
+          // node_modules é diretório mas deve ser ignorado
+          return Promise.resolve({ isDirectory: () => true });
+        }
+        return Promise.resolve({ isDirectory: () => false });
+      });
       
       // Executar
       const resultado = await doneFileService.findDoneFile('/task/dir', '/project/base');
@@ -218,22 +229,31 @@ describe('DoneFileService', () => {
   
   describe('findRelevantSubdirectories', () => {
     test('deve retornar subdiretórios relevantes excluindo ignorados', async () => {
-      // Configurar mocks sequenciais
+      // Configurar mocks com implementações específicas
       mockFileSystem.access.mockResolvedValue(undefined);
       
-      // Primeira chamada: leitura do diretório base
-      mockFileSystem.readdir
-        .mockResolvedValueOnce(['src', 'node_modules', '.git', 'dist', 'package.json']) // base dir
-        .mockResolvedValueOnce(['utils', 'components']); // src dir
+      // Mock readdir para retornar diferentes valores baseado no caminho
+      mockFileSystem.readdir.mockImplementation((path) => {
+        if (path === '/project') {
+          return Promise.resolve(['src', 'node_modules', '.git', 'dist', 'package.json']);
+        } else if (path === '/project/src') {
+          return Promise.resolve(['utils', 'components']);
+        }
+        return Promise.resolve([]);
+      });
       
-      mockFileSystem.stat
-        .mockResolvedValueOnce({ isDirectory: () => true }) // src
-        .mockResolvedValueOnce({ isDirectory: () => true }) // node_modules (ignorado)
-        .mockResolvedValueOnce({ isDirectory: () => true }) // .git (ignorado)
-        .mockResolvedValueOnce({ isDirectory: () => true }) // dist (ignorado)
-        .mockResolvedValueOnce({ isDirectory: () => false }) // package.json (não é diretório)
-        .mockResolvedValueOnce({ isDirectory: () => true }) // utils
-        .mockResolvedValueOnce({ isDirectory: () => true }); // components
+      // Mock stat para retornar se é diretório baseado no nome
+      mockFileSystem.stat.mockImplementation((path) => {
+        const name = path.split('/').pop() || '';
+        
+        if (name === 'src' || name === 'utils' || name === 'components' || 
+            name === 'node_modules' || name === '.git' || name === 'dist') {
+          return Promise.resolve({ isDirectory: () => true });
+        } else if (name === 'package.json') {
+          return Promise.resolve({ isDirectory: () => false });
+        }
+        return Promise.reject(new Error('Arquivo não existe'));
+      });
       
       const resultado = await (doneFileService as any).findRelevantSubdirectories('/project');
       
@@ -243,6 +263,7 @@ describe('DoneFileService', () => {
       expect(resultado).not.toContain('/project/node_modules');
       expect(resultado).not.toContain('/project/.git');
       expect(resultado).not.toContain('/project/dist');
+      expect(resultado).not.toContain('/project/package.json');
     });
     
     test('deve lidar com erro ao acessar diretório base', async () => {

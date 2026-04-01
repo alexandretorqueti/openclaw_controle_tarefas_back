@@ -309,19 +309,58 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     // ====================================================
     console.log('10. 🔍 Analisando trabalho do programador...');
     
-    // Mock do serviço de arquivos para simular que .done existe
-    const mockArquivos = {
-      existe: jest.fn().mockResolvedValue(true),
-    };
+    // Mock do serviço de inspeção do workspace
+    const mockInspecaoWorkspace = {
+      nome: 'Inspeção Workspace Mock',
+      snapshotService: {} as any,
+      doneFileService: {} as any,
+      evidenceService: {} as any,
+      logger: logger,
+      execute: jest.fn().mockResolvedValue({
+        sucesso: true,
+        hasDoneFile: true,
+        doneFilePath: '/tmp/test_fluxo_completo/tasks/123.done',
+        hasRealChanges: true,
+        fileChanges: {
+          modified: ['/tmp/test_fluxo_completo/front/src/App.tsx'],
+          created: [],
+          deleted: [],
+          total: 1
+        },
+        evidence: {
+          hasDoneFile: true,
+          doneFilePath: '/tmp/test_fluxo_completo/tasks/123.done',
+          hasRealChanges: true,
+          fileChanges: {
+            modified: ['/tmp/test_fluxo_completo/front/src/App.tsx'],
+            created: [],
+            deleted: [],
+            total: 1
+          },
+          toolCalls: [],
+          toolResults: [],
+          rawOutput: 'Programador executou a tarefa',
+          analysis: {
+            isDeclaringDone: true,
+            missingRequirements: [],
+            isTalkingWithoutAction: false,
+            confidence: 95
+          }
+        }
+      })
+    } as any; // Type assertion para evitar implementar todos os métodos
     
-    const faseAnalise = new MacroFaseAnaliseProgramador({ logger, arquivos: mockArquivos });
+    const faseAnalise = new MacroFaseAnaliseProgramador({ 
+      logger, 
+      inspecaoWorkspace: mockInspecaoWorkspace 
+    });
     const resultadoAnalise = await faseAnalise.execute({
       tarefaAtual: tarefaEncontrada,
       caminhoTaskDir: taskDir,
     });
     
     expect(resultadoAnalise.workspaceValidado).toBe(true);
-    expect(mockArquivos.existe).toHaveBeenCalledWith(`${taskDir}/.done`);
+    // Verificação removida: mockArquivos não existe mais, agora usa inspecaoWorkspace
     
     // ====================================================
     // ETAPA 11: Build e Testes

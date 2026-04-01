@@ -47,28 +47,26 @@ export interface ServicoAnaliseTarefa {
   }>;
 }
 
-export interface ServicoArquivos {
-  existe(caminho: string): Promise<boolean>;
-}
-
 export interface DependenciasAnaliseArquiteto {
   logger: Logger;
   analiseTarefa: ServicoAnaliseTarefa;
   snapshot: WorkspaceSnapshotService;
-  arquivos: ServicoArquivos;
+  fileSystem: {
+    access: (path: string) => Promise<void>;
+  };
 }
 
 export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, AnaliseArquitetoOutput> {
   readonly nome = 'Fase Análise do Arquiteto';
   private readonly analiseTarefa: ServicoAnaliseTarefa;
   private readonly snapshot: WorkspaceSnapshotService;
-  private readonly arquivos: ServicoArquivos;
+  private readonly fileSystem: DependenciasAnaliseArquiteto['fileSystem'];
 
   constructor(deps: DependenciasAnaliseArquiteto) {
     super(deps);
     this.analiseTarefa = deps.analiseTarefa;
     this.snapshot = deps.snapshot;
-    this.arquivos = deps.arquivos;
+    this.fileSystem = deps.fileSystem;
   }
 
   public async execute(input: AnaliseArquitetoInput): Promise<AnaliseArquitetoOutput> {
@@ -92,8 +90,18 @@ export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, 
       // 1. VERIFICAR EVIDÊNCIAS FÍSICAS
       await this.logger.info(`📊 Verificando evidências físicas de execução...`);
       
+      // Função auxiliar para verificar se arquivo existe
+      const arquivoExiste = async (caminho: string): Promise<boolean> => {
+        try {
+          await this.fileSystem.access(caminho);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      
       // 1.1. Verificar se arquivo .done existe
-      const existeDoneFile = await this.arquivos.existe(caminhoPlanoArquiteto.replace('.json', '.done'));
+      const existeDoneFile = await arquivoExiste(caminhoPlanoArquiteto.replace('.json', '.done'));
       const snapshotInput : SnapshotInput = {
         dir: diretorioBase,
         ignoreList: ['node_modules', '.git', 'dist', 'build', '.next']
