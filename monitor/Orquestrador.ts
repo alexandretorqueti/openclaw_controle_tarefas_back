@@ -11,6 +11,7 @@
 import type { Logger } from './interfaces/logger';
 
 import type { TarefaCompleta, ConfiguracaoMonitor, ContextoExecucao, ProcessoFantasma } from './interfaces';
+import type { Project } from '@prisma/client';
 
 // Importando a Lógica Pura (Passos Atômicos)
 import { 
@@ -277,7 +278,7 @@ export class OrquestradorTarefas {
       const caminhoPlanoParaSalvar: string = this.deps
       .pathUtil.join
       (
-        ctx.controle.taskDir || '' as string, 'architect_plan.json' as string
+        ctx.controle.taskDir || '' as string, `${tarefa.id}_architect_plan.json` as string
       );
 
       // CAPTURAR SNAPSHOT INICIAL (antes do analista)
@@ -299,13 +300,24 @@ export class OrquestradorTarefas {
         jsonValidator: this.deps.jsonValidator,
       } as DependenciasFaseArquiteto);
 
+      // GERAR LISTA DE ARQUIVOS E SEÇÃO DE COMENTÁRIOS (seguindo lógica do legado)
+      const listaArquivos: string[] = this.gerarListaArquivosParaArquiteto(
+        snapshotInicial,
+        tarefa as TarefaCompleta,
+        ctx.tarefaAtual.project
+      );
+      
+      const secaoComentarios: string = this.gerarSecaoComentariosParaArquiteto(
+        tarefa as TarefaCompleta
+      );
+
       const promptArquiteto: string = FabricaPromptsIA.gerarPromptArquiteto(
         tarefa as TarefaCompleta,
         ctx.tarefaAtual.project,
         caminhoPlanoParaSalvar,
         ctx.analysisPlan?.taskType || 'development',
-        [],
-        ''
+        listaArquivos,
+        secaoComentarios
       );
 
       const resultArquiteto: FaseArquitetoOutput = await passoArquiteto.execute({
@@ -323,7 +335,6 @@ export class OrquestradorTarefas {
       await logger.info('🔍 Analisando resposta do arquiteto...');
       const dependenciasAnaliseArquiteto : DependenciasAnaliseArquiteto = {
         logger,
-        analiseTarefa: this.deps.servicoAnaliseTarefa,
         snapshot: this.deps.servicoSnapshot,
         fileSystem: this.deps.fileSystem,
       }
@@ -340,30 +351,37 @@ export class OrquestradorTarefas {
       const analiseArquiteto: AnaliseArquitetoOutput = await passoAnaliseArquiteto.execute(analiseArquitetoInput);
 
       if (!analiseArquiteto.sucesso) {
-        await logger.erro('A análise do arquiteto falhou. Continuando com fallback...');
+        await logger.erro('A análise do arquiteto falhou. Parando execução...');
+        return;
         // Fallback: passa para programador mesmo com erro
       }
 
       // DECISÃO DE FLUXO BASEADA NA ANÁLISE
-      if (analiseArquiteto.arquitetoExecutou && !analiseArquiteto.precisaProgramador) {
-        await logger.info(`✅ Arquiteto já executou a tarefa (${analiseArquiteto.confianca}% confiança). Finalizando ciclo.`);
-        
+      if (analiseArquiteto.hasRealChanges && analiseArquiteto.existsDoneFile) {
         // Pular programador e ir direto para análise/finalização
-        const mensagemFinal = `✅ Tarefa executada pelo arquiteto: ${analiseArquiteto.detalhesExecucao || 'Implementação concluída'}`;
+        const mensagemFinal = `✅ Tarefa executada pelo arquiteto: Implementação concluída'}`;
         return await this.finalizarTarefa(ctx, tarefa, mensagemFinal, logger);
       }
 
-      await logger.info(`📋 Arquiteto gerou plano (${analiseArquiteto.confianca}% confiança). Passando para programador.`);
+      if (!analiseArquiteto.existsPlanoFile) {
+        await logger.erro('O plano do arquiteto não foi encontrado. Parando execução...');
+        return; // Eject: Plano do arquiteto é essencial para o programador.
+      }
+
+      const planoArquiteto = await this.deps.fileSystem.readFile(caminhoPlanoParaSalvar, 'utf-8');
+
+      await logger.info(`📋 Arquiteto gerou plano). Passando para programador.`);
 
       // PASSO DO PROGRAMADOR (Macro Passo)
       const passoProgramador : MacroFaseProgramador = new MacroFaseProgramador({
         logger,
         openClaw: this.deps.servicoOpenClaw,
         jsonValidator: this.deps.jsonValidator,
+        config: this.deps.config,
       } as DependenciasFaseProgramador);
 
       // Usar plano do arquiteto ou descrição original se análise falhou
-      const planoParaProgramador = analiseArquiteto.planoDetalhado || resultArquiteto.planDetails || tarefa.description;
+      const planoParaProgramador = planoArquiteto || resultArquiteto.planDetails || tarefa.description;
       
       const promptProgramador: string = FabricaPromptsIA.gerarPromptProgramador(
         tarefa as TarefaCompleta,
@@ -593,6 +611,64 @@ export class OrquestradorTarefas {
         await this.deps.servicoLock.releaseLock();
       }
     }
+  }
+
+  /**
+   * Gera lista de arquivos para o arquiteto seguindo lógica do sistema legado
+   * Filtra por domínio (frontend/backend/fullstack) e aplica filtros inteligentes
+   */
+  private gerarListaArquivosParaArquiteto(
+    snapshotInicial: Snapshot,
+    tarefa: TarefaCompleta,
+    project?: Project | null
+  ): string[] {
+    // Converter snapshot para array de caminhos
+    let fileList = Array.from(snapshotInicial.keys());
+    
+    // Aplicar filtro de domínio seguindo lógica do SetupContextStep legado
+    const domain = tarefa.domain?.toUpperCase();
+    
+    if (domain === 'FRONTEND' && project?.frontendPath) {
+      const originalCount = fileList.length;
+      fileList = fileList.filter(file => 
+        file.includes(project.frontendPath) ||
+        file.includes('shared') ||
+        !file.includes('/')
+      );
+      this.deps.logger.info(`🎯 Tarefa FRONTEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+    } else if (domain === 'BACKEND' && project?.backendPath) {
+      const originalCount = fileList.length;
+      fileList = fileList.filter(file => 
+        file.includes(project.backendPath) ||
+        file.includes('prisma') ||
+        file.includes('shared') ||
+        !file.includes('/')
+      );
+      this.deps.logger.info(`🎯 Tarefa BACKEND: Lista reduzida de ${originalCount} para ${fileList.length} arquivos.`);
+    } else {
+      this.deps.logger.info(`🌍 Tarefa FULLSTACK ou domínio não especificado: Enviando todos os ${fileList.length} arquivos.`);
+    }
+    
+    return fileList;
+  }
+
+  /**
+   * Gera seção de comentários para o arquiteto seguindo lógica do sistema legado
+   */
+  private gerarSecaoComentariosParaArquiteto(tarefa: TarefaCompleta): string {
+    let commentsSection = '';
+    
+    if (tarefa.comments && tarefa.comments.length > 0) {
+      commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
+      tarefa.comments.forEach((comment, index) => {
+        const userInfo = comment.user ? `${comment.user.name} (${comment.user.nickname})` : 'Usuário';
+        const timestamp = new Date(comment.createdAt).toLocaleString('pt-BR');
+        commentsSection += `\n${index + 1}. [${timestamp}] ${userInfo}: ${comment.content}`;
+      });
+      this.deps.logger.info(`💬 ${tarefa.comments.length} comentários incluídos no contexto do arquiteto`);
+    }
+    
+    return commentsSection;
   }
 
   /**

@@ -4,7 +4,7 @@ const axios = require('axios');
 const { extractJsonObjects } = require('../utils/jsonUtils'); // Usando seu utilitário
 
 class LlmService {
-  constructor(model = 'phi4:latest', endpoint = 'http://localhost:11434/api/generate') {
+  constructor(model = 'qwen3:4b', endpoint = 'http://localhost:11434/api/generate') {
     this.endpoint = endpoint; // Ajuste para o seu provedor
     this.model = model;
   }

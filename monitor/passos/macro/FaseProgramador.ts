@@ -9,6 +9,7 @@
 import type { Logger } from '../../interfaces/logger';
 import { PassoBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
+import type { ConfiguracaoMonitor } from '../../interfaces/tipos';
 
 import { PassoChamarIA } from '../atomicos/PassoChamarIA';
 import type { ServicoOpenClaw } from '../atomicos/PassoChamarIA';
@@ -34,17 +35,20 @@ export interface DependenciasFaseProgramador {
   logger: Logger;
   openClaw: ServicoOpenClaw;
   jsonValidator: FabricaJSONValidator<any>;
+  config: ConfiguracaoMonitor
 }
 
 export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FaseProgramadorOutput> {
   readonly nome = 'Fase Programador (Codificação)';
   private readonly openClaw: ServicoOpenClaw;
   private readonly jsonValidator: FabricaJSONValidator<any>;
+  private readonly config: ConfiguracaoMonitor;
 
   constructor(deps: DependenciasFaseProgramador) {
     super(deps);
     this.openClaw = deps.openClaw;
     this.jsonValidator = deps.jsonValidator;
+    this.config = deps.config;
   }
 
   protected async processar(input: FaseProgramadorInput): Promise<FaseProgramadorOutput> {
@@ -70,6 +74,7 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
       const resultadoIA = await passoIA.execute({
         prompt: promptAtual,
         agente: 'senior-developer',
+        timeoutMs: this.config.TASK_TIMEOUT_MS
       });
 
       if (!resultadoIA.sucesso) {

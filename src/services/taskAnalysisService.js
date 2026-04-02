@@ -2,7 +2,7 @@
 // Servico de analise de escopo e tipo de tarefas
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
-const llmService = new LlmService('phi4:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
+const llmService = new LlmService('qwen3:4b', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
 const { log } = require('../aux/logger');
 
 class TaskAnalysisService {
@@ -12,7 +12,7 @@ class TaskAnalysisService {
     const prompt = promptFactory.buildTaskAnalysisPrompt(task, project, preAnalysisFile);
 
     // Chama a IA local
-    const modelo = project.modeloAuxiliar || 'phi4:latest';
+    const modelo = project.modeloAuxiliar || 'qwen3:4b';
     llmService.model = modelo; // Atualiza o modelo do serviço antes de chamar a análise
     let analysis = await llmService.analyze(prompt);
     let analise_texto = '';

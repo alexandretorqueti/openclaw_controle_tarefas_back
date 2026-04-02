@@ -15,7 +15,16 @@ import { Snapshot } from '../services/WorkspaceSnapshotService';
 export type TarefaCompleta = Prisma.TaskGetPayload<{
   include: {
     project: true;
-    comments: true;
+    comments: {
+      include: {
+        user: true;
+        replies: {
+          include: {
+            user: true;
+          };
+        };
+      };
+    };
   };
 }>;
 

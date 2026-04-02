@@ -9,7 +9,7 @@ const buildValidationPrompt = require('../utils/promptFactory').buildValidationP
 class ValidationService {
   constructor() {
     this.cache = new Map(); // Cache simples para validações
-    this.defaultModel = 'phi4:latest';
+    this.defaultModel = 'qwen3:4b';
     this.timeoutMs = 10 * 60 * 1000; // 5 minutos
     this.logger = this.createLogger();
   }

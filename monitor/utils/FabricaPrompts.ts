@@ -57,16 +57,13 @@ Título: ${tarefa.title}
 Domínio: ${tarefa.domain || 'FULLSTACK'}
 Descrição: ${tarefa.description}${secaoComentarios}
 
-[REGRAS CRÍTICAS DE SISTEMA]
-- EXPLIQUE SEU RACIOCÍNIO PRIMEIRO: Antes de agir, você DEVE explicar brevemente o seu plano de ação para resolver o problema.
-- AÇÃO: Após raciocinar, aja estritamente utilizando as ferramentas JSON fornecidas (ex: ferramenta 'write').
-- Se a ferramenta 'write' falhar, você DEVE imprimir o plano ou relatório completo no seu output de texto, cercado por tags <PLANO> ... </PLANO>.
-
-${instrucoesPorTipo}
-
-Inicie agora o seu fluxo de trabalho estrito. Comece detalhando seu raciocínio.
+${instrucoesPorTipo}.
 `.trim();
   }
+
+
+
+
 
   // ==========================================================
   // 1.1. Prompt para Análise da Resposta do Arquiteto
@@ -311,13 +308,11 @@ REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se 
     const instrucoes = {
       development: `
 === SEU FLUXO DE TRABALHO OBRIGATÓRIO (DESENVOLVIMENTO) ===
-* Apenas analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
+* Analise a tarefa e decida quais arquivos o Desenvolvedor precisará criar ou alterar.
 * Formule um passo a passo técnico detalhado (ex: "1. No arquivo X, adicione a rota Y").
 * Use a ferramenta 'write' para salvar TODO esse passo a passo EXATAMENTE neste arquivo: ${caminhoPlano}
 * NÃO DÊ MAIS DE UMA OPÇÃO AO DESENVOLVEDOR. SE HOUVER MAIS DE UM CAMINHO ESCOLHA O MELHOR.
 * NÃO PEÇA AO DESENVOLVEDOR PARA REALIZAR TESTES. OS TESTES SERÃO FEITOS EM OUTRA ETAPA.
-* PROIBIDO criar ou editar arquivos de código-fonte.
-* PROIBIDO criar arquivos de status (.done). O seu trabalho é ESTRITAMENTE de planejamento.
 * Assim que o plano for salvo com sucesso, responda APENAS com: "Plano salvo. Passando o bastão para o Desenvolvedor."
       `,
       

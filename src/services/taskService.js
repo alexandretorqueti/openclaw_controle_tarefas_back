@@ -1251,7 +1251,18 @@ class TaskService {
             programadorBack: true,
             programadorFront: true,
             projectType: true,
-            agent: true
+            agent: true,
+            regras: true,
+            frontendPath: true,
+            frontendPort: true,
+            backendPath: true,
+            backendPort: true,
+            repositoryUrl: true,
+            pastaBase: true,
+            frontendBuildCmd: true,
+            backendBuildCmd: true,
+            frontendTestCommand: true,
+            backendTestCommand: true
           }
         },
         dependents: {

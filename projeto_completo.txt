@@ -2507,7 +2507,7 @@ module.exports = ErrorMiddleware;
 // Servico de analise de escopo e tipo de tarefas
 const promptFactory = require('../utils/promptFactory');
 const LlmService = require('./llmService');
-const llmService = new LlmService('phi4:latest', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
+const llmService = new LlmService('qwen3:4b', 'http://localhost:11434/api/generate'); // Especifica o modelo que deseja usar
 const { log } = require('../aux/logger');
 
 class TaskAnalysisService {
@@ -2516,7 +2516,7 @@ class TaskAnalysisService {
     const prompt = promptFactory.buildTaskAnalysisPrompt(task, project, preAnalysisFile);
 
     // Chama a IA local
-    const modelo = project.modeloAuxiliar || 'phi4:latest';
+    const modelo = project.modeloAuxiliar || 'qwen3:4b';
     llmService.model = modelo; // Atualiza o modelo do serviço antes de chamar a análise
     let analysis = await llmService.analyze(prompt);
     log(`🔍 Análise da IA para a tarefa "${task.title}": ${analysis}`);
@@ -4095,7 +4095,7 @@ const buildValidationPrompt = require('../utils/promptFactory').buildValidationP
 class ValidationService {
   constructor() {
     this.cache = new Map(); // Cache simples para validações
-    this.defaultModel = 'phi4:latest';
+    this.defaultModel = 'qwen3:4b';
     this.timeoutMs = 5 * 60 * 1000; // 5 minutos
     this.logger = this.createLogger();
   }
@@ -8688,7 +8688,7 @@ const axios = require('axios');
 const { extractJsonObjects } = require('../utils/jsonUtils'); // Usando seu utilitário
 
 class LlmService {
-  constructor(model = 'phi4:latest', endpoint = 'http://localhost:11434/api/generate') {
+  constructor(model = 'qwen3:4b', endpoint = 'http://localhost:11434/api/generate') {
     this.endpoint = endpoint; // Ajuste para o seu provedor
     this.model = model;
   }

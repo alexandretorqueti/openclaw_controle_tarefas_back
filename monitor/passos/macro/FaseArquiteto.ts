@@ -93,29 +93,8 @@ export class MacroFaseArquiteto extends PassoBase<FaseArquitetoInput, FaseArquit
         return { sucesso: false, errosCriticos: 'OpenClaw falhou ou deu timeout.' };
       }
 
-      // 2. Passo atômico de Validação (Extração de JSON estruturado)
-      const passoValidacao = new PassoExtrairValidarJSON<any>({
-        logger: this.logger,
-        validador: this.jsonValidator,
-      });
-      const validacao = await passoValidacao.execute({ textoBruto: resultadoIA.respostaRaw });
+      planoValido = resultadoIA.sucesso;
 
-      if (validacao.sucesso) {
-        planoValido = true;
-
-        // 3. Passo atômico de escrita no disco (Salva o .md do plano)
-        const passoDisco = new PassoManipularArquivo({ logger: this.logger, disco: this.disco });
-        await passoDisco.execute({
-          acao: 'escrever',
-          caminhoAbsoluto: caminhoPlanoParaSalvar,
-          conteudo: JSON.stringify(validacao.dados, null, 2),
-        });
-
-      } else {
-        await this.logger.erro(`❌ Sintaxe inválida. Preparando correção...`);
-        promptAtual += `\n\n[ERRO DE SINTAXE] Corrija este erro: ${validacao.erroDeSintaxe}`;
-        tentativa++;
-      }
     }
 
     if (!planoValido) {

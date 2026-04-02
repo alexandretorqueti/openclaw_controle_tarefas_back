@@ -458,7 +458,7 @@ class OpenClawService {
         
         const result = await this.execute(
           sessionId, 
-          attempt > 1 ? `${inputMessage}\n\n[RETENTATIVA ${attempt}] A tentativa anterior falhou. Por favor, analise o erro e tente novamente com uma abordagem diferente.` : inputMessage,
+          attempt > 1 ? `[RETENTATIVA ${attempt}] A tentativa anterior falhou. Por favor, analise o erro e tente novamente com uma abordagem diferente.` : inputMessage,
           agent, 
           model, 
           tasksDir, 

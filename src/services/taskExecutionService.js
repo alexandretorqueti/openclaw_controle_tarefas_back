@@ -668,7 +668,7 @@ class TaskExecutionService {
         if (!cmd) {
             await log(`🧠 [Sistema 1] Novo módulo detectado [${app.name}]. IA definindo escopo...`);
             const pkgContent = await fs.readFile(path.join(app.path, 'package.json'), 'utf8');
-            const ai = new LlmService();
+            const ai = new LlmService(project.modeloAuxiliar);
             const decision = await ai.analyze(`Analise este package.json e retorne JSON: {"comando": "string", "escopo": "front|back"}\n\n${pkgContent}`);
             
             cmd = decision?.comando || 'npm start';

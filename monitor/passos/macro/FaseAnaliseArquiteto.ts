@@ -22,34 +22,14 @@ export interface AnaliseArquitetoInput {
 
 export interface AnaliseArquitetoOutput {
   sucesso: boolean;
-  arquitetoExecutou: boolean;
-  precisaProgramador: boolean;
-  confianca: number;
-  detalhesExecucao?: string;
-  planoDetalhado?: string;
-  errosCriticos?: string;
-}
-
-export interface ServicoAnaliseTarefa {
-  analisarRespostaArquiteto(
-    respostaArquiteto: string,
-    tarefa: TarefaCompleta,
-    projeto: Project,
-    evidencias: any
-  ): Promise<{
-    hasExecuted: boolean;
-    hasPlan: boolean;
-    confidence: number;
-    executionDetails: string | null;
-    planDetails: string | null;
-    analysisFailed: boolean;
-    hadExecuted?: boolean;
-  }>;
+  hasRealChanges?: boolean;
+  existsDoneFile?: boolean;
+  existsPlanoFile?: boolean;
 }
 
 export interface DependenciasAnaliseArquiteto {
   logger: Logger;
-  analiseTarefa: ServicoAnaliseTarefa;
+  
   snapshot: WorkspaceSnapshotService;
   fileSystem: {
     access: (path: string) => Promise<void>;
@@ -58,13 +38,13 @@ export interface DependenciasAnaliseArquiteto {
 
 export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, AnaliseArquitetoOutput> {
   readonly nome = 'Fase Análise do Arquiteto';
-  private readonly analiseTarefa: ServicoAnaliseTarefa;
+  
   private readonly snapshot: WorkspaceSnapshotService;
   private readonly fileSystem: DependenciasAnaliseArquiteto['fileSystem'];
 
   constructor(deps: DependenciasAnaliseArquiteto) {
     super(deps);
-    this.analiseTarefa = deps.analiseTarefa;
+    
     this.snapshot = deps.snapshot;
     this.fileSystem = deps.fileSystem;
   }
@@ -101,7 +81,7 @@ export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, 
       };
       
       // 1.1. Verificar se arquivo .done existe
-      const existeDoneFile = await arquivoExiste(caminhoPlanoArquiteto.replace('.json', '.done'));
+      const existeDoneFile = await arquivoExiste(caminhoPlanoArquiteto.replace('_architect_plan.json', '.done'));
       const snapshotInput : SnapshotInput = {
         dir: diretorioBase,
         ignoreList: ['node_modules', '.git', 'dist', 'build', '.next']
@@ -117,83 +97,15 @@ export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, 
       
       await this.logger.info(`📈 Detecção: ${mudancas.modified.length} arquivos modificados, ${mudancas.created.length} criados, .done=${existeDoneFile}`);
       
-      // 2. ANALISAR RESPOSTA DO ARQUITETO COM IA
-      await this.logger.info(`🧠 Analisando resposta do arquiteto com IA...`);
-      
-      const evidencias = {
-        hasRealChanges: temAlteracoesReais,
-        existsDoneFile: existeDoneFile,
-        changes: mudancas
-      };
-      
-      const analiseIA = await this.analiseTarefa.analisarRespostaArquiteto(
-        respostaArquiteto,
-        tarefaAtual,
-        projeto,
-        evidencias
-      );
-      
-      await this.logger.info(`📊 Análise IA: executou=${analiseIA.hasExecuted}, plano=${analiseIA.hasPlan}, confiança=${analiseIA.confidence}%`);
-      
-      // 3. VALIDAÇÃO CRÍTICA: CONFRONTAR IA COM EVIDÊNCIAS FÍSICAS
-      let analiseFinal = analiseIA;
-      
-      if ((analiseIA.hasExecuted && analiseIA.confidence > 70) || existeDoneFile) {
-        await this.logger.info(`🔍 Validando evidências para execução alegada...`);
-        
-        // Para tarefas de análise, evidência pode ser apenas relatório/.done
-        const tipoTarefa = input.planoAnalise?.taskType || 'development';
-        const temEvidencias = existeDoneFile || 
-                            (tipoTarefa === 'analysis' ? true : (temAlteracoesReais || analiseIA.hadExecuted));
-        
-        if (!temEvidencias) {
-          await this.logger.info(`⚠️ Nenhuma evidência encontrada! Corrigindo análise...`);
-          
-          // Corrigir análise: não executou, apenas planejou
-          analiseFinal = {
-            hasExecuted: false,
-            hasPlan: true,
-            confidence: 80,
-            executionDetails: null,
-            planDetails: "Arquiteto gerou plano detalhado, mas não executou alterações (validação de evidências falhou)",
-            analysisFailed: false,
-            hadExecuted: false
-          };
-          
-          await this.logger.info(`📊 Análise corrigida: executou=false, plano=true`);
-        } else {
-          await this.logger.info(`✅ Evidências confirmadas para execução`);
-        }
-      }
-      
-      // 4. DECISÃO DE FLUXO
-      let arquitetoExecutou = false;
-      let precisaProgramador = true;
-      
-      if (analiseFinal.hasExecuted && analiseFinal.confidence > 70) {
-        // Arquiteto já executou a tarefa
-        arquitetoExecutou = true;
-        precisaProgramador = false;
-        await this.logger.info(`✅ Decisão: Arquiteto já executou a tarefa. Finalizando ciclo.`);
-      } else if (analiseFinal.hasPlan && !analiseFinal.analysisFailed) {
-        // Arquiteto gerou plano, precisa do programador
-        arquitetoExecutou = false;
-        precisaProgramador = true;
-        await this.logger.info(`📋 Decisão: Arquiteto gerou plano. Passando para programador.`);
-      } else {
-        // Análise falhou ou resposta inválida
-        arquitetoExecutou = false;
-        precisaProgramador = true;
-        await this.logger.info(`⚠️ Decisão: Análise falhou. Passando para programador com descrição original.`);
-      }
+      // Verificar se tem o arquivo do plano:
+      const existsPlanoFile = await arquivoExiste(caminhoPlanoArquiteto);
+
       
       return {
         sucesso: true,
-        arquitetoExecutou,
-        precisaProgramador,
-        confianca: analiseFinal.confidence,
-        detalhesExecucao: analiseFinal.executionDetails || undefined,
-        planoDetalhado: analiseFinal.planDetails || undefined
+        hasRealChanges: temAlteracoesReais,
+        existsDoneFile: existeDoneFile,
+        existsPlanoFile: existsPlanoFile
       };
       
     } catch (error: unknown) {
@@ -202,10 +114,8 @@ export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, 
       
       return {
         sucesso: false,
-        arquitetoExecutou: false,
-        precisaProgramador: true, // Fallback seguro: passa para programador
-        confianca: 0,
-        errosCriticos: `Erro na análise: ${msg}`
+        hasRealChanges: false,
+        existsDoneFile: false
       };
     }
   }
