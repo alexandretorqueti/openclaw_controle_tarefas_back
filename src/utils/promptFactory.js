@@ -36,7 +36,7 @@ class PromptFactory {
       {
         "taskType": "development" | "analysis" | "automation",
         "requiresReport": true | false,
-        "expectedLayers": ["frontend"],
+        "expectedLayers": ["frontend", "backend"],
         "requiredModifiedLayers": [],
         "mandatoryChecks": ["Verificar configurações", "Gerar relatório de descoberta"],
         "risks": ["Risco de não encontrar o arquivo de configuração"]

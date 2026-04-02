@@ -6,6 +6,8 @@
 
 import type { Project, Task, Prisma } from '@prisma/client';
 import { Snapshot } from '../services/WorkspaceSnapshotService';
+import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
+import { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
 
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
@@ -167,6 +169,8 @@ export interface ResultadosPassos {
     planDetails?: string | null;
     analysisFailed: boolean;
   };
+  resultArquiteto?: FaseArquitetoOutput;
+  resultAnaliseProgramador?: AnaliseProgramadorOutput;
 }
 
 // ═══════════════════════════════════════════════════════

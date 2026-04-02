@@ -37,6 +37,8 @@ export interface FaseArquitetoOutput {
   sucesso: boolean;
   planDetails?: string;
   errosCriticos?: string;
+  caminhoPlanoSalvo?: string;
+  planoArquiteto?: string;
 }
 
 export interface DependenciasFaseArquiteto {

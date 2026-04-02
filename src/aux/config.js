@@ -21,7 +21,7 @@ const MINUTOS = TASK_DEFAULT_TIMEOUT_MINUTES; // For backward compatibility
 const TASK_TIMEOUT_MS = TASK_DEFAULT_TIMEOUT_MINUTES * 60 * 1000;
 const OPENCLAW_EXECUTION_TIMEOUT_MS = parseInt(process.env.OPENCLAW_EXECUTION_TIMEOUT_MS) || 300000; 
 const servicesConfig = JSON.parse(process.env.PROJECT_SERVICES || '[]');
-const LOCK_FILE = process.env.LOCK_FILE_PATH || '/home/alexandrebragatorqueti/tmp/.monitor.lock';
+const LOCK_FILE = process.env.LOCK_FILE_PATH || '~/tmp/.monitor.lock';
 
 
 const STATUS_IN_PROGRESS = process.env.STATUS_IN_PROGRESS;
