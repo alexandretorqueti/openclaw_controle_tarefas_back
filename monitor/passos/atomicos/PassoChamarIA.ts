@@ -13,6 +13,7 @@ export interface ChamarIAInput {
   agente: string;
   timeoutMs: number | 60000;
   arquivosContexto?: string[]; // Arquivos a serem anexados
+  sessionId?: string; // ID de sessão existente para continuar conversação
 }
 
 export interface ChamarIAOutput {

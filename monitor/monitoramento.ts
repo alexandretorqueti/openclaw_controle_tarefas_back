@@ -44,6 +44,13 @@ import { salvarContextoParaDebug } from './utils/debugContexto';
 import { OrquestradorTarefas } from './Orquestrador';
 
 // ─────────────────────────────────────────────────────
+// 3. NOVOS SERVIÇOS PARA FEEDBACK ITERATIVO (TODOs 4 e 6)
+// ─────────────────────────────────────────────────────
+
+import { SessionManagerService } from './services/SessionManagerService';
+import { FeedbackServiceImpl } from './services/FeedbackService';
+
+// ─────────────────────────────────────────────────────
 // 3. ADAPTERS — Conecta ao sistema legado
 // ─────────────────────────────────────────────────────
 
@@ -86,13 +93,15 @@ export interface outputExecutarTurno {
 
 /**
  * Adapter para chamar a API real do OpenClaw usando container legado
+ * Suporte a sessões persistentes para feedback iterativo (TODO 6)
  */
 class ServicoOpenClawLegacy {
   async executarTurno(input: ChamarIAInput): Promise<outputExecutarTurno> {
     const OpenClawService = require('../src/services/openclawService');
     const configuracao = config as ConfiguracaoMonitor;
     
-    const sessionId = `session-${input.agente}-${Date.now()}`;
+    // Usar sessionId fornecido ou gerar novo (TODO 6: persistência de sessão)
+    const sessionId = input.sessionId || `session-${input.agente}-${Date.now()}`;
     const terminalLogFile = null; // não usamos log de terminal para chamadas simples
     const tasksDir = configuracao.TASKS_DIR || '/tmp';
     const projectPath = process.cwd();
@@ -187,7 +196,8 @@ class ServicoAnalistaLegacy implements ServicoAnalistaTarefa {
 
     return {
       sucesso: resultado?.success ?? false,
-      quantidadeSubtarefas: resultado?.subtasksCreated ?? 0,
+      subtasks: resultado?.subtasks ?? [],
+      subtasksCreated: resultado?.subtasksCreated ?? 0,
     };
   }
 }
@@ -359,6 +369,15 @@ Responda APENAS no formato JSON:
       fileSystem: require('fs').promises,
     });
 
+    // ─── Novos serviços para feedback iterativo (TODOs 4 e 6) ───
+    const sessionManager = new SessionManagerService({
+      logger: this.logger,
+    });
+    
+    const feedbackService = new FeedbackServiceImpl({
+      logger: this.logger,
+    });
+
     // ─── Orquestrador Imperativo ───
     this.orquestrador = new OrquestradorTarefas({
       logger: this.logger,
@@ -381,6 +400,9 @@ Responda APENAS no formato JSON:
       servicoDisco: new ServicoDiscoLegacy(),
       jsonValidator: new JsonValidator(),
       gerenciadorFalha: new GerenciadorFalhaLegacy(),
+      // Novos serviços para feedback iterativo (TODOs 4 e 6)
+      sessionManager,
+      feedbackService,
       criarContexto: () => criarContextoLimpo({
         config: configuracao,
         services: {

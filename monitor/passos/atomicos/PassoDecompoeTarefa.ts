@@ -20,7 +20,8 @@ export interface DecomposicaoInput {
 // 2. O QUE SAI
 export interface DecomposicaoOutput {
   sucesso: boolean;
-  quantidadeSubtarefas: number;
+  subtasksCreated: number;
+  subtasks: TarefaCompleta[];
 }
 
 // 3. CONTRATO DO SERVIÇO DE NEGÓCIO
@@ -33,7 +34,7 @@ export interface DependenciasDecompoeTarefa extends DependenciasBase {
 }
 
 // 4. A CLASSE PURA (A Regra de Negócio)
-export class LogicaDecomposicao extends PassoBase<DecomposicaoInput, DecomposicaoOutput> {
+export class PassoDecompoeTarefa extends PassoBase<DecomposicaoInput, DecomposicaoOutput> {
   readonly nome = "Decompõe Tarefa";
   private readonly analista: ServicoAnalistaTarefa;
 
@@ -49,9 +50,9 @@ export class LogicaDecomposicao extends PassoBase<DecomposicaoInput, Decomposica
 
     const resultado = await this.analista.decompor(input.tarefaAtual, input.userId, input.prompt);
 
-    if (resultado.quantidadeSubtarefas > 0) {
+    if (resultado.subtasksCreated > 0) {
       await this.logger.info(
-        `✅ Tarefa-mãe decomposta em ${resultado.quantidadeSubtarefas} subtarefa(s).`
+        `✅ Tarefa-mãe decomposta em ${resultado.subtasksCreated} subtarefa(s).`
       );
     } else {
       await this.logger.info(

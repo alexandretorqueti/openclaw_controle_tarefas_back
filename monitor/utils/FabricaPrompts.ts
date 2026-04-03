@@ -6,6 +6,7 @@
 // Focada em regras claras, determinismo e JSON estruturado.
 // ─────────────────────────────────────────────────────
 
+import { fr } from 'zod/v4/locales';
 import type { TarefaCompleta } from '../interfaces';
 import { Project } from '@prisma/client';
 
@@ -21,16 +22,10 @@ export class FabricaPromptsIA {
     projeto: Project,
     caminhoPlano: string,
     tipoTarefa: string = 'development',
-    listaArquivos: string[] = [],
     secaoComentarios: string = ''
   ): string {
     const ctxFisico = this.montarContextoPastas(projeto);
-    
-    // Filtra arquivos relevantes (máximo 500)
-    const arquivosFiltrados = this.filtrarArquivosRelevantes(listaArquivos);
-    const arquivosTruncados = arquivosFiltrados.slice(0, 500).join('\n');
-    
-    // Contexto de portas
+    // Contexto de portas e pastas do projeto
     let ctxPortas = '';
     if (projeto.frontendPort || projeto.backendPort) {
       ctxPortas = `\n[INFRAESTRUTURA DE PORTAS]\n`;
@@ -39,25 +34,18 @@ export class FabricaPromptsIA {
       ctxPortas += `(Garanta que o código ou as instruções de ambiente .env respeitem estas portas)`;
     }
 
-    // Instruções específicas por tipo de tarefa
-    const instrucoesPorTipo = this.gerarInstrucoesPorTipo(tipoTarefa, caminhoPlano);
-
     return `
-Você é o Arquiteto de Software Líder do projeto.
-Tipo de Tarefa: [${tipoTarefa.toUpperCase()}]
+Analise a tarefa abaixo, leia os arquivos do projeto nas pastas do projeto:
 
-[CONTEXTO DO PROJETO]
-${ctxFisico}${ctxPortas}
-
-[ESTRUTURA DE ARQUIVOS (Primeiros 500 arquivos relevantes)]
-${arquivosTruncados}
-
-[TAREFA ATUAL]
 Título: ${tarefa.title}
 Domínio: ${tarefa.domain || 'FULLSTACK'}
 Descrição: ${tarefa.description}${secaoComentarios}
 
-${instrucoesPorTipo}.
+[Pastas do projeto]
+${ctxFisico}${ctxPortas}
+
+[OBRIGATÓRIO]: Grave sua análise nesse arquivo: ${caminhoPlano}
+
 `.trim();
   }
 

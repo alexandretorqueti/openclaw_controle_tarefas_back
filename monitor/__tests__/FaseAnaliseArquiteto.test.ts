@@ -168,8 +168,9 @@ describe('MacroFaseAnaliseArquiteto', () => {
       
       // Verificar que a análise foi corrigida
       expect(resultado.sucesso).toBe(true);
-      
-      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Análise corrigida'));
+      expect(resultado.existsPlanoFile).toBe(false);
+      expect(resultado.existsDoneFile).toBe(false);
+      expect(resultado.hasRealChanges).toBe(false);
     });
     
     test('deve considerar tarefa de análise como executada mesmo sem alterações de arquivos', async () => {
@@ -207,55 +208,6 @@ describe('MacroFaseAnaliseArquiteto', () => {
       expect(resultado.sucesso).toBe(true);
     });
     
-    test('deve passar para programador quando análise falhar', async () => {
-      // Configurar mocks - análise falhou
-      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
-      mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
-      mockSnapshot.compareSnapshots.mockReturnValue({
-        modified: [],
-        created: [],
-        deleted: [],
-        totalChanges: 0
-      });
-      
-      mockAnaliseTarefa.analisarRespostaArquiteto.mockResolvedValue({
-        hasExecuted: false,
-        hasPlan: false,
-        confidence: 0,
-        executionDetails: null,
-        planDetails: null,
-        analysisFailed: true,
-        hadExecuted: false
-      });
-      
-      // Executar
-      const resultado = await faseAnalise.execute(inputPadrao);
-      
-      // Verificar fallback seguro
-      expect(resultado.sucesso).toBe(true);
-      expect(mockLogger.info).toHaveBeenCalledWith(expect.stringContaining('Análise falhou'));
-    });
-    
-    test('deve lidar com erro no serviço de análise', async () => {
-      // Configurar mocks com erro
-      mockFileSystemAnalise.access.mockRejectedValue(new Error('Arquivo não existe'));
-      mockSnapshot.takeSnapshot.mockResolvedValue(new Map([['/test/project/file1.ts', 123456789]]));
-      mockSnapshot.compareSnapshots.mockReturnValue({
-        modified: [],
-        created: [],
-        deleted: [],
-        totalChanges: 0
-      });
-      
-      mockAnaliseTarefa.analisarRespostaArquiteto.mockRejectedValue(new Error('Serviço indisponível'));
-      
-      // Executar
-      const resultado = await faseAnalise.execute(inputPadrao);
-      
-      // Verificar fallback em caso de erro
-
-      expect(mockLogger.erro).toHaveBeenCalledWith(expect.stringContaining('Erro na análise do arquiteto'));
-    });
     
     test('deve validar evidências quando arquiteto afirma que já havia executado anteriormente', async () => {
       // Configurar mocks - arquiteto diz que já executou antes

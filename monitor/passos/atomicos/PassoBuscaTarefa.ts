@@ -6,6 +6,7 @@
 import { PassoBase } from '../PassoBase';
 import type { DependenciasBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
+import type { Logger } from '../../interfaces/logger';
 
 export interface BuscaTarefaInput {
   nickname: string;
@@ -22,6 +23,7 @@ export interface BuscadorTarefa {
 
 export interface DependenciasBuscaTarefa extends DependenciasBase {
   buscadorTarefa: BuscadorTarefa;
+  logger: Logger
 }
 
 export class PassoBuscaTarefa extends PassoBase<BuscaTarefaInput, BuscaTarefaOutput> {

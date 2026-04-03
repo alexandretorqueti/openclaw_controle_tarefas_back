@@ -3,7 +3,7 @@
 // AVISO: Este teste pode custar tokens e levar tempo considerável
 
 import { PassoDecompoeTarefaAdapter } from '../passos/adapters/DecomposicaoAdapter';
-import { LogicaDecomposicao } from '../passos/atomicos/PassoDecompoeTarefa';
+import { PassoDecompoeTarefa } from '../passos/atomicos/PassoDecompoeTarefa';
 import { FabricaPromptsIA } from '../utils/FabricaPrompts';
 import {
   criarLoggerMock,
@@ -66,7 +66,7 @@ describe('Teste de Integração REAL com IA (Decomposição)', () => {
     // Criar prompt especializado usando a nova fábrica
     const promptDecomposicao = FabricaPromptsIA.gerarPromptDecomposicao(CONFIG_TESTE.TAREFA_MOCK);
 
-    const passoPuro = new LogicaDecomposicao({ logger, analista });
+    const passoPuro = new PassoDecompoeTarefa({ logger, analista });
     
     const input = {
       tarefaAtual: CONFIG_TESTE.TAREFA_MOCK,

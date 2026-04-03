@@ -578,6 +578,3 @@ class OpenClawService {
 }
 
 module.exports = OpenClawService;
-
-module.exports = OpenClawService;
-

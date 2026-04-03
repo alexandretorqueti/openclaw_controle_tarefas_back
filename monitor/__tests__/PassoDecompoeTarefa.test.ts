@@ -1,7 +1,7 @@
 // monitor/__tests__/PassoDecompoeTarefa.test.ts
 
 import { PassoDecompoeTarefaAdapter } from '../passos/adapters/DecomposicaoAdapter';
-import { LogicaDecomposicao } from '../passos/atomicos/PassoDecompoeTarefa';
+import { PassoDecompoeTarefa } from '../passos/atomicos/PassoDecompoeTarefa';
 import {
   criarLoggerMock,
   criarContextoMock,
@@ -22,7 +22,7 @@ describe('PassoDecompoeTarefa', () => {
         quantidadeSubtarefas: 3,
       });
 
-      const passoPuro = new LogicaDecomposicao({ logger, analista });
+      const passoPuro = new PassoDecompoeTarefa({ logger, analista });
       
       const input = {
         tarefaAtual: criarTarefaFake({ id: 999 }),

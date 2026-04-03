@@ -8,7 +8,10 @@ import type { Project, Task, Prisma } from '@prisma/client';
 import { Snapshot } from '../services/WorkspaceSnapshotService';
 import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
 import { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
-
+import { VerificaAtomicidadeOutput } from '../passos/atomicos/PassoVerificaAtomicidade';
+import { DecomposicaoOutput } from '../passos/atomicos/PassoDecompoeTarefa';
+import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
+import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -139,10 +142,8 @@ export interface ErrosCiclo {
 
 /** Resultados específicos de cada passo (Evita o God Object) */
 export interface ResultadosPassos {
-  decomposicao?: {
-    sucesso: boolean;
-    subtasksCreated: number;
-  };
+  atomicidade?: VerificaAtomicidadeOutput;
+  decomposicao?: DecomposicaoOutput;
   inspecao?: {
     doneExists: boolean;
     hasRealChanges?: boolean;
@@ -162,15 +163,10 @@ export interface ResultadosPassos {
     toolFeedback?: string;
     evidence?: unknown;
   };
-  arquiteto?: {
-    hasPlan: boolean;
-    hasExecuted: boolean;
-    confidence: number;
-    planDetails?: string | null;
-    analysisFailed: boolean;
-  };
-  resultArquiteto?: FaseArquitetoOutput;
+  arquiteto?: FaseArquitetoOutput;
   resultAnaliseProgramador?: AnaliseProgramadorOutput;
+  dominio: VerificaDominioOutput;
+  superValidacao: SuperValidacaoOutput
 }
 
 // ═══════════════════════════════════════════════════════

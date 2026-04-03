@@ -24,14 +24,13 @@ import { DependenciasInicializaTarefa, InicializaTarefaInput } from './passos/at
 import { ConfiguraUsuarioInput } from './passos/atomicos/PassoConfiguraUsuario';
 import { PassoVerificaTimeout, VerificaTimeoutInput } from './passos/atomicos/PassoVerificaTimeout';
 import { DependenciasVerificaAtomicidade, VerificaAtomicidadeInput} from './passos/atomicos/PassoVerificaAtomicidade';
-import { DecomposicaoInput, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioInput, VerificaDominioOutput, DependenciasVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { WorkspaceSnapshotServiceDeps, SnapshotInput, Snapshot, WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
 import { ConfiguraUsuarioOutput, DependenciasConfiguraUsuario, PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
 import { BuscaTarefaInput, BuscaTarefaOutput, DependenciasBuscaTarefa, PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import { InicializaTarefaOutput, PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
 import { DependenciasSuperValidacao, PassoSuperValidacao, SuperValidacaoInput, SuperValidacaoOutput } from './passos/atomicos/PassoSuperValidacao';
-import { DependenciasDecompoeTarefa, LogicaDecomposicao } from './passos/atomicos/PassoDecompoeTarefa';
+import { DependenciasDecompoeTarefa, PassoDecompoeTarefa, DecomposicaoOutput, DecomposicaoInput } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { PassoVerificaAtomicidade, VerificaAtomicidadeOutput } from './passos/atomicos/PassoVerificaAtomicidade';
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
@@ -46,6 +45,11 @@ import { DependenciasFinalizacao } from './passos/macro/FaseFinaliza';
 import { DoneFileServiceDeps } from './services/DoneFileService';
 import { EvidenceServiceDeps } from './services/EvidenceService';
 import { DependenciasInspecaoWorkspace, MacroFaseInspecaoWorkspace } from './passos/macro/FaseInspecaoWorkspace';
+import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
+// Novos serviços para gestão de feedback e sessões
+import type { SessionManager, SessionInfo } from './services/SessionManagerService';
+import type { FeedbackService } from './services/FeedbackService';
+import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -70,6 +74,9 @@ export interface DependenciasGlobais {
   jsonValidator: any;
   gerenciadorFalha: any;
   fabricaPrompts?: any; // Para gerar prompts
+  // Novos serviços para feedback iterativo (TODOs 4 e 6)
+  sessionManager?: SessionManager;
+  feedbackService?: FeedbackService;
   // utils
   criarContexto: () => ContextoExecucao;
 }
@@ -78,714 +85,485 @@ export class OrquestradorTarefas {
   constructor(private readonly deps: DependenciasGlobais) {}
 
   /**
+   * Avalia a necessidade de correção baseada na análise do programador
+   * (TODO 4: Centralizar lógica de decisão de feedback)
+   */
+  private async avaliarNecessidadeCorrecao(
+    ctx: ContextoExecucao,
+    analise: AnaliseProgramadorOutput,
+    logger: Logger
+  ): Promise<{
+    precisaCorrecao: boolean;
+    manterSessao: boolean;
+    feedbackParaProgramador: string;
+    sessionId?: string; // ID da sessão para continuar conversação
+    novoTipoFalha?: string;
+  }> {
+    const resultadoPadrao = {
+      precisaCorrecao: false,
+      manterSessao: false,
+      feedbackParaProgramador: '',
+      sessionId: undefined,
+      novoTipoFalha: undefined
+    };
+
+    // Se workspace foi validado, não precisa correção
+    if (analise.workspaceValidado) {
+      await logger.info('✅ Workspace validado - sem necessidade de correção');
+      return resultadoPadrao;
+    }
+
+    // Verificar se temos serviços de feedback disponíveis
+    const temServicosFeedback = this.deps.feedbackService && this.deps.sessionManager;
+    
+    // Inicializar controle de sessão se necessário
+    if (!ctx.controle.tentativasCorrecao) {
+      ctx.controle.tentativasCorrecao = 0;
+      ctx.controle.maxTentativasCorrecao = 3; // Máximo de 3 tentativas de correção
+    }
+
+    // Verificar se ainda temos tentativas disponíveis
+    if (ctx.controle.tentativasCorrecao >= ctx.controle.maxTentativasCorrecao!) {
+      await logger.info(`❌ Esgotadas ${ctx.controle.maxTentativasCorrecao} tentativas de correção`);
+      return {
+        precisaCorrecao: false, // Não tenta mais, vai falhar
+        manterSessao: false,
+        feedbackParaProgramador: '',
+        sessionId: ctx.controle.sessaoId || undefined,
+        novoTipoFalha: analise.tipoFalha
+      };
+    }
+
+    // Determinar se precisa de correção baseado no tipo de falha
+    const precisaCorrecao = analise.precisaCorrecao || 
+                           analise.tipoFalha === 'SEM_DONE' ||
+                           analise.tipoFalha === 'SEM_ALTERACOES' ||
+                           analise.tipoFalha === 'ALTERACOES_INSUFICIENTES' ||
+                           analise.tipoFalha === 'NADA_FEITO' ||
+                           analise.tipoFalha === 'BUILD_FALHOU' ||
+                           analise.tipoFalha === 'TESTES_FALHARAM';
+
+    if (!precisaCorrecao) {
+      await logger.info('⚠️ Análise indica problema, mas não requer correção iterativa');
+      return resultadoPadrao;
+    }
+
+    // Incrementar contador de tentativas
+    ctx.controle.tentativasCorrecao += 1;
+    
+    // Preparar feedback
+    let feedbackParaProgramador = '';
+    let sessionId: string | undefined = undefined;
+    
+    if (temServicosFeedback) {
+      // Usar serviço de feedback para formatar mensagem
+      sessionId = ctx.controle.sessaoId 
+        ? await this.deps.sessionManager!.getOrCreateSession(
+            ctx.tarefaAtual!.id.toString(), 
+            'senior-developer'
+          )
+        : await this.deps.sessionManager!.getOrCreateSession(
+            ctx.tarefaAtual!.id.toString(),
+            'senior-developer'
+          );
+      
+      const sessionInfo = await this.deps.sessionManager!.getSessionInfo(sessionId);
+      
+      feedbackParaProgramador = await this.deps.feedbackService!.formatFeedback(analise, ctx.tarefaAtual!.id.toString(), sessionInfo);
+      
+      // Enviar feedback para a sessão
+      await this.deps.sessionManager!.sendFeedback(sessionId, feedbackParaProgramador);
+      ctx.controle.sessaoId = sessionId;
+      
+    } else {
+      // Fallback: usar mensagem da análise
+      feedbackParaProgramador = analise.mensagemCorrecao || 
+                               'O trabalho precisa de ajustes. Por favor, revise a implementação.';
+    }
+
+    await logger.info(`🔄 Correção solicitada (tentativa ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}): ${analise.tipoFalha}`);
+    
+    return {
+      precisaCorrecao: true,
+      manterSessao: true, // Mantém sessão para correção
+      feedbackParaProgramador,
+      sessionId,
+      novoTipoFalha: analise.tipoFalha
+    };
+  }
+
+
+
+/**
    * O fluxo mestre do Jarbas.
-   * Lemos este método de cima para baixo. Cada if/while
-   * conta a história do ciclo de vida de uma tarefa.
+   * Lemos este método de cima para baixo. Dividido em 3 grandes blocos:
+   * 1. Setup Linear (Lock, Buscas, IA Arquiteto)
+   * 2. Loop de Correção (Programador <-> Análise)
+   * 3. Fechamento (Testes Locais e Finalização)
    */
   public async executarCicloDaTarefa(): Promise<void> {
     const logger = this.deps.logger;
     const ctx = this.deps.criarContexto();
+    
+    // Variáveis de controle do estado final da tarefa
     let mensagemFinal = '';
     let novoStatus = ctx.config.STATUS.IN_PROGRESS;
-    let manterSessao = false;
-    let feedbackParaProgramador = '';
+    let fluxoEncerradoPrematuramente = false;
 
     try {
-      // ==========================================================
-      // PASSO 1: PREPARAÇÃO DO AMBIENTE
-      // ==========================================================
-      // Verifica se tem Lock Ativo, dentro do timeout.
-      // Caso positivo, aborta a tarefa.
-      // Caso negativo, verifica se o lock é antigo (processo fantasma).
-      // Se for fantasma, mata o processo fantasma e limpa o lock.
-      // ==========================================================
-      {
-        await logger.debug('🔄 Iniciando ciclo...');
+      // ────────────────────────────────────────────────────────
+      // BLOCO 1: SETUP LINEAR (Executa estritamente 1 vez)
+      // ────────────────────────────────────────────────────────
+      await logger.debug('🔄 Iniciando ciclo de tarefa...');
 
-        const lockStatus : VerificaLockOutput = await new PassoVerificaLock({
+      // PASSO 1: PREPARAÇÃO DO AMBIENTE (Lock)
+      {
+        const lockStatus = await new PassoVerificaLock({
           logger,
           lockService: this.deps.servicoLock,
           stateService: this.deps.servicoEstado,
-          } as DependenciasVerificaLock
-        ).execute(
-          { timeoutMs: ctx.config.TASK_TIMEOUT_MS } as VerificaLockInput
-        );
+        } as DependenciasVerificaLock).execute({ timeoutMs: ctx.config.TASK_TIMEOUT_MS } as VerificaLockInput);
 
-        // Atualizamos o contexto centralizadamente
         ctx.lockAtivo = lockStatus.lockAtivo;
 
-        if (ctx.lockAtivo) {
-          return; // Lock recente e válido: encerra o ciclo.
-        }
+        if (ctx.lockAtivo) return; // Lock ativo: encerra silenciosamente
 
         if (lockStatus.processoFantasmaPid) {
           ctx.controle.processoFantasma = { pid: lockStatus.processoFantasmaPid } as ProcessoFantasma;
-            await new PassoVerificaTimeout(
-            { logger } as DependenciasBase
-          )
-          .execute(
-            { 
-              processoFantasmaPid: lockStatus.processoFantasmaPid 
-            } as VerificaTimeoutInput
-          );
+          await new PassoVerificaTimeout({ logger } as DependenciasBase)
+            .execute({ processoFantasmaPid: lockStatus.processoFantasmaPid } as VerificaTimeoutInput);
           return; // Eject: Intervenção manual.
         }
       }
-      // ==========================================================
-      // FIM DO PASSO 1
-      // ==========================================================
 
-      // ==========================================================
       // PASSO 2: CONFIGURAÇÃO DO USUÁRIO
-      // Busca usuario de acordo com nickname
-      // Estamos usando no env. o nickname jarbas
-      // ==========================================================
       {
-        const configUsuario: ConfiguraUsuarioOutput = await new PassoConfiguraUsuario({
+        const configUsuario = await new PassoConfiguraUsuario({
           logger,
           userService: this.deps.servicoUsuario,
-        } as DependenciasConfiguraUsuario)
-        .execute({ nickname: ctx.config.MY_USER_NICKNAME } as ConfiguraUsuarioInput);
-  
+        } as DependenciasConfiguraUsuario).execute({ nickname: ctx.config.MY_USER_NICKNAME } as ConfiguraUsuarioInput);
+
         ctx.UserId = configUsuario.userId;
       }
-      // ==========================================================
-      // FIM DO PASSO 2
-      // ==========================================================
 
-
-      // ==========================================================
-      // PASSO 3: BUSCA TAREFA
-      // Busca a primeira tarefa da fila
-      // Status Pendente, no nickname jarbas, seguindo ordem de prioridade
-      // ==========================================================
+      // PASSO 3: BUSCA DE TAREFA
       {
-        const captura: BuscaTarefaOutput = await new PassoBuscaTarefa({
+        const busca = await new PassoBuscaTarefa({
           logger,
           buscadorTarefa: this.deps.servicoBusca,
         } as DependenciasBuscaTarefa).execute({ nickname: ctx.config.MY_USER_NICKNAME } as BuscaTarefaInput);
 
-        ctx.tarefaAtual = captura.tarefa;
-
-        if (!ctx.tarefaAtual) {
-          return; // Fila vazia: O trabalhador aguarda.
+        if (!busca.tarefa) {
+          return; // Eject silencioso: Fila vazia
         }
-      }
-      // ==========================================================
-      // FIM DO PASSO 3
-      // ==========================================================
 
-      // ==========================================================
+        ctx.tarefaAtual = busca.tarefa;
+        await logger.info(`🎯 Tarefa selecionada: ${ctx.tarefaAtual.title} [${ctx.tarefaAtual.id}]`);
+      }
+
       // PASSO 4: INICIALIZAÇÃO DA TAREFA
-      // Coloca a tarefa no status em andamento
-      // coloca a tarefa em isExecution = true
-      // Cria o arquivo de Lock
-      // Atualiza o banco de dados
-      // ==========================================================
       {
-        const inicializacao: InicializaTarefaOutput = await new PassoInicializaTarefa({
+        const inicializacao = await new PassoInicializaTarefa({
           logger,
-          lockService: this.deps.servicoLock,
           stateService: this.deps.servicoEstado,
-          fileSystem: this.deps.fileSystem,
+          lockService: this.deps.servicoLock,
           clienteApi: this.deps.clienteApi,
+          fileSystem: this.deps.fileSystem,
+          config: ctx.config,
           path: this.deps.pathUtil,
         } as DependenciasInicializaTarefa).execute({
           tarefa: ctx.tarefaAtual,
           tasksDir: ctx.config.TASKS_DIR,
           apiUrl: ctx.config.API_URL,
-          statusInProgress: ctx.config.STATUS.IN_PROGRESS,
+          statusInProgress: ctx.config.STATUS.IN_PROGRESS
         } as InicializaTarefaInput);
 
         if (!inicializacao.sucesso) {
           ctx.erros.inicializacao = true;
-          return; // Falha grave no FileSystem ou Lock. Aborta.
+          return; // Falha grave de FileSystem
         }
-        
         ctx.controle.taskDir = inicializacao.taskDir;
       }
-      // ==========================================================
-      // FIM DO PASSO 4
-      // ==========================================================
 
-      
-      // ==========================================================
       // PASSO 5: SUPER VALIDAÇÃO
-      // Usa um modelo de IA local para definir 
-      // {
-      //    "taskType": "development" | "analysis" | "automation",
-      //    "requiresReport": true | false,
-      //    "expectedLayers": ["frontend"],
-      //    "requiredModifiedLayers": [],
-      //    "mandatoryChecks": ["Verificar configurações", "Gerar relatório de descoberta"],
-      //    "risks": ["Risco de não encontrar o arquivo de configuração"]
-      //  }
-      // ==========================================================
       {
-        const superValidacao : SuperValidacaoOutput = await new PassoSuperValidacao(
-          { logger, taskAnalysisService: this.deps.servicoAnaliseTarefa } as DependenciasSuperValidacao 
-        )
-        .execute({ tarefa: ctx.tarefaAtual } as SuperValidacaoInput);
+        const superValidacao = await new PassoSuperValidacao({
+          logger,
+          taskAnalysisService: this.deps.servicoAnaliseTarefa
+        } as DependenciasSuperValidacao).execute({ tarefa: ctx.tarefaAtual } as SuperValidacaoInput);
 
         if (!superValidacao.valido) {
           ctx.erros.fatalIA = true;
           return; // Tarefa malformada
         }
-        
         ctx.analysisPlan = superValidacao.planoDeAnalise || null;
       }
-      // ==========================================================
-      // FIM DO PASSO 5
-      // ==========================================================
 
-
-      // ==========================================================
       // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE
-      // Caso a tarefa não tenha a propriedade isAtomic definida, ou seja, seja desconhecida,
-      // ou seja false, usamos IA para determinar se a tarefa é atômica ou uma "épica" que pode ser decomposta.
-      // ==========================================================
       {
-        let isAtomic = ctx.tarefaAtual.isAtomic;
-        if (isAtomic === undefined || isAtomic === null) {
-          const passoAtomicidade: PassoVerificaAtomicidade = new PassoVerificaAtomicidade(
-          {
+        if (ctx.tarefaAtual.isAtomic === undefined || ctx.tarefaAtual.isAtomic === null) {
+          const resultadoAtomicidade = await new PassoVerificaAtomicidade({
             logger,
             servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
             fabricaPrompts: FabricaPromptsIA,
-          } as DependenciasVerificaAtomicidade);
-
-          const resultadoAtomicidade: VerificaAtomicidadeOutput = await passoAtomicidade
-          .execute({ tarefa: ctx.tarefaAtual } as VerificaAtomicidadeInput);
-          isAtomic = resultadoAtomicidade.isAtomic;
+          } as DependenciasVerificaAtomicidade).execute({ tarefa: ctx.tarefaAtual } as VerificaAtomicidadeInput);
           
-          // Armazena no contexto para uso posterior
-          ctx.tarefaAtual.isAtomic = isAtomic;
-          // TODO: Atualizar a tarefa no datbase
-          await logger.info(
-            `🔍 Atomicidade determinada: ${isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'} ` +
-            `(Certeza: ${resultadoAtomicidade.certeza}%)`
-          );
+          ctx.tarefaAtual.isAtomic = resultadoAtomicidade.isAtomic;
+          await logger.info(`🔍 Atomicidade: ${ctx.tarefaAtual.isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'}`);
         }
       }
-      // ==========================================================
-      // FIM DO PASSO 6
-      // ==========================================================
 
+      // PASSO 7: DECOMPOSIÇÃO
+      if (ctx.tarefaAtual.isAtomic === false) {
+        const decomposicao: DecomposicaoOutput = await new PassoDecompoeTarefa({
+          logger,
+          analista: this.deps.servicoAnalista,
+        } as DependenciasDecompoeTarefa).execute({
+          tarefaAtual: ctx.tarefaAtual,
+          userId: ctx.UserId,
+          prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
+        } as DecomposicaoInput);
 
-      // ==========================================================
-      // PASSO 7: DECOMPOSIÇÃO (se não for atômica)
-      // Se a tarefa for atômica, pula esta fase e vai direto para a verificação de domínio.
-      // Caso contrário, usa um modelo de IA local para decompor a tarefa em subtarefas.
-      // A IA ainda pode considerar que a tarefa é sim atômica e não criar subtarefas.
-      // ==========================================================
-      {
-        if (ctx.tarefaAtual.isAtomic === false) {
-          const passoDecomposicao: LogicaDecomposicao = new LogicaDecomposicao({
-            logger,
-            analista: this.deps.servicoAnalista,
-          } as DependenciasDecompoeTarefa);
-
-          const promptDecomposicao : string = FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual);
-
-          // Executamos o passo puro
-          const resultDecomposicao: DecomposicaoOutput = await passoDecomposicao.execute({
-            tarefaAtual: ctx.tarefaAtual,
-            userId: ctx.UserId,
-            prompt: promptDecomposicao,
-          } as DecomposicaoInput);
-
-          if (resultDecomposicao.sucesso && resultDecomposicao.quantidadeSubtarefas === 0) {
-            ctx.erros.decomposicao = false;
-            ctx.tarefaAtual.isAtomic = true; // Marca a tarefa como atômica para evitar futuras tentativas de decomposição
-            // TODO: Atualizar a tarefa no datbase
-            await logger.erro('A IA decidiu não decompor a tarefa. A tarefa é atômica, segue fluxo normal.');
-          }
-
-          // Mutações explícitas
-          if (!resultDecomposicao.sucesso) {
-            ctx.erros.decomposicao = true;
-            await logger.erro('IA falhou ao decompor tarefa. Abortando esteira.');
-            return; // Deu erro na IA, para o fluxo.
-          }
-
-          // Sucesso total na decomposição: A mãe não precisa ser executada (subtasks criadas)
-          if (resultDecomposicao.sucesso && resultDecomposicao.quantidadeSubtarefas > 0) {
-            return; 
-          }
+        if (!decomposicao.sucesso) {
+          await logger.erro('IA falhou ao decompor tarefa.');
+          return;
         }
+
+        if (decomposicao.subtasksCreated > 0) {
+          return; // Tarefa mãe virou épico, encerra por aqui pois as filhas entrarão na fila
+        }
+        ctx.tarefaAtual.isAtomic = true; // Fallback: IA decidiu não decompor
       }
-      // ==========================================================
-      // FIM DO PASSO 7
-      // ==========================================================
 
-
-      // ==========================================================
       // PASSO 8: DETERMINAÇÃO DE DOMÍNIO
-      // Caso a tarefa ainda não tenha domínio, usa um modelo de IA local para determinar o domínio.
-      // ==========================================================
       {
-        const dominio: VerificaDominioOutput = await new PassoVerificaDominio({
+        const dominio = await new PassoVerificaDominio({
           logger,
           gerenciadorFalha: this.deps.gerenciadorFalha,
           servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
           fabricaPrompts: FabricaPromptsIA,
-        } as DependenciasVerificaDominio).execute(
-        {
+        } as DependenciasVerificaDominio).execute({
           tarefa: ctx.tarefaAtual,
           userId: ctx.UserId,
-          configFalha: {
-            apiUrl: ctx.config.API_URL,
-            tasksDir: ctx.config.TASKS_DIR,
-            errorDir: ctx.config.ERROR_DIR,
-          },
+          configFalha: { apiUrl: ctx.config.API_URL, tasksDir: ctx.config.TASKS_DIR, errorDir: ctx.config.ERROR_DIR }
         } as VerificaDominioInput);
 
-        if (!dominio.dominioValido) {
-          ctx.erros.dominio = true;
-          return; // Eject: Tarefa atômica sem domínio.
-        }
-
-        // Se domínio foi determinado pela LLM, armazena no contexto
-        if (dominio.dominio) {
-          ctx.tarefaAtual.domain = dominio.dominio;
-          // TODO: Atualizar a tarefa no datbase
-          await logger.info(`✅ Domínio armazenado no contexto: ${dominio.dominio}`);
-        }
+        if (!dominio.dominioValido) return;
+        if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
       }
-      // ==========================================================
-      // FIM DO PASSO 8
-      // ==========================================================
 
+      // CAPTURA DO SNAPSHOT INICIAL (Pré-Arquiteto)
+      {
+        const snapshotService = new WorkspaceSnapshotService({ logger, fileSystem: this.deps.fileSystem } as WorkspaceSnapshotServiceDeps);
+        ctx.initialSnapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
+      }
+
+      // PASSO 9: FASE DO ARQUITETO
      
-
-      // ==========================================================
-      // PASSO 9: FASE DO ARQUITETO REALIZAR A ANALISE
-      // O analista irá analisar a tarefa, o plano de análise e o snapshot inicial para criar um plano detalhado de implementação.
-      // O analista eventualmente pode decidir realizar a tarefa e não enviar para o programador
-      // ==========================================================
       {
-        await logger.info(`🚀 Tarefa [${ctx.tarefaAtual.id}] validada e pronta para a IA!`);
-
-        const caminhoPlanoParaSalvar: string = this.deps
-        .pathUtil.join
-        (
-          ctx.controle.taskDir || '' as string, `${ctx.tarefaAtual.id}_architect_plan.json` as string
-        );
-
-        // CAPTURAR SNAPSHOT INICIAL (antes do analista)
-        await logger.info('📸 Capturando snapshot inicial do workspace...');
-        const snapshotService: WorkspaceSnapshotService = new WorkspaceSnapshotService({
-          logger,
-          fileSystem: this.deps.fileSystem,
-        } as WorkspaceSnapshotServiceDeps);
-        const snapshotInicial: Snapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
-        ctx.initialSnapshot = snapshotInicial;
-        await logger.info(`✅ Snapshot inicial capturado: ${snapshotInicial.size} arquivos`);
-
-
-        // PASSO DO ARQUITETO (Macro Passo)
-        const passoArquiteto: MacroFaseArquiteto = new MacroFaseArquiteto({
-          logger,
-          openClaw: this.deps.servicoOpenClaw,
-          disco: this.deps.servicoDisco,
-          jsonValidator: this.deps.jsonValidator,
-        } as DependenciasFaseArquiteto);
-
-        // GERAR LISTA DE ARQUIVOS E SEÇÃO DE COMENTÁRIOS (seguindo lógica do legado)
-        const listaArquivos: string[] = this.gerarListaArquivosParaArquiteto(
-          snapshotInicial,
-          ctx.tarefaAtual,
-          ctx.tarefaAtual.project
-        );
         
-        const secaoComentarios: string = this.gerarSecaoComentariosParaArquiteto(
-          ctx.tarefaAtual
-        );
-
-        const promptArquiteto: string = FabricaPromptsIA.gerarPromptArquiteto(
-          ctx.tarefaAtual,
-          ctx.tarefaAtual.project,
-          caminhoPlanoParaSalvar,
-          ctx.analysisPlan?.taskType || 'development',
-          listaArquivos,
-          secaoComentarios
-        );
-
-        const resultArquiteto: FaseArquitetoOutput = await passoArquiteto.execute({
-          tarefaAtual: ctx.tarefaAtual,
-          planoAnalise: ctx.analysisPlan,
-          promptInicial: promptArquiteto,
-          caminhoPlanoParaSalvar,
-        } as FaseArquitetoInput);
-
-        ctx.resultados.resultArquiteto = {...resultArquiteto, caminhoPlanoSalvo: caminhoPlanoParaSalvar};
-
-        if (!resultArquiteto.sucesso) {
-          await logger.erro('O Arquiteto falhou criticamente.');
-          return; // Eject
-        }
-      }
-      // ==========================================================
-      // FIM DO PASSO 9
-      // ==========================================================
-
-      // ==========================================================
-      // PASSO 10: FASE DE ANÁLISE DO ARQUITETO
-      // Usamos a IA para avaliar o que o arquiteto fez.
-      // Caso ele tenha feito um plano, mandamos para o programador. Caso ele tenha
-      // decidido implementar direto, vamos para a fase de inspeção/finalização.
-      // ==========================================================
-      {
-        await logger.info('🔍 Analisando resposta do arquiteto...');
-        const dependenciasAnaliseArquiteto : DependenciasAnaliseArquiteto = {
-          logger,
-          snapshot: this.deps.servicoSnapshot,
-          fileSystem: this.deps.fileSystem,
-        }
-        // FASE DE ANÁLISE DO ARQUITETO (Nova fase)
-        const passoAnaliseArquiteto: MacroFaseAnaliseArquiteto = new MacroFaseAnaliseArquiteto(dependenciasAnaliseArquiteto);
-        const analiseArquitetoInput: AnaliseArquitetoInput = {
-          tarefaAtual: ctx.tarefaAtual,
-          planoAnalise: ctx.analysisPlan,
-          respostaArquiteto: ctx.resultados.resultArquiteto?.planDetails || '',
-          caminhoPlanoArquiteto: ctx.resultados.resultArquiteto?.caminhoPlanoSalvo || '',
-          snapshotInicial: ctx.initialSnapshot,
-          diretorioBase: this.deps.config.BASE_DIR,
-        };
-        const analiseArquiteto: AnaliseArquitetoOutput = await passoAnaliseArquiteto.execute(analiseArquitetoInput);
-
-        if (!analiseArquiteto.sucesso) {
-          await logger.erro('A análise do arquiteto falhou. Parando execução...');
-          return;
-          // Fallback: passa para programador mesmo com erro
-        }
-
-        // DECISÃO DE FLUXO BASEADA NA ANÁLISE
-        if (analiseArquiteto.hasRealChanges && analiseArquiteto.existsDoneFile) {
-          // Pular programador e ir direto para análise/finalização
-          const mensagemFinal = `✅ Tarefa executada pelo arquiteto: Implementação concluída'}`;
-          return await this.finalizarTarefa(ctx, ctx.tarefaAtual, mensagemFinal, logger);
-        }
-
-        if (!analiseArquiteto.existsPlanoFile) {
-          await logger.erro('O plano do arquiteto não foi encontrado. Parando execução...');
-          return; // Eject: Plano do arquiteto é essencial para o programador.
-        }
-
-        const planoArquiteto = await this.deps.fileSystem.readFile(ctx.resultados.resultArquiteto?.caminhoPlanoSalvo || '', 'utf-8');
-        ctx.resultados.resultArquiteto.planoArquiteto = planoArquiteto;
-        await logger.info(`📋 Arquiteto gerou plano). Passando para programador.`);
-      }
-      // ==========================================================
-      // FIM DO PASSO 10
-      // ==========================================================
-
-      // ==========================================================
-      // PASSO 11: FASE DO PROGRAMADOR
-      // O programador irá receber o plano do arquiteto e implementar a solução.
-      // Ele pode usar ferramentas (ex: acesso ao disco, terminal, etc) para isso.
-      // O resultado do programador é o que ele fez (rawOutput), 
-      // as ferramentas que usou (toolCall/toolResult) e um feedback textual (toolFeedback).
-      // ==========================================================
-      {
-        const passoProgramador : MacroFaseProgramador = new MacroFaseProgramador({
-          logger,
-          openClaw: this.deps.servicoOpenClaw,
-          jsonValidator: this.deps.jsonValidator,
+        const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
+          clienteApi: this.deps.clienteApi,
           config: this.deps.config,
-        } as DependenciasFaseProgramador);
-
-        // Usar plano do arquiteto ou descrição original se análise falhou
-        const planoParaProgramador = ctx.resultados.resultArquiteto.planoArquiteto || ctx.resultados.resultArquiteto.planDetails || ctx.tarefaAtual.description;
+          disco: this.deps.servicoDisco,
+          fabricaPrompts: FabricaPromptsIA,
+          fileSystem: this.deps.fileSystem,
+          jsonValidator: this.deps.jsonValidator,
+          openClaw: this.deps.servicoOpenClaw,
+          snapshot: this.deps.servicoSnapshot,
+          logger,
+          pathUtil: this.deps.pathUtil,
+          servicoDisco: this.deps.servicoDisco,
+          servicoSnapshot: this.deps.servicoSnapshot,
+          servicoOpenClaw: this.deps.servicoOpenClaw
+        } as DependenciasArquitetoEAnaliseArquiteto)
         
-        const promptProgramador: string = FabricaPromptsIA.gerarPromptProgramador(
-          ctx.tarefaAtual,
-          planoParaProgramador,
-          ctx.controle.taskDir || '' as string
-        );
 
-        const resultProgramador: FaseProgramadorOutput = await passoProgramador.execute({
+        // TODO TERMINAR AQUI
+        const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
           tarefaAtual: ctx.tarefaAtual,
-          planoArquiteto: promptProgramador,
+          erroerroerpreprepreprep: ctx.erro,
+        } as AnaliseArquitetoEAnaliseArquitetoInput);
+
+
+      }
+
+
+      // ────────────────────────────────────────────────────────
+      // BLOCO 2: LOOP DE CORREÇÃO (Programador <-> Análise)
+      // ────────────────────────────────────────────────────────
+      
+      let precisaCorrecao = true;
+      let falhaIrreversivelNoProgramador = false;
+      ctx.controle.tentativasCorrecao = 0;
+      ctx.controle.maxTentativasCorrecao = 3;
+
+      // Só entra no loop se o arquiteto não encerrou a tarefa sozinho
+      while (!fluxoEncerradoPrematuramente && precisaCorrecao && ctx.controle.tentativasCorrecao < ctx.controle.maxTentativasCorrecao!) {
+        ctx.controle.tentativasCorrecao++;
+        await logger.info(`🔄 Iniciando iteração do Programador: ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}`);
+
+        // PASSO 11: FASE DO PROGRAMADOR
+        const planoParaProgramador = ctx.resultados.arquiteto.planoArquiteto || ctx.tarefaAtual.description;
+        const resultProgramador = await new MacroFaseProgramador({
+          logger, openClaw: this.deps.servicoOpenClaw, jsonValidator: this.deps.jsonValidator, config: this.deps.config
+        } as DependenciasFaseProgramador).execute({
+          tarefaAtual: ctx.tarefaAtual,
+          planoArquiteto: FabricaPromptsIA.gerarPromptProgramador(ctx.tarefaAtual, planoParaProgramador, ctx.controle.taskDir || ''),
+          sessionId: ctx.controle.sessaoId,
+          feedbackPendente: ctx.controle.feedbackPendente
         } as FaseProgramadorInput);
 
         if (!resultProgramador.sucesso) {
-          await logger.erro('O Programador falhou ou estourou o limite de turnos.');
-          return; // Eject
+          falhaIrreversivelNoProgramador = true;
+          mensagemFinal = '❌ Programador falhou ou estourou limites de turnos na execução.';
+          novoStatus = ctx.config.STATUS.FAILED;
+          break; // Quebra o loop, vai direto para finalização
         }
 
-        // Salvar informações do programador no contexto para análise
-        if (!ctx.resultados) ctx.resultados = {};
-        if (!ctx.resultados.programador) ctx.resultados.programador = {};
-        
-        ctx.resultados.programador.rawOutput = resultProgramador.rawOutput;
-        ctx.resultados.programador.toolCall = resultProgramador.toolCall;
-        ctx.resultados.programador.toolResult = resultProgramador.toolResult;
-      }
-      // ==========================================================
-      // FIM DO PASSO 11
-      // ==========================================================
+        ctx.resultados.programador = resultProgramador;
 
+        // PASSO 12: ANÁLISE DO TRABALHO (Inspeção)
+        const faseInspecaoWorkspace = new (await import('./passos/macro/FaseInspecaoWorkspace')).MacroFaseInspecaoWorkspace({
+          logger, snapshotService: this.deps.servicoSnapshot, 
+          doneFileService: new (await import('./services/DoneFileService')).DoneFileService({ logger, fileSystem: this.deps.fileSystem, path: this.deps.pathUtil }),
+          evidenceService: new (await import('./services/EvidenceService')).EvidenceService({ logger })
+        } as DependenciasInspecaoWorkspace);
 
-      
-      // ==========================================================
-      // PASSO 12: FASE DE ANÁLISE DO PROGRAMADOR
-      // Usamos a IA para analisar o que o programador fez.
-      // Se o programador implementou uma solução completa, vamos para a fase de finalização.
-      // Caso contrário, podemos optar por dar feedback para o programador tentar corrigir ou melhorar.
-      // TODO: esse controle de feedback está sendo feito dentro do passo.
-      //       Podemos trazer essa lógica para cá.
-      // ==========================================================
-      {
-        await logger.info(`🔎 Programador declarou que terminou. Inspecionando o trabalho...`);
-        
-        // Criar serviços de inspeção
-        // Adapter para o módulo path (pathUtil -> path)
-        const pathAdapter = {
-          join: (...parts: string[]) => {
-            if (typeof this.deps.pathUtil?.join === 'function') {
-              return this.deps.pathUtil.join(...parts);
-            }
-            // Fallback simples se pathUtil não tiver join
-            return parts.join('/');
-          }
-        };
-        
-        const doneFileServiceDeps : DoneFileServiceDeps = {
-          logger,
-          fileSystem: this.deps.fileSystem,
-          path: this.deps.pathUtil
-        }
-        // Criar serviços de inspeção
-        const doneFileService = new (await import('./services/DoneFileService')).DoneFileService(doneFileServiceDeps);
-              
-
-        const evidenceServiceDeps : EvidenceServiceDeps = {
-          logger
-        }
-        const evidenceService = new (await import('./services/EvidenceService')).EvidenceService(evidenceServiceDeps);
-        
-        const macroFaseInspecaoWorkspaceDeps : DependenciasInspecaoWorkspace = {
-          logger,
-          snapshotService: this.deps.servicoSnapshot,
-          doneFileService,
-          evidenceService
-        }
-        // Criar fase de inspeção do workspace
-        const faseInspecaoWorkspace : MacroFaseInspecaoWorkspace = new (await import('./passos/macro/FaseInspecaoWorkspace')).MacroFaseInspecaoWorkspace(macroFaseInspecaoWorkspaceDeps);
-        
-        // Criar fase de análise do programador (usando inspeção completa)
-        const analisadorDisco : MacroFaseAnaliseProgramador = new MacroFaseAnaliseProgramador({
-          logger,
-          inspecaoWorkspace: faseInspecaoWorkspace
-        } as DependenciasAnaliseProgramador);
-
-        const analise: AnaliseProgramadorOutput = await analisadorDisco.execute({
+        const analise = await new MacroFaseAnaliseProgramador({
+          logger, inspecaoWorkspace: faseInspecaoWorkspace
+        } as DependenciasAnaliseProgramador).execute({
           tarefaAtual: ctx.tarefaAtual,
           caminhoTaskDir: ctx.controle.taskDir || '',
           snapshotInicial: ctx.initialSnapshot,
           diretorioBase: this.deps.config.BASE_DIR,
-          rawOutput: ctx.resultados?.programador?.rawOutput,
-          toolCall: ctx.resultados?.programador?.toolCall,
-          toolResult: ctx.resultados?.programador?.toolResult
+          rawOutput: ctx.resultados.programador.rawOutput,
+          toolCall: ctx.resultados.programador.toolCall,
+          toolResult: ctx.resultados.programador.toolResult
         } as AnaliseProgramadorInput);
-        ctx.resultados.resultAnaliseProgramador = {...analise};
-        mensagemFinal = 'Trabalho do Programador rejeitado (nenhuma mudança confirmada).';
-        novoStatus = ctx.config.STATUS.IN_PROGRESS;
-        manterSessao = false;
-        feedbackParaProgramador = '';
 
-        // Inicializar controle de sessão se necessário
-        if (!ctx.controle.tentativasCorrecao) {
-          ctx.controle.tentativasCorrecao = 0;
-          ctx.controle.maxTentativasCorrecao = 3; // Máximo de 3 tentativas de correção
-        }
-      }
-      // ==========================================================
-      // FIM DO PASSO 12
-      // ==========================================================
+        ctx.resultados.resultAnaliseProgramador = analise;
 
+        // MOTOR DE DECISÃO: Continua o loop ou encerra?
+        const avaliacao = await this.avaliarNecessidadeCorrecao(ctx, analise, logger);
 
-      
-      // ==========================================================
-      // PASSO 13: TESTES
-      // Fazemos o Build e testes da aplicação, se houver.
-      // Caso contrário, vamos para a fase de finalização.
-      // Em caso de erro de build/testes, enviamos feedback para o programador.
-      // ==========================================================
-      {
-        if (ctx.resultados.resultAnaliseProgramador.workspaceValidado) {
-          // Se não tem nenhum comando de build e teste, vamos para a fase de finalização
-
-          if (!(ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendBuildCmd)
-          && !(ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendBuildCmd)
-          && !(ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendTestCommand)
-          && !(ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendTestCommand)
-          ) {
-            await logger.info('⚠️ Nenhum comando de build/teste declarado. Vamos para a fase de finalização.');
-          } else {
-            // RODA OS BUILDS E TESTES
-            const executor: PassoExecutarComando = new PassoExecutarComando({ 
-              logger,
-              terminal: {
-                executar: async (comando, opcoes) => {
-                  const { exec } = require('child_process');
-                  const { promisify } = require('util');
-                  const execAsync = promisify(exec);
-                  return execAsync(comando, opcoes);
-                }
-              }
-            } as DependenciasExecutarComando);
-            
-            // Verifica se tem os comandos de builds do front ou do back
-            // TODO: BACKEND e FRONTEND devem ser um enum
-            let build: ExecutarComandoOutput = { sucesso: false, stdout: '', stderr: '' };
-            if (
-              (ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendBuildCmd)
-              || (ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendBuildCmd)
-             ) {
-              await logger.info('🔨 Iniciando rotina de Build/Lint...');
-              build = await executor.execute({
-                comando: ctx.tarefaAtual.domain === 'BACKEND' ? ctx.project?.backendBuildCmd : ctx.project?.frontendBuildCmd, // ou tsc --noEmit, dependendo do repositório configurado
-                diretorioDeTrabalho: this.deps.config.BASE_DIR, 
-              } as ExecutarComandoInput);
-            }
-
-            // Verifica se tem os comandos de testes do front ou do back
-            let testes: ExecutarComandoOutput = { sucesso: false, stdout: '', stderr: '' };
-            if (
-              (ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendTestCommand)
-              || (ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendTestCommand)
-             ) {
-              await logger.info('🧪 Iniciando rotina de Testes Automatizados...');
-              testes = await executor.execute({
-                comando: ctx.tarefaAtual.domain === 'BACKEND' ? ctx.project?.backendTestCommand : ctx.project?.frontendTestCommand,
-                diretorioDeTrabalho: this.deps.config.BASE_DIR, 
-              } as ExecutarComandoInput);
-            }
-
-            if (build.sucesso && testes.sucesso) {
-              mensagemFinal = `✅ Tudo verde! Código passou em todos os testes e builds.\n\nLogs:\n${testes.stdout.substring(0, 500)}...`;
-              novoStatus = ctx.config.STATUS.COMPLETED;
-              // Sessão pode ser encerrada
-              ctx.controle.sessaoAtiva = false;
-              ctx.controle.feedbackPendente = null;
-              ctx.controle.instrucoesCorrecao = null;
-            } else {
-              // Cenário c: Build ou testes falharam
-              const erroBuild = !build.sucesso ? `Build falhou:\n${build.stderr?.substring(0, 500) || 'Erro desconhecido'}` : '';
-              const erroTestes = !testes.sucesso ? `Testes falharam:\n${testes.stderr?.substring(0, 500) || 'Erro desconhecido'}` : '';
-              
-              mensagemFinal = `❌ O código falhou na esteira de CI/CD local!\n${erroBuild}${erroTestes}`;
-              
-              // Preparar feedback específico para o programador
-              feedbackParaProgramador = `O sistema não está buildando/testando corretamente.\n\n`;
-              if (!build.sucesso) {
-                feedbackParaProgramador += `**Erro de build:**\n\`\`\`\n${build.stderr?.substring(0, 300) || 'Erro desconhecido'}\n\`\`\`\n`;
-              }
-              if (!testes.sucesso) {
-                feedbackParaProgramador += `**Erro de testes:**\n\`\`\`\n${testes.stderr?.substring(0, 300) || 'Erro desconhecido'}\n\`\`\`\n`;
-              }
-              feedbackParaProgramador += `\nPor favor, corrija os erros acima e tente novamente.`;
-              
-              // Atualizar análise com informações de falha de build/teste
-              ctx.resultados.resultAnaliseProgramador.precisaCorrecao = true;
-              ctx.resultados.resultAnaliseProgramador.tipoFalha = !build.sucesso ? 'BUILD_FALHOU' : 'TESTES_FALHARAM';
-              ctx.resultados.resultAnaliseProgramador.mensagemCorrecao = feedbackParaProgramador;
-              ctx.resultados.resultAnaliseProgramador.manterSessao = true;
-              manterSessao = true;
-            }
-          }
-        } else if (ctx.resultados.resultAnaliseProgramador.precisaCorrecao) {
-          // Cenários a, b, d: Precisa de correção específica
-          ctx.controle.tentativasCorrecao += 1;
-          
-          if (ctx.controle.tentativasCorrecao <= ctx.controle.maxTentativasCorrecao!) {
-            // Ainda há tentativas disponíveis
-            await logger.info(`🔄 Tentativa de correção ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao} para o programador.`);
-            
-            feedbackParaProgramador = `${ctx.resultados.resultAnaliseProgramador.mensagemCorrecao}\n\n${ctx.resultados.resultAnaliseProgramador.instrucoesEspecificas || ''}`;
-            manterSessao = ctx.resultados.resultAnaliseProgramador.manterSessao || true;
-            
-            // Armazenar feedback para enviar ao programador
-            ctx.controle.feedbackPendente = feedbackParaProgramador;
-            ctx.controle.instrucoesCorrecao = ctx.resultados.resultAnaliseProgramador.instrucoesEspecificas;
+        if (avaliacao.precisaCorrecao) {
+          // Prepara contexto para a PRÓXIMA volta do loop
+          ctx.controle.feedbackPendente = avaliacao.feedbackParaProgramador;
+          if (avaliacao.sessionId) {
+            ctx.controle.sessaoId = avaliacao.sessionId;
             ctx.controle.sessaoAtiva = true;
-            
-            mensagemFinal = `🔄 Correção solicitada: ${ctx.resultados.resultAnaliseProgramador.tipoFalha}. Tentativa ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}`;
-            novoStatus = ctx.config.STATUS.IN_PROGRESS; // Mantém em progresso
+          }
+          await logger.info(`🔄 Correção solicitada. Motivo: ${avaliacao.novoTipoFalha}.`);
+          // O loop while vai girar de novo pois precisaCorrecao continua true
+        } else {
+          // Sai do loop. Ou deu sucesso (validado) ou falhou por limite de tentativas
+          precisaCorrecao = false; 
+          
+          if (analise.workspaceValidado) {
+            mensagemFinal = '✅ Trabalho validado. Prosseguindo para testes locais.';
+            novoStatus = ctx.config.STATUS.IN_PROGRESS; // Continua em progresso para a Fase 3
           } else {
-            // Esgotou tentativas de correção
-            await logger.erro(`❌ Esgotadas ${ctx.controle.maxTentativasCorrecao} tentativas de correção. Encerrando tarefa.`);
-            
-            mensagemFinal = `❌ Tarefa rejeitada após ${ctx.controle.maxTentativasCorrecao} tentativas de correção.\nÚltimo erro: ${ctx.resultados.resultAnaliseProgramador.mensagemCorrecao}`;
-            novoStatus = ctx.config.STATUS.FAILED; // Marca como falha
-            ctx.controle.sessaoAtiva = false;
-            ctx.controle.feedbackPendente = null;
-            ctx.controle.instrucoesCorrecao = null;
+            falhaIrreversivelNoProgramador = true;
+            mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise.mensagemCorrecao}`;
+            novoStatus = ctx.config.STATUS.FAILED;
           }
         }
       }
-      // ==========================================================
-      // FIM DO PASSO 13
-      // ==========================================================
 
-      // ==========================================================
-      // PASSO 14: FINALIZAÇÃO DA TAREFA
-      // A tarefa deve ser colocada no status correto,
-      // isExecuting dela e dos parentes devem ser desmarcados
-      // Se o pai não tiver outras tarefas pendentes, deve ser colocado no status finalizado
-      // Isso vale para o avô, e toda a árvore de tarefas 
-      // ==========================================================
-      {
-        await logger.debug('🔄 Finalizando tarefa...');
+      // Verificação pós-loop de tentativas
+      if (precisaCorrecao && ctx.controle.tentativasCorrecao >= ctx.controle.maxTentativasCorrecao!) {
+         falhaIrreversivelNoProgramador = true;
+         mensagemFinal = `❌ Tarefa abortada: Limite de ${ctx.controle.maxTentativasCorrecao} correções atingido.`;
+         novoStatus = ctx.config.STATUS.FAILED;
+      }
 
-        if (!manterSessao) {
-          // Encerrar sessão e finalizar tarefa
-          const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
+
+      // ────────────────────────────────────────────────────────
+      // BLOCO 3: FECHAMENTO (Testes Locais e Finalização da Fila)
+      // ────────────────────────────────────────────────────────
+
+      // PASSO 13: TESTES (Só roda se não houve falha irreversível antes e se não encerrou no arquiteto)
+      if (!fluxoEncerradoPrematuramente && !falhaIrreversivelNoProgramador) {
+        const executor = new PassoExecutarComando({ 
+          logger, 
+          terminal: {
+            executar: async (comando, opcoes) => {
+              const { exec } = require('child_process');
+              const { promisify } = require('util');
+              return promisify(exec)(comando, opcoes);
+            }
+          }
+        } as DependenciasExecutarComando);
+
+        let buildSucesso = true;
+        let testesSucesso = true;
+        let logsErro = '';
+
+        // Executa Build
+        if ((ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendBuildCmd) || (ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendBuildCmd)) {
+          await logger.info('🔨 Executando Build/Lint...');
+          const build = await executor.execute({ comando: ctx.tarefaAtual.domain === 'BACKEND' ? ctx.project.backendBuildCmd : ctx.project.frontendBuildCmd, diretorioDeTrabalho: this.deps.config.BASE_DIR } as ExecutarComandoInput);
+          buildSucesso = build.sucesso;
+          if (!buildSucesso) logsErro += `Erro de Build:\n${build.stderr}\n`;
+        }
+
+        // Executa Testes
+        if ((ctx.tarefaAtual.domain === 'BACKEND' && ctx.project?.backendTestCommand) || (ctx.tarefaAtual.domain === 'FRONTEND' && ctx.project?.frontendTestCommand)) {
+          await logger.info('🧪 Executando Testes...');
+          const testes = await executor.execute({ comando: ctx.tarefaAtual.domain === 'BACKEND' ? ctx.project.backendTestCommand : ctx.project.frontendTestCommand, diretorioDeTrabalho: this.deps.config.BASE_DIR } as ExecutarComandoInput);
+          testesSucesso = testes.sucesso;
+          if (!testesSucesso) logsErro += `Erro de Testes:\n${testes.stderr}\n`;
+        }
+
+        if (buildSucesso && testesSucesso) {
+          mensagemFinal = `✅ Tudo verde! Código passou nos testes e builds.`;
+          novoStatus = ctx.config.STATUS.COMPLETED;
+        } else {
+          // Falha nos testes causa falha na tarefa (não volta para o loop de IA local)
+          mensagemFinal = `❌ Pipeline Local Falhou!\n${logsErro.substring(0, 500)}`;
+          novoStatus = ctx.config.STATUS.FAILED;
+        }
+      }
+
+      // PASSO 14: FINALIZAÇÃO
+      if (!fluxoEncerradoPrematuramente) {
+        await logger.debug('🔄 Encerrando a tarefa e limpando sessões...');
+
+        // Fecha a sessão no OpenClaw, se existir
+        if (ctx.controle.sessaoId && this.deps.sessionManager) {
+          try {
+            await this.deps.sessionManager.closeSession(ctx.controle.sessaoId);
+            ctx.controle.sessaoId = null;
+            ctx.controle.sessaoAtiva = false;
+          } catch (error) {
+            await logger.erro(`Erro ao fechar sessão no OpenClaw: ${error}`);
+          }
+        }
+        
+        const finalizacao = await new MacroFaseFinalizacao({
           logger,
           clienteApi: this.deps.clienteApi,
           apiUrl: this.deps.config.API_URL,
           userId: ctx.UserId,
-        } as DependenciasFinalizacao);
+        } as DependenciasFinalizacao).execute({
+          tarefaAtual: ctx.tarefaAtual,
+          novoStatus,
+          mensagemFechamento: mensagemFinal,
+        } as FinalizacaoInput);
 
-          const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
-            tarefaAtual: ctx.tarefaAtual,
-            novoStatus,
-            mensagemFechamento: mensagemFinal,
-          } as FinalizacaoInput);
-
-          if (!finalizacao.sucesso) {
-            await logger.erro('O Orquestrador falhou ao finalizar a tarefa.');
-            return; // Eject
-          }
+        if (!finalizacao.sucesso) {
+          await logger.erro('O Orquestrador falhou gravemente ao persistir a finalização da tarefa na API.');
         } else {
-          // Sessão precisa ser mantida para correção
-          await logger.info(`🔄 Mantendo sessão ativa para correção. Feedback pendente: ${ctx.controle.feedbackPendente?.substring(0, 100)}...`);
-          
-          // Aqui precisaríamos integrar com o sistema de sessões do OpenClaw
-          // Por enquanto, apenas logamos que a sessão deveria ser mantida
-          await logger.info(`💡 Para implementação completa: integrar com sistema de sessões do OpenClaw para manter sessão ${ctx.controle.sessaoId || 'não definida'} ativa.`);
-          
-          // TODO: Precisamos trazer a lógica do feedback para cá.
-          if (feedbackParaProgramador) {
-            await logger.info(`📤 Feedback para programador (simulado):\n${feedbackParaProgramador.substring(0, 300)}...`);
-          }
+          await logger.info(`🎉 Ciclo da Tarefa [${ctx.tarefaAtual.id}] encerrado. Status Final: ${novoStatus}`);
         }
-        
-        // Se chegamos aqui, o ciclo dessa tarefa chegou ao fim!
-        await logger.info(`🎉 Ciclo da Tarefa [${ctx.tarefaAtual.id}] completamente finalizado!`);
       }
-      // ==========================================================
-      // FIM DO PASSO 14
-      // ==========================================================
-
 
     } catch (erroGlobal: unknown) {
       const msg = erroGlobal instanceof Error ? erroGlobal.message : String(erroGlobal);
       await logger.erro(`💥 Erro fatal não tratado no Orquestrador: ${msg}`);
     } finally {
-      // TEARDOWN (Liberação do Lock)
+      // Liberação de infraestrutura garante que o processo pai destrave a esteira
       if (!ctx.lockAtivo && !ctx.controle.processoFantasma) {
         await this.deps.servicoLock.releaseLock();
       }
@@ -831,55 +609,8 @@ export class OrquestradorTarefas {
     return fileList;
   }
 
-  /**
-   * Gera seção de comentários para o arquiteto seguindo lógica do sistema legado
-   */
-  private gerarSecaoComentariosParaArquiteto(tarefa: TarefaCompleta): string {
-    let commentsSection = '';
-    
-    if (tarefa.comments && tarefa.comments.length > 0) {
-      commentsSection = '\n\n=== COMENTÁRIOS DA TAREFA ===\n';
-      tarefa.comments.forEach((comment, index) => {
-        const userInfo = comment.user ? `${comment.user.name} (${comment.user.nickname})` : 'Usuário';
-        const timestamp = new Date(comment.createdAt).toLocaleString('pt-BR');
-        commentsSection += `\n${index + 1}. [${timestamp}] ${userInfo}: ${comment.content}`;
-      });
-      this.deps.logger.info(`💬 ${tarefa.comments.length} comentários incluídos no contexto do arquiteto`);
-    }
-    
-    return commentsSection;
-  }
+  
 
-  /**
-   * Método auxiliar para finalizar tarefa quando arquiteto já executou
-   */
-  private async finalizarTarefa(
-    ctx: ContextoExecucao,
-    tarefa: TarefaCompleta,
-    mensagemFinal: string,
-    logger: Logger
-  ): Promise<void> {
-    await logger.info(`🚀 Finalizando tarefa executada pelo arquiteto...`);
 
-    // Pular análise do programador e ir direto para finalização
-    const passoFinaliza: MacroFaseFinalizacao = new MacroFaseFinalizacao({
-      logger,
-      clienteApi: this.deps.clienteApi,
-      apiUrl: this.deps.config.API_URL,
-      userId: ctx.UserId,
-    } as DependenciasFinalizacao);
-
-    const finalizacao: FinalizacaoOutput = await passoFinaliza.execute({
-      tarefaAtual: tarefa,
-      novoStatus: ctx.config.STATUS.COMPLETED,
-      mensagemFechamento: mensagemFinal,
-    } as FinalizacaoInput);
-
-    if (!finalizacao.sucesso) {
-      await logger.erro('Falha ao finalizar tarefa executada pelo arquiteto.');
-    } else {
-      await logger.info(`🎉 Tarefa [${tarefa.id}] finalizada pelo arquiteto!`);
-    }
-  }
 }
 

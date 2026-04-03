@@ -106,7 +106,9 @@ export class WorkspaceSnapshotService {
     const deleted: string[] = [];
 
     // Verifica arquivos no snapshot atual
-    for (const [filePath, currentMtime] of currentSnapshot.entries()) {
+    // Converter Map para array para evitar problemas de iterador
+    const currentEntries = Array.from(currentSnapshot.entries());
+    for (const [filePath, currentMtime] of currentEntries) {
       const initialMtime = initialSnapshot.get(filePath);
       
       if (!initialMtime) {
@@ -119,7 +121,9 @@ export class WorkspaceSnapshotService {
     }
 
     // Verifica arquivos que existiam no inicial mas não no atual (deletados)
-    for (const [filePath] of initialSnapshot.entries()) {
+    // Converter Map para array para evitar problemas de iterador
+    const initialEntries = Array.from(initialSnapshot.entries());
+    for (const [filePath] of initialEntries) {
       if (!currentSnapshot.has(filePath)) {
         deleted.push(filePath);
       }

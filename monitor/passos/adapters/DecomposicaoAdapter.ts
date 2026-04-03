@@ -7,16 +7,16 @@
 // ─────────────────────────────────────────────────────
 
 import type { Passo, ContextoExecucao } from '../../interfaces';
-import { LogicaDecomposicao } from '../atomicos/PassoDecompoeTarefa';
+import { PassoDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
 import type { DependenciasDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
 import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
 
 export class PassoDecompoeTarefaAdapter implements Passo {
   readonly name = "Decompõe Tarefa";
-  private readonly logicaPura: LogicaDecomposicao;
+  private readonly logicaPura: PassoDecompoeTarefa;
 
   constructor(deps: DependenciasDecompoeTarefa) {
-    this.logicaPura = new LogicaDecomposicao(deps);
+    this.logicaPura = new PassoDecompoeTarefa(deps);
   }
 
   async execute(ctx: ContextoExecucao): Promise<void> {

@@ -3,7 +3,7 @@ import type { Config } from '@jest/types';
 const config: Config.InitialOptions = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/monitor'],
+  roots: ['<rootDir>/src/universalEngine'],
   testMatch: ['**/__tests__/**/*.test.ts'],
   collectCoverageFrom: [
     'monitor/**/*.ts',

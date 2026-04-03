@@ -31,9 +31,7 @@ export interface DependenciasAnaliseArquiteto {
   logger: Logger;
   
   snapshot: WorkspaceSnapshotService;
-  fileSystem: {
-    access: (path: string) => Promise<void>;
-  };
+  fileSystem: any;
 }
 
 export class MacroFaseAnaliseArquiteto extends PassoBase<AnaliseArquitetoInput, AnaliseArquitetoOutput> {

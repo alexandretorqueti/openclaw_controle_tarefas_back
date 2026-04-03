@@ -7,7 +7,8 @@
 import { PassoBase } from '../PassoBase';
 import type { DependenciasBase } from '../PassoBase';
 import type { TarefaCompleta, ServicoLock, ServicoEstado } from '../../interfaces';
-
+import type { Logger } from '../../interfaces/logger';
+import { ConfiguracaoMonitor } from '../../interfaces/tipos';
 export interface InicializaTarefaInput {
   tarefa: TarefaCompleta;
   tasksDir: string;
@@ -18,8 +19,9 @@ export interface InicializaTarefaInput {
 export interface DependenciasInicializaTarefa extends DependenciasBase {
   lockService: ServicoLock;
   stateService: ServicoEstado;
-  fileSystem: FileSystemMinimo;
   clienteApi: ClienteApiStatus;
+  fileSystem: FileSystemMinimo;
+  config: ConfiguracaoMonitor;
   path: {
     join(...segments: string[]): string;
   };

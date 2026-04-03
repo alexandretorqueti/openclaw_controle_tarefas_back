@@ -20,6 +20,8 @@ import type { FabricaJSONValidator } from '../atomicos/PassoExtrairValidarJSON';
 export interface FaseProgramadorInput {
   tarefaAtual: TarefaCompleta;
   planoArquiteto: string | undefined;
+  sessionId?: string; // ID de sessão para continuar conversação (TODO 6)
+  feedbackPendente?: string; // Feedback da análise anterior (TODO 4)
 }
 
 export interface FaseProgramadorOutput {
@@ -60,6 +62,12 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
     // Prompt inicial injetado no Orquestrador
     let promptAtual = input.planoArquiteto || "Plano Indisponível";
     
+    // Incorporar feedback pendente se existir (TODO 4)
+    if (input.feedbackPendente) {
+      promptAtual = `# FEEDBACK DA ANÁLISE ANTERIOR\n${input.feedbackPendente}\n\n# CONTINUE SEU TRABALHO\n${promptAtual}`;
+      await this.logger.info(`📝 Feedback pendente incorporado no prompt (${input.feedbackPendente.length} chars)`);
+    }
+    
     // Variáveis para armazenar informações do último turno bem-sucedido
     let ultimoRawOutput: string | undefined;
     let ultimoToolCall: Record<string, any> | undefined;
@@ -74,7 +82,8 @@ export class MacroFaseProgramador extends PassoBase<FaseProgramadorInput, FasePr
       const resultadoIA = await passoIA.execute({
         prompt: promptAtual,
         agente: 'senior-developer',
-        timeoutMs: this.config.TASK_TIMEOUT_MS
+        timeoutMs: this.config.TASK_TIMEOUT_MS,
+        sessionId: input.sessionId // Passar sessionId para manter conversação (TODO 6)
       });
 
       if (!resultadoIA.sucesso) {
