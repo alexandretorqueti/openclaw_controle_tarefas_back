@@ -17,5 +17,5 @@ export interface LLMOptions {
     sessionId?: string;
     temperature?: number;
     timeout: number;
-    format?: string | 'json' | 'string' | 'object' | null;
+    format?: string | object | undefined;
 }

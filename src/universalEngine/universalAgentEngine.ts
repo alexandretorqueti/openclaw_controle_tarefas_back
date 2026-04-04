@@ -42,15 +42,20 @@ export class UniversalAgentEngine {
 
             try {
                 // 1. CHAMA A IA
-                const rawOutput: LLMResponse = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
+                const response: LLMResponse = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
                 
-                if (!rawOutput.success) {
-                    await log(`💥 [Motor Universal] Erro na execução da IA: ${rawOutput.error}`);
-                    throw new Error(rawOutput.error);
+                if (!response.success) {
+                    await log(`💥 [Motor Universal] Erro na execução da IA: ${response.error}`);
+                    try {
+                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', response.error, 'utf8'); 
+                    } catch (error) {
+                        
+                    }
+                    throw new Error(response.error);
                 }
 
                 // 2. VALIDA A RESPOSTA
-                const validation = await this.validateResponse(rawOutput.raw, config, ctx);
+                const validation = await this.validateResponse(response.raw, config, ctx);
 
                 // 3. DECISÃO
                 if (validation.isValid) {
@@ -58,11 +63,11 @@ export class UniversalAgentEngine {
                     // Salva o resultado em um arquivo padrão de log
                     // /home/alexandrebragatorqueti/logllm.txt
                     try {
-                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', JSON.stringify(validation.parsedData || rawOutput), 'utf8'); 
+                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', JSON.stringify(response).split('\\n').join('\n'), 'utf8'); 
                     } catch (error) {
                         
                     }
-                    return validation.parsedData || rawOutput;
+                    return validation.parsedData || response.raw;
                 }
 
                 // 4. PREPARA O LOOP DE BRONCA
@@ -90,7 +95,7 @@ export class UniversalAgentEngine {
     // ============================================================================
 
     private async validateResponse(
-        rawOutput: any, 
+        raw: any, 
         config: AIExecutionConfig, 
         ctx: ContextoExecucaoMotorIA
     ): Promise<ValidationResult> {
@@ -105,16 +110,16 @@ export class UniversalAgentEngine {
             switch (outcome.type) {
                 case OutcomeType.CUSTOM:
                     if (!outcome.customValidator) throw new Error("Validador CUSTOM exigido, mas nenhuma função foi fornecida.");
-                    result = await outcome.customValidator(rawOutput.response, ctx);
+                    result = await outcome.customValidator(raw.response, ctx);
                     break;
                 case OutcomeType.JSON:
-                    result = this.universalValidators.defaultValidateJSON(rawOutput.response, outcome);
+                    result = this.universalValidators.defaultValidateJSON(raw.response, outcome);
                     break;
                 case OutcomeType.FILE_CREATION:
-                    result = await this.universalValidators.defaultValidateFileCreation(rawOutput.response, ctx, outcome.targetFile);
+                    result = await this.universalValidators.defaultValidateFileCreation(raw.response, ctx, outcome.targetFile);
                     break;
                 case OutcomeType.ANY:
-                    result = { isValid: true, parsedData: { rawOutput: rawOutput.response } };
+                    result = { isValid: true, parsedData: { rawOutput: raw.response } };
                     break;
                 default:
                     result = { isValid: false, feedbackParaIA: `Validador ${outcome.type} não implementado.` };

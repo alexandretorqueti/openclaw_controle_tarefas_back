@@ -32,7 +32,7 @@ export class LLMService {
                 prompt: prompt,
                 system: promptSistema,
                 stream: false,
-                format: options.format || "json"
+                ...(options.format && { format: options.format })
             }, { timeout: options.timeout });
 
             const content = response.data.response || response.data.thinking || '';
@@ -43,8 +43,8 @@ export class LLMService {
                 raw: response.data
             };
         } catch (error: any) {
-            await log(`❌ [Ollama] Erro: ${error.message}`);
-            return { success: false, content: '', error: error.message };
+            await log(`❌ [Ollama] Erro: ${error.response.data.error}`);
+            return { success: false, content: '', error: error.response.data.error };
         }
     }
 

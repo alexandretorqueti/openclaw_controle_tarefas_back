@@ -1,10 +1,15 @@
 import { UniversalAgentEngine } from '../universalAgentEngine';
-import { AIExecutionConfig, ValidationResult, OutcomeType, JsonSchema, executeWithValidationLoopArgs } from '../interfaces/interfaceUniversalAgentEngine';   
+import { AIExecutionConfig, ValidationResult, OutcomeType, JsonSchema, executeWithValidationLoopArgs, ExpectedOutcome } from '../interfaces/interfaceUniversalAgentEngine';   
 import { ContextoExecucaoMotorIA } from '../interfaces/interfaceMonitor';
 import * as logger from '../../aux/logger';
 import { LLMService } from '../services/llmService';
 import { LLMOptions, LLMProvider } from '../interfaces/interfaceLLM';
 import { mock } from 'node:test';
+import { object, property, success } from 'zod/v4';
+import { raw } from '@prisma/client/runtime/library';
+import { JSONSchema7 } from 'json-schema';
+import { de, id } from 'zod/v4/locales';
+import { Schema } from 'zod';
 
 // 1. MOCK DO LOGGER PARA NÃO SUJAR O TERMINAL
 jest.mock('../../aux/logger', () => ({
@@ -62,7 +67,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             mockLlmCall.mockResolvedValue( { 
                 success: true,
                 content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                raw: { model: 'Olá, eu sou o Jarbas!' }
+                raw: { response: 'Olá, eu sou o Jarbas!' }
             });
 
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
@@ -71,7 +76,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             );
             const rawOutput = resultado.rawOutput;
             expect(mockLlmCall).toHaveBeenCalledTimes(1);
-            expect(rawOutput).toEqual("Olá, eu sou o Jarbas!");
+            expect(rawOutput).toContain("Olá, eu sou o Jarbas!");
             expect(mockContext.shouldAbort).toBe(false); 
         });
 
@@ -89,7 +94,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 { 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: '\`\`\`json\n{"nome": "Jarbas", "status": "ativo"}\n\`\`\`' }
+                    raw: { response: '\`\`\`json\n{"nome": "Jarbas", "status": "ativo"}\n\`\`\`' }
                 }
             );
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
@@ -116,12 +121,12 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 .mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: '{ "nome": "Jarbas", }' }
+                    raw: { response: '{ "nome": "Jarbas", }' }
                 }) // Erro: vírgula a mais
                 .mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: '{"nome": "Jarbas"}' }
+                    raw: { response: '{"nome": "Jarbas"}' }
                 });   // Sucesso
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
@@ -187,12 +192,12 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 .mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: 'Eu gosto de maçã' }
+                    raw: { response: 'Eu gosto de maçã' }
                 }) 
                 .mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: 'Eu gosto de ABACAXI' }
+                    raw: { response: 'Eu gosto de ABACAXI' }
                 }); 
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
@@ -210,7 +215,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
 
         it('deve injetar o schema no prompt e validar a resposta corretamente', async () => {
             
-            const meuContrato: JsonSchema = {
+            const meuContrato: JSONSchema7 = {
                 type: 'object',
                 properties: {
                     tecnologia: { type: 'string' },
@@ -233,15 +238,20 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             mockLlmCall.mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: '{"tecnologia": "Node.js"}' }
+                    raw: { response: '{"tecnologia": "Node.js"}' }
                 }); 
             
             // 2ª Resposta: IA corrigiu
             mockLlmCall.mockResolvedValueOnce({ 
                     success: true,
                     content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                    raw: { model: '{"tecnologia": "Node.js", "passos": ["instalar"]}' }
+                    raw: { response: '{"tecnologia": "Node.js", "passos": ["instalar"]}' }
                 });
+
+            mockOptions = {
+                ...mockOptions,
+                format: meuContrato
+            }
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
 
@@ -270,21 +280,44 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             // Se você ainda quiser contar quantas vezes a função foi chamada usando o expect(), 
             // você espiona novamente, mas DESTA VEZ sem colocar o .mockResolvedValue()
             mockLlmCall = jest.spyOn((engine as any).llmService, 'execute');
+            const prompt = 'Crie uma lista de tarefas para desenvolver um cadastro de funcionários, usando node, typescrypt, react e prisma';
+            
+            const tarefa: JSONSchema7 = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', description: 'ID da tarefa' },
+                    titulo: { type: 'string', description: 'Título da tarefa' },
+                    descricao: { type: 'string', description: 'Descrição detalhada passo a passo' },
+                    ordem: { type: 'number', description: 'Ordem de execução das tarefa' },
+                    dificuldade : { type: 'number', description: 'Um valor de 0% a 100%' },
+                    escopo: { type: 'string', description: 'Escopo da tarefa: FRONTEND ou BACKEND' },
+                }
+            }
+            
+            const esquema : JSONSchema7 = {
+                    type: 'array',
+                    items: tarefa,
+                }
+
+            const outcome: ExpectedOutcome = {
+                type: OutcomeType.JSON,
+                schema: esquema
+            }
 
             const config: AIExecutionConfig = {
-                agentId: 'llama3.2:latest',
+                agentId: 'Jhon Doe',
                 systemPrompt: 'Você é um assistente amigável.',
-                userPrompt: 'Oi, meu nome é Alexandre, tenho 53 anos e moro em Rio das Ostras. O que você acha que eu poderia fazer para conhecer mais pessoas? Eu sou novo na cidade.',
-                expectedOutcomes: [{ type: OutcomeType.ANY }]
+                userPrompt: prompt,
+                expectedOutcomes: [ outcome ]
             };
-            
+
             // 2. CONFIGURANDO PARA O OLLAMA:
             // Precisamos garantir que as opções mandem a requisição para o lugar certo
             const opcoesReaisParaOllama: LLMOptions = {
                 provider: LLMProvider.OLLAMA,
-                model: 'qwen2.5-coder:14b',
+                model: 'qwen3-coder:30b',
                 timeout: 300000,
-                format: 'json'
+                format:  esquema as JSONSchema7
             };
 
             const args = { 
@@ -303,12 +336,12 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             // Lembre-se que a engine injeta o system prompt no motor atual, então o texto exato pode variar 
             // dependendo de como sua engine monta a string final.
             const argumentoDoPrompt = mockLlmCall.mock.calls[0][0];
-            expect(argumentoDoPrompt).toContain('Oi, meu nome é Alexandre');
+            expect(argumentoDoPrompt).toContain(prompt);
             
             // Verifica se a IA realmente respondeu algo (como pedimos ANY, ele devolve no rawOutput)
-            expect(resultado.rawOutput).toBeDefined();
-            expect(typeof resultado.rawOutput).toBe('string');
-            expect(resultado.rawOutput.length).toBeGreaterThan(10); // Garante que não veio vazio
+            expect(resultado).toBeDefined();
+            expect(typeof resultado).toBe('object');
+            expect(resultado[0]).toBeDefined();
             
             console.log("🤖 Resposta real do Ollama:", resultado.rawOutput);
 

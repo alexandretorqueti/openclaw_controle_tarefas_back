@@ -1,3 +1,4 @@
+import { JSONSchema7 } from "json-schema";
 import { ContextoExecucaoMotorIA } from "./interfaces/interfaceMonitor";
 import { ExpectedOutcome, JsonSchema, ValidationResult } from "./interfaces/interfaceUniversalAgentEngine";
 
@@ -33,33 +34,62 @@ export class UniversalValidators {
     }
 
     // O "Inspetor" de Contratos
-    private validateAgainstSchema(parsedData: any, schema: JsonSchema): true | string {
-        if (typeof parsedData !== 'object' || Array.isArray(parsedData) || parsedData === null) {
-            return "A resposta deve ser um objeto JSON na raiz ({ ... }).";
+    private validateAgainstSchema(parsedData: any, schema: JSONSchema7): true | string {
+        // 1. Validação de Nulo
+        if (parsedData === null || parsedData === undefined) {
+            return "O dado fornecido está vazio ou é nulo.";
         }
 
-        // 1. Verifica propriedades obrigatórias
-        if (schema.required) {
-            for (const req of schema.required) {
-                if (!(req in parsedData)) {
-                    return `O JSON não obedece à assinatura. Faltou a propriedade obrigatória '${req}'.`;
-                }
+        // 2. Lógica para ARRAYS
+        if (schema.type === 'array') {
+            if (!Array.isArray(parsedData)) {
+                return `Esperado um array, mas recebeu '${typeof parsedData}'.`;
             }
-        }
 
-        // 2. Verifica os tipos das propriedades (Validação rasa)
-        if (schema.properties) {
-            for (const [key, propSchema] of Object.entries(schema.properties)) {
-                if (key in parsedData) {
-                    const value = parsedData[key];
-                    if (propSchema.type === 'array' && !Array.isArray(value)) {
-                        return `A propriedade '${key}' deve ser um array ([]).`;
-                    }
-                    if (propSchema.type !== 'array' && typeof value !== propSchema.type) {
-                        return `A propriedade '${key}' deve ser do tipo '${propSchema.type}', mas você enviou '${typeof value}'.`;
+            // Se houver definição de itens, validamos cada um deles
+            if (schema.items) {
+                for (let i = 0; i < parsedData.length; i++) {
+                    // Chamada recursiva: valida cada item do array contra o schema de itens
+                    const itemResult = this.validateAgainstSchema(parsedData[i], schema.items as JSONSchema7);
+                    if (itemResult !== true) {
+                        return `Erro no item [${i}]: ${itemResult}`;
                     }
                 }
             }
+            return true;
+        }
+
+        // 3. Lógica para OBJETOS
+        if (schema.type === 'object') {
+            if (typeof parsedData !== 'object' || Array.isArray(parsedData)) {
+                return `Esperado um objeto, mas recebeu '${Array.isArray(parsedData) ? 'array' : typeof parsedData}'.`;
+            }
+
+            // Verifica propriedades obrigatórias
+            if (schema.required) {
+                for (const req of schema.required) {
+                    if (!(req in parsedData)) {
+                        return `Faltou a propriedade obrigatória '${req}'.`;
+                    }
+                }
+            }
+
+            // Verifica os tipos das propriedades (Recursivo para objetos aninhados)
+            if (schema.properties) {
+                for (const [key, propSchema] of Object.entries(schema.properties)) {
+                    if (key in parsedData) {
+                        const res = this.validateAgainstSchema(parsedData[key], propSchema as JSONSchema7);
+                        if (res !== true) return `Na chave '${key}': ${res}`;
+                    }
+                }
+            }
+            return true;
+        }
+
+        // 4. Validação de Tipos Primitivos (Backup)
+        const actualType = Array.isArray(parsedData) ? 'array' : typeof parsedData;
+        if (schema.type && schema.type !== actualType) {
+            return `Tipo inválido. Esperado '${schema.type}', mas recebeu '${actualType}'.`;
         }
 
         return true;
