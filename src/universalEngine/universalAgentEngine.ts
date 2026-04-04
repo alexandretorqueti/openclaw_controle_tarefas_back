@@ -1,13 +1,15 @@
 import { log } from '../aux/logger';
 import { ContextoExecucaoMotorIA } from './interfaces/interfaceMonitor';
-import { AIExecutionConfig, ValidationResult, OutcomeType, ExpectedOutcome, JsonSchema, CustomValidator } from './interfaces/interfaceUniversalAgentEngine';
+import { AIExecutionConfig, ValidationResult, OutcomeType, Sugestao, ConteudoAI } from './interfaces/interfaceUniversalAgentEngine';
 import { UniversalValidators } from './universalValidators';
 import { LLMService } from './services/llmService';
 import { LLMResponse } from './interfaces/interfaceLLM';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
+import fs from 'fs/promises';
 // ============================================================================
 // 1. CONTRATOS (Interfaces)
 // ============================================================================
+
 
 
 
@@ -25,6 +27,7 @@ export class UniversalAgentEngine {
         const retries = config.maxRetries || 3;
         let tentativaAtual = 1;
         let promptAtual = config.userPrompt;
+        let promptSistema = config.systemPrompt;
 
         // ✨ A MÁGICA DA COESÃO: Injeção automática do Schema no Prompt!
         for (const outcome of config.expectedOutcomes) {
@@ -39,7 +42,7 @@ export class UniversalAgentEngine {
 
             try {
                 // 1. CHAMA A IA
-                const rawOutput: LLMResponse = await this.llmService.execute(promptAtual, llmOptions); 
+                const rawOutput: LLMResponse = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
                 
                 if (!rawOutput.success) {
                     await log(`💥 [Motor Universal] Erro na execução da IA: ${rawOutput.error}`);
@@ -52,6 +55,13 @@ export class UniversalAgentEngine {
                 // 3. DECISÃO
                 if (validation.isValid) {
                     await log(`✅ [Motor Universal] Resposta validada com sucesso na tentativa ${tentativaAtual}!`);
+                    // Salva o resultado em um arquivo padrão de log
+                    // /home/alexandrebragatorqueti/logllm.txt
+                    try {
+                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', JSON.stringify(validation.parsedData || rawOutput), 'utf8'); 
+                    } catch (error) {
+                        
+                    }
                     return validation.parsedData || rawOutput;
                 }
 
@@ -78,7 +88,7 @@ export class UniversalAgentEngine {
     // ============================================================================
     // 3. ROTEADOR DE VALIDAÇÕES
     // ============================================================================
-    
+
     private async validateResponse(
         rawOutput: any, 
         config: AIExecutionConfig, 
@@ -95,16 +105,16 @@ export class UniversalAgentEngine {
             switch (outcome.type) {
                 case OutcomeType.CUSTOM:
                     if (!outcome.customValidator) throw new Error("Validador CUSTOM exigido, mas nenhuma função foi fornecida.");
-                    result = await outcome.customValidator(rawOutput.model, ctx);
+                    result = await outcome.customValidator(rawOutput.response, ctx);
                     break;
                 case OutcomeType.JSON:
-                    result = this.universalValidators.defaultValidateJSON(rawOutput.model, outcome);
+                    result = this.universalValidators.defaultValidateJSON(rawOutput.response, outcome);
                     break;
                 case OutcomeType.FILE_CREATION:
-                    result = await this.universalValidators.defaultValidateFileCreation(rawOutput.model, ctx, outcome.targetFile);
+                    result = await this.universalValidators.defaultValidateFileCreation(rawOutput.response, ctx, outcome.targetFile);
                     break;
                 case OutcomeType.ANY:
-                    result = { isValid: true, parsedData: { rawOutput: rawOutput.model } };
+                    result = { isValid: true, parsedData: { rawOutput: rawOutput.response } };
                     break;
                 default:
                     result = { isValid: false, feedbackParaIA: `Validador ${outcome.type} não implementado.` };

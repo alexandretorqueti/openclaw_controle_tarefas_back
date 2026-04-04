@@ -44,7 +44,8 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             model: 'qwen3:4b',
             agentId: 'main',
             sessionId: 'session-123',
-            temperature: 0.7
+            temperature: 0.7,
+            timeout: 30000
         };
     });
 
@@ -255,5 +256,62 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             
             expect(resultado).toEqual({ tecnologia: 'Node.js', passos: ['instalar'] });
         });
+    });
+
+    describe('Testando o ollama sem mocar o modelo (Teste de Integração Real)', () => {
+        
+        // 👈 Adicionamos um tempo limite de 60 segundos no final do 'it' para dar tempo da IA pensar
+        it('deve chamar o modelo real e retornar uma resposta coerente', async () => {
+            
+            // 1. DESLIGANDO O MOCK: 
+            // Limpa o comportamento falso que foi definido no beforeEach
+            mockLlmCall.mockRestore(); 
+            
+            // Se você ainda quiser contar quantas vezes a função foi chamada usando o expect(), 
+            // você espiona novamente, mas DESTA VEZ sem colocar o .mockResolvedValue()
+            mockLlmCall = jest.spyOn((engine as any).llmService, 'execute');
+
+            const config: AIExecutionConfig = {
+                agentId: 'llama3.2:latest',
+                systemPrompt: 'Você é um assistente amigável.',
+                userPrompt: 'Oi, meu nome é Alexandre, tenho 53 anos e moro em Rio das Ostras. O que você acha que eu poderia fazer para conhecer mais pessoas? Eu sou novo na cidade.',
+                expectedOutcomes: [{ type: OutcomeType.ANY }]
+            };
+            
+            // 2. CONFIGURANDO PARA O OLLAMA:
+            // Precisamos garantir que as opções mandem a requisição para o lugar certo
+            const opcoesReaisParaOllama: LLMOptions = {
+                provider: LLMProvider.OLLAMA,
+                model: 'qwen2.5-coder:14b',
+                timeout: 300000,
+                format: 'json'
+            };
+
+            const args = { 
+                config, 
+                ctx: mockContext, 
+                llmOptions: opcoesReaisParaOllama 
+            } as executeWithValidationLoopArgs;            
+            
+            // 3. EXECUTA DE VERDADE (Vai bater no localhost:11434)
+            const resultado = await engine.executeWithValidationLoop(args);
+
+            // 4. VERIFICAÇÕES
+            expect(mockLlmCall).toHaveBeenCalledTimes(1);
+            
+            // Verifica se os argumentos passados para a engine bateram com a realidade
+            // Lembre-se que a engine injeta o system prompt no motor atual, então o texto exato pode variar 
+            // dependendo de como sua engine monta a string final.
+            const argumentoDoPrompt = mockLlmCall.mock.calls[0][0];
+            expect(argumentoDoPrompt).toContain('Oi, meu nome é Alexandre');
+            
+            // Verifica se a IA realmente respondeu algo (como pedimos ANY, ele devolve no rawOutput)
+            expect(resultado.rawOutput).toBeDefined();
+            expect(typeof resultado.rawOutput).toBe('string');
+            expect(resultado.rawOutput.length).toBeGreaterThan(10); // Garante que não veio vazio
+            
+            console.log("🤖 Resposta real do Ollama:", resultado.rawOutput);
+
+        }, 300000); // ⏱️ TEMPO LIMITE DO JEST AUMENTADO PARA 60 SEGUNDOS AQUI!
     });
 });

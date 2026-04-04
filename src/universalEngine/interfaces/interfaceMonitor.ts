@@ -6,18 +6,10 @@ import { Prisma, Project } from '@prisma/client';
 // 1. TIPOS DO BANCO DE DADOS (PRISMA)
 // ============================================================================
 
-/**
- * A "Tarefa Turbinada": É a Task padrão do Prisma, mas já avisamos
- * ao TypeScript que o relacionamento com a tabela Project está incluído.
- */
 export type TaskWithProject = Prisma.TaskGetPayload<{
     include: { project: true }
 }>;
 
-
-// ============================================================================
-// 2. O CONTEXTO DE EXECUÇÃO (A Prancheta do Jarbas)
-// ============================================================================
 
 export interface ContextoExecucaoMotorIA {
     // ---------------------------------------------------
@@ -92,11 +84,6 @@ export interface ContextoExecucaoMotorIA {
     // o TS não vai gritar erro graças a esta linha:
     [key: string]: any; 
 }
-
-
-// ============================================================================
-// 3. O CONTRATO DO PASSO DA ESTEIRA
-// ============================================================================
 
 /**
  * Interface que todo Passo da esteira deve obedecer.

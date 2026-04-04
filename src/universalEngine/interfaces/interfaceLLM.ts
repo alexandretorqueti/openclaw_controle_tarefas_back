@@ -16,4 +16,6 @@ export interface LLMOptions {
     agentId?: string;    // Obrigatório para OpenClaw
     sessionId?: string;
     temperature?: number;
+    timeout: number;
+    format?: string | 'json' | 'string' | 'object' | null;
 }

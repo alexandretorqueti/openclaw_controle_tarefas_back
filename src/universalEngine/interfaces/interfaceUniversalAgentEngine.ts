@@ -50,3 +50,13 @@ export interface executeWithValidationLoopArgs {
     ctx: ContextoExecucaoMotorIA,
     llmOptions?: LLMOptions
 }
+
+export interface Sugestao {
+  atividade: string;
+  detalhes: string;
+}
+
+export interface ConteudoAI {
+  message: string;
+  sugestoes: Sugestao[];
+}
