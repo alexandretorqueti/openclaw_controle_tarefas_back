@@ -155,9 +155,10 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             mockLlmCall.mockResolvedValue({ 
                 success: true,
                 content: '{"resultado": "sucesso"}', // O JSON que seu motor vai validar
-                raw: { model: 'Isto não é um JSON' }
+                raw: { response: 'Isto não é um JSON' }
             });
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            
             await expect(engine.executeWithValidationLoop(args)).rejects.toThrow(/Abortando/);
 
             expect(mockLlmCall).toHaveBeenCalledTimes(2); 
@@ -315,7 +316,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             // Precisamos garantir que as opções mandem a requisição para o lugar certo
             const opcoesReaisParaOllama: LLMOptions = {
                 provider: LLMProvider.OLLAMA,
-                model: 'qwen3-coder:30b',
+                model: 'llama3.1:latest',
                 timeout: 300000,
                 format:  esquema as JSONSchema7
             };

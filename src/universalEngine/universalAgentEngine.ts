@@ -6,6 +6,7 @@ import { LLMService } from './services/llmService';
 import { LLMResponse } from './interfaces/interfaceLLM';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
 import fs from 'fs/promises';
+import { any } from 'zod/v4';
 // ============================================================================
 // 1. CONTRATOS (Interfaces)
 // ============================================================================
@@ -20,9 +21,9 @@ import fs from 'fs/promises';
 export class UniversalAgentEngine {
     private readonly universalValidators = new UniversalValidators();
     private readonly llmService = new LLMService();
-    public async executeWithValidationLoop(
+    public async executeWithValidationLoop<T = any>(
         { config, ctx, llmOptions } : executeWithValidationLoopArgs
-    ): Promise<any> { 
+    ): Promise<T> { 
         
         const retries = config.maxRetries || 3;
         let tentativaAtual = 1;
@@ -46,6 +47,7 @@ export class UniversalAgentEngine {
                 
                 if (!response.success) {
                     await log(`💥 [Motor Universal] Erro na execução da IA: ${response.error}`);
+                    // TODO : TEMPORÁRIO TIRAR
                     try {
                         await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', response.error, 'utf8'); 
                     } catch (error) {
@@ -62,6 +64,8 @@ export class UniversalAgentEngine {
                     await log(`✅ [Motor Universal] Resposta validada com sucesso na tentativa ${tentativaAtual}!`);
                     // Salva o resultado em um arquivo padrão de log
                     // /home/alexandrebragatorqueti/logllm.txt
+                    
+                    // TODO : TEMPORÁRIO TIRAR
                     try {
                         await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', JSON.stringify(response).split('\\n').join('\n'), 'utf8'); 
                     } catch (error) {
@@ -90,6 +94,16 @@ export class UniversalAgentEngine {
         throw new Error(erroMsg);
     }
 
+    private extractJSONFromMarkdown(text: string): string {
+        // Busca qualquer coisa entre ```json e ```
+        const match = text.match(/```json\s*([\s\S]*?)\s*```/);
+        if (match && match[1]) {
+            return match[1]; // Retorna apenas o miolo limpinho
+        }
+        // Se não achar o bloco markdown, tenta retornar o texto original (pode ser que já seja um JSON puro)
+        return text;
+    }
+
     // ============================================================================
     // 3. ROTEADOR DE VALIDAÇÕES
     // ============================================================================
@@ -113,7 +127,9 @@ export class UniversalAgentEngine {
                     result = await outcome.customValidator(raw.response, ctx);
                     break;
                 case OutcomeType.JSON:
-                    result = this.universalValidators.defaultValidateJSON(raw.response, outcome);
+                    // Limpa a sujeira antes de tentar validar!
+                    const jsonLimpo = this.extractJSONFromMarkdown(raw.response);
+                    result = this.universalValidators.defaultValidateJSON(jsonLimpo, outcome);
                     break;
                 case OutcomeType.FILE_CREATION:
                     result = await this.universalValidators.defaultValidateFileCreation(raw.response, ctx, outcome.targetFile);
@@ -129,7 +145,7 @@ export class UniversalAgentEngine {
                 allValid = false;
                 if (result.feedbackParaIA) feedbacks.push(`- Falha em ${outcome.type}: ${result.feedbackParaIA}`);
             } else if (result.parsedData) {
-                combinedParsedData = { ...combinedParsedData, ...result.parsedData };
+                combinedParsedData = result.parsedData ;
             }
         }
 

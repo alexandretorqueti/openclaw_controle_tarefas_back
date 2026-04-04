@@ -15,7 +15,7 @@ export class LLMService {
      */
     public async execute(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
         if (options.provider === LLMProvider.OPENCLAW) {
-            return this.executeOpenClaw(prompt, options);
+            return this.executeOpenClaw(prompt, promptSistema, options);
         }
         return this.executeOllama(prompt, promptSistema, options);
     }
@@ -51,7 +51,7 @@ export class LLMService {
     // ============================================================================
     // OPENCLAW (Execução CLI via Spawn)
     // ============================================================================
-    private async executeOpenClaw(prompt: string, options: LLMOptions): Promise<LLMResponse> {
+    private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
         return new Promise(async (resolve) => {
             const agent = options.agentId || 'main';
             const sessionId = options.sessionId || `session-${Date.now()}`;
@@ -61,12 +61,12 @@ export class LLMService {
             // Caminhos (ajustados para seu ambiente conforme o JS original)
             const OPENCLAW_NODE = process.env.OPENCLAW_NODE;
             const OPENCLAW_MJS = process.env.OPENCLAW_MJS;
-
+            const promptBlindado = `${promptSistema}\n\n[MENSAGEM DO USUÁRIO]:\n${prompt}\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
             const childArgs = [
                 'agent',
                 '--agent', agent,
                 '--session-id', sessionId,
-                '-m', prompt,
+                '-m', promptBlindado,
                 '--thinking', 'medium',
                 '--timeout', Math.floor(options.timeout / 1000).toString()
             ];
@@ -96,106 +96,73 @@ export class LLMService {
             delete env.NODE_OPTIONS;
 
             const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
-                env,
+                env, // certifique-se de que a variável 'env' foi declarada aqui
                 shell: false,
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 
-            
-
+            // 1. Variáveis de Estado no escopo correto (Closure)
             let stdout = '';
             let stderr = '';
-            child.stdout.on('data', (d) => this.onData(d, 'stdout', options, resolve, stdout, stderr, child, agent));
-            child.stderr.on('data', (d) => this.onData(d, 'stderr', options, resolve, stdout, stderr, child, agent));
+            let isSettled = false;
 
-            child.on('close', (code) => {
-                if (code === 0) {
-                    resolve({ success: true, content: stdout });
-                } else {
-                    resolve({ 
+            const MAX_SAFE_OUTPUT_LENGTH = 500000;
+
+            // 2. Função unificada de finalização
+            const settle = (result: LLMResponse) => {
+                if (isSettled) return;
+                isSettled = true;
+                clearTimeout(timeoutTimer);
+                resolve(result);
+            };
+
+            // 3. Timeout Global (Iniciado UMA VEZ)
+            const timeoutTimer = setTimeout(() => {
+                try { child.kill('SIGKILL'); } catch (_) {}
+                settle({ 
+                    success: false, 
+                    content: '',
+                    error: `Timeout global atingido (${options.timeout}ms). Erros: ${stderr}` 
+                });
+            }, options.timeout);
+
+            // 4. Manipuladores de Stream Inline
+            child.stdout.on('data', (data) => {
+                if (isSettled) return;
+                
+                const text = data.toString();
+                stdout += text;
+                
+                // Print ao vivo
+                process.stdout.write(text); // Melhor que log() para streams rápidos
+
+                // Verificações de segurança
+                if (stdout.length + stderr.length > MAX_SAFE_OUTPUT_LENGTH || /\x00/.test(text)) {
+                    try { child.kill('SIGKILL'); } catch (_) {}
+                    settle({ 
                         success: false, 
-                        content: stdout, 
-                        error: `OpenClaw exit code ${code}: ${stderr}` 
+                        content: '', 
+                        error: '[PÂNICO] Dados excessivos ou binários detectados.' 
                     });
                 }
             });
 
+            child.stderr.on('data', (data) => {
+                if (isSettled) return;
+                stderr += data.toString();
+            });
+
+            child.on('close', (code) => {
+                if (code === 0) {
+                    settle({ success: true, content: stdout, raw: { stdout, stderr } });
+                } else {
+                    settle({ success: false, content: stdout, error: `Exit code ${code}: ${stderr}` });
+                }
+            });
+
             child.on('error', (err) => {
-                resolve({ success: false, content: '', error: err.message });
+                settle({ success: false, content: '', error: err.message });
             });
         });
     }
-
-    private async onData(
-            data: string, 
-            source: string, 
-            options: LLMOptions, 
-            resolve: (result: LLMResponse) => void,
-            stdout: string,
-            stderr: string,
-            child: ChildProcess,
-            agent: string
-        ) {
-
-        // Limite de segurança: ~500KB. Nenhum texto útil do LLM passa disso.
-        const MAX_SAFE_OUTPUT_LENGTH = 500000; 
-
-        let isSettled = false; 
-        const settle = (result) => { 
-            if (isSettled) return; 
-            isSettled = true; 
-            clearTimeout(timeoutTimer); 
-            resolve(result); 
-        };
-        if (isSettled) return;
-        const timeoutTimer = setTimeout(() => {
-            try { child.kill('SIGKILL'); } catch (_) {}
-            settle({ success: false, errorMessage: `Timeout global atingido (${options.timeout}ms)`, rawOutput: stdout + stderr });
-        }, options.timeout);
-        
-            const text = data.toString();
-        source === 'stdout' ? (stdout += text) : (stderr += text);
-        
-        // =========================================================
-        // 🚨 KILL SWITCH: DETECÇÃO DE LIXO BINÁRIO NA FONTE
-        // =========================================================
-        const currentLength = stdout.length + stderr.length;
-        const isBinary = /\x00/.test(text); // Detecta Null Bytes
-
-        if (isBinary || currentLength > MAX_SAFE_OUTPUT_LENGTH) {
-            await log(`🚨 [PÂNICO DE STREAM] Arquivo binário ou massivo (>${Math.round(currentLength/1024)}KB) detectado. Matando o processo do agente ${agent}!`);
-            try { child.kill('SIGKILL'); } catch (_) {}
-            
-            settle({ 
-                success: false, 
-                errorMessage: `[SISTEMA] Falha de leitura. O comando retornou lixo binário ou dados excessivos. NÃO TENTE LER ESTE ARQUIVO NOVAMENTE.`, 
-                rawOutput: (stdout + stderr).substring(0, 1000) + "\n\n...[TRUNCADO PELO SISTEMA: LIXO BINÁRIO DETECTADO]..."
-            });
-            return;
-        }
-        // =========================================================
-
-        // Imprime no console para acompanhamento ao vivo
-        log(text);
-
-        
-        // ==========================================
-        // DETECÇÃO DE FERRAMENTAS E OTIMIZAÇÕES
-        // ==========================================
-        
-        // Detectar uso de ferramentas para logging específico
-        if (text.includes('{"name":') || text.includes('tool_call')) {
-            await log(`🛠️ [OpenClaw] Agente ${agent} está usando ferramentas...`);
-        }
-        
-        // Detectar uso de browser
-        if (text.includes('browser') || text.includes('navigate') || text.includes('snapshot')) {
-            await log(`🌐 [OpenClaw] Agente ${agent} está usando browser...`);
-        }
-        
-        // Detectar comandos elevated
-        if (text.includes('elevated') || text.includes('sudo') || text.includes('root')) {
-            await log(`⚠️ [OpenClaw] Agente ${agent} solicitando permissões elevated...`);
-        }
-    };
 }
