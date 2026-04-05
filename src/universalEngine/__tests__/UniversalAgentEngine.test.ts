@@ -1,15 +1,8 @@
 import { UniversalAgentEngine } from '../universalAgentEngine';
 import { AIExecutionConfig, ValidationResult, OutcomeType, JsonSchema, executeWithValidationLoopArgs, ExpectedOutcome } from '../interfaces/interfaceUniversalAgentEngine';   
 import { ContextoExecucaoMotorIA } from '../interfaces/interfaceMonitor';
-import * as logger from '../../aux/logger';
-import { LLMService } from '../services/llmService';
 import { LLMOptions, LLMProvider } from '../interfaces/interfaceLLM';
-import { mock } from 'node:test';
-import { object, property, success } from 'zod/v4';
-import { raw } from '@prisma/client/runtime/library';
 import { JSONSchema7 } from 'json-schema';
-import { de, id } from 'zod/v4/locales';
-import { Schema } from 'zod';
 
 // 1. MOCK DO LOGGER PARA NÃO SUJAR O TERMINAL
 jest.mock('../../aux/logger', () => ({
@@ -158,7 +151,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 raw: { response: 'Isto não é um JSON' }
             });
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
-            
+
             await expect(engine.executeWithValidationLoop(args)).rejects.toThrow(/Abortando/);
 
             expect(mockLlmCall).toHaveBeenCalledTimes(2); 
@@ -348,4 +341,98 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
 
         }, 300000); // ⏱️ TEMPO LIMITE DO JEST AUMENTADO PARA 60 SEGUNDOS AQUI!
     });
+
+    describe('Testando o openclaw sem mocar o modelo (Teste de Integração Real)', () => {
+        
+        // 👈 Adicionamos um tempo limite de 60 segundos no final do 'it' para dar tempo da IA pensar
+        it('deve chamar o modelo real e retornar uma resposta coerente', async () => {
+            
+            // 1. DESLIGANDO O MOCK: 
+            // Limpa o comportamento falso que foi definido no beforeEach
+            mockLlmCall.mockRestore(); 
+            
+            // Se você ainda quiser contar quantas vezes a função foi chamada usando o expect(), 
+            // você espiona novamente, mas DESTA VEZ sem colocar o .mockResolvedValue()
+            mockLlmCall = jest.spyOn((engine as any).llmService, 'execute');
+            const prompt = 'Crie uma lista de tarefas para desenvolver um cadastro de funcionários, usando node, typescrypt, react e prisma';
+            const comando: JSONSchema7 = {
+                type: 'object',
+                properties: {
+                    comando: { type: 'string', description: 'Comando para executar' },
+                }
+            }
+
+            const comandos: JSONSchema7 = {
+                type: 'array',
+                items: comando,
+            }
+
+            const tarefa: JSONSchema7 = {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', description: 'ID da tarefa' },
+                    titulo: { type: 'string', description: 'Título da tarefa' },
+                    descricao: { type: 'string', description: 'Descrição detalhada passo a passo' },
+                    ordem: { type: 'number', description: 'Ordem de execução das tarefa' },
+                    dificuldade : { type: 'number', description: 'Um valor de 0% a 100%' },
+                    escopo: { type: 'string', description: 'Escopo da tarefa: FRONTEND ou BACKEND' },
+                    comandos: comandos
+                }
+            }
+            
+            const esquema : JSONSchema7 = {
+                    type: 'array',
+                    items: tarefa,
+                }
+
+            const outcome: ExpectedOutcome = {
+                type: OutcomeType.JSON,
+                schema: esquema
+            }
+
+            const config: AIExecutionConfig = {
+                agentId: 'analista-junior',
+                systemPrompt: 'Você é um assistente amigável.',
+                userPrompt: prompt,
+                expectedOutcomes: [ outcome ]
+            };
+
+            // 2. CONFIGURANDO PARA O OLLAMA:
+            // Precisamos garantir que as opções mandem a requisição para o lugar certo
+            const opcoesReaisParaOpenclaw: LLMOptions = {
+                provider: LLMProvider.OPENCLAW,
+                model: 'llama3.1:latest',
+                agentId: config.agentId,
+                timeout: 600000,
+                format:  esquema as JSONSchema7
+            };
+
+            const args = { 
+                config, 
+                ctx: mockContext, 
+                llmOptions: opcoesReaisParaOpenclaw 
+            } as executeWithValidationLoopArgs;            
+            
+            // 3. EXECUTA DE VERDADE (Vai bater no localhost:11434)
+            const resultado = await engine.executeWithValidationLoop(args);
+
+            // 4. VERIFICAÇÕES
+            expect(mockLlmCall).toHaveBeenCalledTimes(1);
+            
+            // Verifica se os argumentos passados para a engine bateram com a realidade
+            // Lembre-se que a engine injeta o system prompt no motor atual, então o texto exato pode variar 
+            // dependendo de como sua engine monta a string final.
+            const argumentoDoPrompt = mockLlmCall.mock.calls[0][0];
+            expect(argumentoDoPrompt).toContain(prompt);
+            
+            // Verifica se a IA realmente respondeu algo (como pedimos ANY, ele devolve no rawOutput)
+            expect(resultado).toBeDefined();
+            expect(typeof resultado).toBe('object');
+            expect(resultado[0]).toBeDefined();
+            
+            console.log("🤖 Resposta real do Ollama:", resultado.rawOutput);
+
+        }, 600000); 
+    });
+    
 });

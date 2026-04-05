@@ -1,16 +1,17 @@
 import { AgentConfig, AgentData, AgentContext, AgentIdentity  } from '../interfaces/interfaceAgentConfig';
+import { AgentService } from './agentService';
+import { log } from '../../aux/logger';
 
 export class AgentConfigService {
   /**
-   * Obtém configurações específicas para um agente usando agentService
+   * Obtém configurações específicas para um agente usando AgentService
    */
   static async getAgentConfig(agentName: string): Promise<AgentConfig> {
     try {
-      // Importar agentService dinamicamente (usamos 'any' para evitar erros caso não haja .d.ts no agentService antigo)
-      const agentService: any = require('./agentService');
+      // Importar AgentService dinamicamente (usamos 'any' para evitar erros caso não haja .d.ts no AgentService antigo)
       
       // Listar todos os agentes
-      const agents: AgentData[] = await agentService.listAgents();
+      const agents: AgentData[] = await AgentService.listAgents();
       
       // Encontrar o agente pelo nome (pode ser ID ou nome)
       const agent = agents.find((a: AgentData) => 
@@ -21,7 +22,7 @@ export class AgentConfigService {
       
       if (!agent) {
         // @ts-ignore - Ignorando caso o log seja global
-        await log(`⚠️ [AgentConfig] Agente "${agentName}" não encontrado via agentService`);
+        await log(`⚠️ [AgentConfig] Agente "${agentName}" não encontrado via AgentService`);
         return this.getDefaultConfig(agentName);
       }
       
@@ -58,7 +59,7 @@ export class AgentConfigService {
       
     } catch (error: any) {
       // @ts-ignore
-      await log(`⚠️ [AgentConfig] Erro ao obter configuração via agentService: ${error.message}`);
+      await log(`⚠️ [AgentConfig] Erro ao obter configuração via AgentService: ${error.message}`);
       return this.getDefaultConfig(agentName);
     }
   }
@@ -121,12 +122,12 @@ export class AgentConfigService {
   
   /**
    * Carrega contexto do agente (SOUL.md, USER.md, MEMORY.md)
-   * Usa agentService.readAgentFile quando possível
+   * Usa AgentService.readAgentFile quando possível
    */
   static async loadAgentContext(agentName: string): Promise<AgentContext | null> {
     try {
-      // Primeiro tentar usar agentService
-      const agentService: any = require('./agentService');
+      // Primeiro tentar usar AgentService
+     
       const config = await this.getAgentConfig(agentName);
       
       const context: AgentContext = {
@@ -136,16 +137,16 @@ export class AgentConfigService {
         recentMemory: ''
       };
       
-      // Tentar ler arquivos via agentService se tivermos agentId
+      // Tentar ler arquivos via AgentService se tivermos agentId
       if (config.agentId) {
         try {
-          context.soul = await agentService.readAgentFile(config.agentId, 'SOUL.md');
-          context.user = await agentService.readAgentFile(config.agentId, 'USER.md');
-          context.memory = await agentService.readAgentFile(config.agentId, 'MEMORY.md');
+          context.soul = await AgentService.readAgentFile(config.agentId, 'SOUL.md');
+          context.user = await AgentService.readAgentFile(config.agentId, 'USER.md');
+          context.memory = await AgentService.readAgentFile(config.agentId, 'MEMORY.md');
         } catch (fileError: any) {
           // Se falhar, tentar ler diretamente do filesystem
           // @ts-ignore
-          await log(`⚠️ [AgentConfig] Erro ao ler arquivos via agentService: ${fileError.message}`);
+          await log(`⚠️ [AgentConfig] Erro ao ler arquivos via AgentService: ${fileError.message}`);
         }
       }
       

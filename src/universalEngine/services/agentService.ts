@@ -2,8 +2,8 @@ import { spawn } from 'child_process';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-// @ts-ignore - Assumindo que o agentCache pode não ter tipos definidos ainda
-import * as agentCache from './agentCache';
+// @ts-ignore - Assumindo que o AgentCache pode não ter tipos definidos ainda
+import { agentCache } from './agentCache';
 import { Agent, AgentIdentityUpdate, CommandError } from '../interfaces/interfaceAgentService';
 
 export class AgentService {
@@ -129,6 +129,7 @@ export class AgentService {
     static async listAgents(): Promise<Agent[]>  {
         try {
             // Usa o cache com função de fallback para buscar diretamente
+           
             const agents = await agentCache.getAgents(() => this._fetchAgentsDirectly());
             return agents;
         } catch (error: any) {
