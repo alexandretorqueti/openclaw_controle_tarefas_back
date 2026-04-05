@@ -401,7 +401,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             // Precisamos garantir que as opções mandem a requisição para o lugar certo
             const opcoesReaisParaOpenclaw: LLMOptions = {
                 provider: LLMProvider.OPENCLAW,
-                model: 'llama3.1:latest',
+                model: 'qwen3:4b',
                 agentId: config.agentId,
                 timeout: 600000,
                 format:  esquema as JSONSchema7
@@ -430,7 +430,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             expect(typeof resultado).toBe('object');
             expect(resultado[0]).toBeDefined();
             
-            console.log("🤖 Resposta real do Ollama:", resultado.rawOutput);
+            console.log("🤖 Resposta real do Ollama:", resultado);
 
         }, 600000); 
     });

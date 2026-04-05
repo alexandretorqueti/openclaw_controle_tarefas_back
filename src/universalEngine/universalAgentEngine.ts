@@ -3,7 +3,7 @@ import { ContextoExecucaoMotorIA } from './interfaces/interfaceMonitor';
 import { AIExecutionConfig, ValidationResult, OutcomeType, Sugestao, ConteudoAI } from './interfaces/interfaceUniversalAgentEngine';
 import { UniversalValidators } from './universalValidators';
 import { LLMService } from './services/llmService';
-import { LLMResponse } from './interfaces/interfaceLLM';
+import { LLMProvider, LLMResponse } from './interfaces/interfaceLLM';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
 import fs from 'fs/promises';
 import { any } from 'zod/v4';
@@ -55,7 +55,13 @@ export class UniversalAgentEngine {
                     }
                     throw new Error(response.error);
                 }
-
+                if (response.content) {
+                    if (!response.raw) {
+                        response.raw = {
+                            response: response.content ? response.content : response
+                        }
+                    }   
+                }
                 // 2. VALIDA A RESPOSTA
                 const validation = await this.validateResponse(response.raw, config, ctx);
 
@@ -67,7 +73,8 @@ export class UniversalAgentEngine {
                     
                     // TODO : TEMPORÁRIO TIRAR
                     try {
-                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', JSON.stringify(response).split('\\n').join('\n'), 'utf8'); 
+                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', 
+                            JSON.stringify(validation.parsedData || response.raw).split('\\n').join('\n'), 'utf8'); 
                     } catch (error) {
                         
                     }

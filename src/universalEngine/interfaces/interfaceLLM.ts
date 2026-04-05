@@ -19,3 +19,12 @@ export interface LLMOptions {
     timeout: number;
     format?: string | object | undefined;
 }
+
+export interface EsquemaSimples {
+  type?: string | string[];
+  properties?: Record<string, EsquemaSimples>;
+  items?: EsquemaSimples;
+  description?: string;
+  enum?: any[];
+  [key: string]: any;
+}

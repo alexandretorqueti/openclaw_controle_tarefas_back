@@ -1,10 +1,12 @@
 import axios from 'axios';
-import { ChildProcess, spawn } from 'child_process';
+import { spawn } from 'child_process';
 import { log } from '../../aux/logger';
-import { LLMOptions, LLMProvider, LLMResponse } from '../interfaces/interfaceLLM';
+import { LLMOptions, LLMProvider, LLMResponse, EsquemaSimples } from '../interfaces/interfaceLLM';
 import { AgentConfigService } from './agentConfigService';
 import { AgentConfig } from '../interfaces/interfaceAgentConfig';
-import { sys } from 'typescript';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 export class LLMService {
     private readonly OLLAMA_ENDPOINT = 'http://localhost:11434/api/generate';
@@ -48,58 +50,135 @@ export class LLMService {
         }
     }
 
+    private gerarExemploDeSchema(schema: EsquemaSimples): any {
+        if (!schema) return null;
+
+        // 1. Tratamento para Objetos
+        if (schema.type === 'object' || schema.properties) {
+            const exemploObjeto: Record<string, any> = {};
+            
+            if (schema.properties) {
+            for (const [chave, propriedadeSchema] of Object.entries(schema.properties)) {
+                // Chamada recursiva para preencher as propriedades do objeto
+                exemploObjeto[chave] = this.gerarExemploDeSchema(propriedadeSchema);
+            }
+            }
+            return exemploObjeto;
+        }
+
+        // 2. Tratamento para Arrays
+        if (schema.type === 'array' || schema.items) {
+            if (schema.items) {
+            // Retorna um array contendo 1 item de exemplo (chamada recursiva)
+            return [this.gerarExemploDeSchema(schema.items)];
+            }
+            return []; // Fallback se não tiver itens definidos
+        }
+
+        // 3. Tratamento para Tipos Primitivos (string, number, boolean, etc.)
+        let representacaoValor = '';
+
+        // Se tiver um tipo definido, usa ele. Se for um array de tipos (ex: ["string", "null"]), pega o primeiro.
+        const tipoReal = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+        representacaoValor += tipoReal || 'any';
+
+        // Se for um Enum, mostra as opções disponíveis
+        if (schema.enum && schema.enum.length > 0) {
+            representacaoValor += ` [Valores permitidos: ${schema.enum.join(' | ')}]`;
+        }
+
+        // Concatena a descrição, se existir
+        if (schema.description) {
+            representacaoValor += ` (${schema.description})`;
+        }
+
+        return representacaoValor;
+    }
+
     // ============================================================================
     // OPENCLAW (Execução CLI via Spawn)
     // ============================================================================
     private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
-        return new Promise(async (resolve) => {
-            const agent = options.agentId || 'main';
-            const sessionId = options.sessionId || `session-${Date.now()}`;
+    return new Promise(async (resolve) => {
+        const agent = options.agentId || 'main';
+        const sessionId = options.sessionId || `session-${Date.now()}`;
+        const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
 
-            const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
+        // 1. OTIMIZAÇÃO DE PROMPT
+        let promptBlindado = prompt;
 
-            // Caminhos (ajustados para seu ambiente conforme o JS original)
-            const OPENCLAW_NODE = process.env.OPENCLAW_NODE;
-            const OPENCLAW_MJS = process.env.OPENCLAW_MJS;
-            const promptBlindado = `${promptSistema}\n\n[MENSAGEM DO USUÁRIO]:\n${prompt}\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
-            const childArgs = [
-                'agent',
-                '--agent', agent,
-                '--session-id', sessionId,
-                '-m', promptBlindado,
-                '--thinking', 'medium',
-                '--timeout', Math.floor(options.timeout / 1000).toString()
-            ];
+        if (options.format) {
+        // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
+        const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
+        const formatoDesejado = typeof options.format === 'string' 
+            ? options.format 
+            : JSON.stringify(exemploDoEsquema, null, 2);
 
-            const env: NodeJS.ProcessEnv = { 
-                ...process.env,
-                OPENCLAW_MODEL: options.model,
-                OPENCLAW_EXEC_HOST: 'host',
-                OPENCLAW_BROWSER_TARGET: 'host',
-                OPENCLAW_THINKING: String(agentConfig.thinking), 
-                OPENCLAW_BROWSER_PROFILE: agentConfig.browserProfile,
-                OPENCLAW_BROWSER_ASK: 'off',
-                OPENCLAW_EXEC_ELEVATED: agentConfig.execElevated,
-                OPENCLAW_EXEC_ASK: 'on-miss',
-                OPENCLAW_EXEC_SECURITY: 'allowlist',
-                OPENCLAW_EXEC_ALLOWLIST: [
-                    'ls', 'pwd', 'cd', 'cat', 'grep', 'find', 'ps', 'df', 'du',
-                    'git status', 'git log', 'git diff', 'git pull', 'git fetch',
-                    'npm run', 'npm test', 'npm start', 'node', 'npx',
-                    'openclaw status', 'openclaw agents', 'openclaw models',
-                    'curl -s', 'wget -q', 'echo', 'date', 'whoami', 'uname -a'
-                ].join('|'),
-                OPENCLAW_BROWSER_ENABLED: agentConfig.tools.includes('browser') ? 'true' : 'false',
-                OPENCLAW_WEB_ENABLED: agentConfig.tools.includes('web_search') ? 'true' : 'false',
-            };
-           
-            delete env.NODE_OPTIONS;
+            promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta em formato JSON, seguindo EXATAMENTE esta estrutura de exemplo: \n\`\`\`json\n${formatoDesejado}\n\`\`\``;
+        } else {
+            promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
+        }
 
-            const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
-                env, // certifique-se de que a variável 'env' foi declarada aqui
-                shell: false,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
+        // 2. RECUPERANDO O CONTEXTO DE DIRETÓRIO (O CWD)
+        let spawnCwd: string = os.homedir();
+        if (agentConfig.workspace && fs.existsSync(agentConfig.workspace)) {
+            spawnCwd = agentConfig.workspace;
+        }
+
+        const OPENCLAW_NODE = process.env.OPENCLAW_NODE!; 
+        const OPENCLAW_MJS = process.env.OPENCLAW_MJS!;
+
+        const childArgs = [
+            'agent',
+            '--agent', agent,
+            '--session-id', sessionId,
+            '-m', promptBlindado,
+            '--thinking', 'medium',
+            '--timeout', Math.floor(options.timeout / 1000).toString()
+        ];
+
+        const env: NodeJS.ProcessEnv = { 
+            ...process.env,
+            OPENCLAW_MODEL: options.model,
+            OPENCLAW_EXEC_HOST: 'host',
+            OPENCLAW_BROWSER_TARGET: 'host',
+            OPENCLAW_THINKING: String(agentConfig.thinking), 
+            OPENCLAW_BROWSER_PROFILE: agentConfig.browserProfile,
+            OPENCLAW_BROWSER_ASK: 'off',
+            OPENCLAW_EXEC_ELEVATED: agentConfig.execElevated,
+            OPENCLAW_EXEC_ASK: 'on-miss',
+            OPENCLAW_EXEC_SECURITY: 'allowlist',
+            OPENCLAW_EXEC_ALLOWLIST: [
+                'ls', 'pwd', 'cd', 'cat', 'grep', 'find', 'ps', 'df', 'du',
+                'git status', 'git log', 'git diff', 'git pull', 'git fetch',
+                'npm run', 'npm test', 'npm start', 'node', 'npx',
+                'openclaw status', 'openclaw agents', 'openclaw models',
+                'curl -s', 'wget -q', 'echo', 'date', 'whoami', 'uname -a'
+            ].join('|'),
+            OPENCLAW_BROWSER_ENABLED: agentConfig.tools.includes('browser') ? 'true' : 'false',
+            OPENCLAW_WEB_ENABLED: agentConfig.tools.includes('web_search') ? 'true' : 'false',
+        };
+       
+        // 3. RECUPERANDO A MEMÓRIA DO AGENTE
+        if (agentConfig.workspace) {
+            const memoryDir = path.join(agentConfig.workspace, 'memory');
+            if (!fs.existsSync(memoryDir)) {
+                fs.mkdirSync(memoryDir, { recursive: true });
+            }
+            env.OPENCLAW_MEMORY_PATH = memoryDir;
+        }
+
+        delete env.NODE_OPTIONS;
+
+        if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
+            throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
+        }
+        const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
+            cwd: spawnCwd, 
+            env, 
+            shell: false,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
 
             // 1. Variáveis de Estado no escopo correto (Closure)
             let stdout = '';
@@ -166,3 +245,5 @@ export class LLMService {
         });
     }
 }
+
+
