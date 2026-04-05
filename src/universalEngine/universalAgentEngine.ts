@@ -31,19 +31,15 @@ export class UniversalAgentEngine {
         let promptSistema = config.systemPrompt;
 
         // ✨ A MÁGICA DA COESÃO: Injeção automática do Schema no Prompt!
-        for (const outcome of config.expectedOutcomes) {
-            if (outcome.type === OutcomeType.JSON && outcome.schema) {
-                const schemaString = JSON.stringify(outcome.schema, null, 2);
-                promptAtual += `\n\n[INSTRUÇÃO DE SISTEMA AUTOMÁTICA]\nSua resposta DEVE ser estritamente um JSON que obedeça à seguinte estrutura de dados:\n\`\`\`json\n${schemaString}\n\`\`\`\nNão inclua explicações fora do JSON.`;
-            }
-        }
+        
 
         while (tentativaAtual <= retries) {
             await log(`🔄 [Motor Universal] Iniciando tentativa ${tentativaAtual}/${retries} para agente: ${config.agentId}`);
 
             try {
                 // 1. CHAMA A IA
-                const response: RetornoOpenclaw = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
+                const response: RetornoOpenclaw = await this.llmService
+                    .execute(promptAtual, promptSistema, llmOptions, config.expectedOutcomes); 
                 
                 if (!response.success) {
                     await log(`💥 [Motor Universal] Erro na execução da IA: ${response.error}`);

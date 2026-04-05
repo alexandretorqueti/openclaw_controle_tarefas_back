@@ -4,11 +4,13 @@ import { log } from '../../aux/logger';
 import { LLMOptions, LLMProvider, LLMResponse, EsquemaSimples } from '../interfaces/interfaceLLM';
 import { AgentConfigService } from './agentConfigService';
 import { AgentConfig } from '../interfaces/interfaceAgentConfig';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
 
 import { RetornoOllamaObjeto, RetornoOllamaOpenAI, RetornoOllamaTexto, RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
+import { ExpectedOutcome, OutcomeType } from '../interfaces/interfaceUniversalAgentEngine';
 export class LLMService {
     private readonly OLLAMA_ENDPOINT = 'http://localhost:11434/api/generate';
 
@@ -16,9 +18,9 @@ export class LLMService {
     /**
      * Ponto de entrada único para qualquer chamada de IA
      */
-    public async execute(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
+    public async execute(prompt: string, promptSistema: string, options: LLMOptions, expectedOutcomes: ExpectedOutcome[]): Promise<LLMResponse> {
         if (options.provider === LLMProvider.OPENCLAW) {
-            return this.executeOpenClaw(prompt, promptSistema, options);
+            return this.executeOpenClaw(prompt, promptSistema, options, expectedOutcomes);
         }
         return this.executeOllama(prompt, promptSistema, options);
     }
@@ -109,29 +111,78 @@ export class LLMService {
         return representacaoValor;
     }
 
+    private async wipeAgentAmnesiaCache(agentId: string): Promise<void> {
+        // Proteção: não faz nada se não passar o ID ou se for o agente principal
+        if (!agentId || agentId === 'main') return;
+        
+        // Mapeia o caminho exato da pasta de sessões no sistema
+        const sessionsDir = path.join(os.homedir(), '.openclaw', 'agents', agentId, 'sessions');
+        
+        try {
+            // Verifica se a pasta sessions realmente existe no disco
+            const stats = await fs.promises.stat(sessionsDir).catch(
+                (error: NodeJS.ErrnoException) => {
+                    console.log(error.message);
+                    return null;
+                }
+            );
+            if (!stats || !stats.isDirectory()) return;
+
+            // Lê todos os nomes de arquivos que estão lá dentro
+            const files = await fs.promises.readdir(sessionsDir);
+            let deletedCount: number = 0;
+            
+            for (const file of files) {
+            const filePath = path.join(sessionsDir, file);
+            const fileStat = await fs.promises.stat(filePath);
+            
+            // Deleta apenas se for um arquivo (ignora se houver subpastas ali dentro)
+            if (fileStat.isFile()) {
+                // Usa o unlink (que aprendemos agora pouco) para excluir o arquivo
+                // O .catch(()=>{}) no final garante que se um arquivo der erro (ex: travado pelo Windows/Linux), 
+                // o loop não quebra e continua apagando os outros.
+                await fs.promises.unlink(filePath).catch(() => {});
+                deletedCount++;
+            }
+            }
+            
+            if (deletedCount > 0) {
+            await log(`🧹 [Amnésia] Limpeza Cirúrgica: ${deletedCount} arquivos apagados em ~/.openclaw/agents/${agentId}/sessions/`);
+            }
+        } catch (error: any) {
+            await log(`⚠️ [Amnésia] Falha ao tentar esvaziar a pasta de sessões: ${error.message}`);
+        }
+    }
+
     // ============================================================================
     // OPENCLAW (Execução CLI via Spawn)
     // ============================================================================
-    private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
+    private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions, expectedOutcomes: ExpectedOutcome[]): Promise<LLMResponse> {
         return new Promise(async (resolve) => {
             const agent = options.agentId || 'main';
             const sessionId = options.sessionId || `session-${Date.now()}`;
             const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
 
-            // 1. OTIMIZAÇÃO DE PROMPT
-            let promptBlindado = prompt;
-
             if (options.format) {
-            // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
-            const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
-            const formatoDesejado = typeof options.format === 'string' 
-                ? options.format 
-                : JSON.stringify(exemploDoEsquema, null, 2);
+                // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
+                const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
 
-                promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta em formato JSON, seguindo EXATAMENTE esta estrutura de exemplo: \n\`\`\`json\n${formatoDesejado}\n\`\`\``;
+                for (const outcome of expectedOutcomes) {
+                    if (outcome.type === OutcomeType.JSON && outcome.schema) {
+                       const formatoDesejado = typeof options.format === 'string' 
+                            ? options.format 
+                            : JSON.stringify(exemploDoEsquema, null, 2);
+
+                        prompt += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta em formato JSON, seguindo EXATAMENTE esta estrutura de exemplo: \n\`\`\`json\n${formatoDesejado}\n\`\`\``;                    
+                    }
+                }
+                
             } else {
-                promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
+                 prompt += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
             }
+
+            // APAGANDO SESSÕES
+            await this.wipeAgentAmnesiaCache(agent);
 
             // 2. RECUPERANDO O CONTEXTO DE DIRETÓRIO (O CWD)
             let spawnCwd: string = os.homedir();
@@ -146,7 +197,7 @@ export class LLMService {
                 'agent',
                 '--agent', agent,
                 '--session-id', sessionId,
-                '-m', promptBlindado,
+                '-m', prompt,
                 '--thinking', 'medium',
                 '--timeout', Math.floor(options.timeout / 1000).toString()
             ];
@@ -258,6 +309,8 @@ export class LLMService {
             });
         });
     }
+
+    
 }
 
 

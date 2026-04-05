@@ -5,10 +5,6 @@ import { LLMOptions, LLMProvider } from '../interfaces/interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
 import { RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
 
-// 1. MOCK DO LOGGER PARA NÃO SUJAR O TERMINAL
-jest.mock('../../aux/logger', () => ({
-    log: jest.fn()
-}));
 
 describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
     let engine: UniversalAgentEngine;
@@ -19,7 +15,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
-        
+
         // Instancia o motor "limpo" para cada teste
         engine = new UniversalAgentEngine();
         
@@ -37,12 +33,12 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             shouldAbort: false,
             abortReason: undefined
         } as ContextoExecucaoMotorIA;
-
+        const timeStamp = new Date().getTime();
         mockOptions = {
             provider: LLMProvider.OPENCLAW,
             model: 'qwen3:4b',
             agentId: 'main',
-            sessionId: 'session-123',
+            sessionId: `session-123-${timeStamp}`,
             temperature: 0.7,
             timeout: 30000
         };
