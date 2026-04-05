@@ -3,10 +3,10 @@ import { ContextoExecucaoMotorIA } from './interfaces/interfaceMonitor';
 import { AIExecutionConfig, ValidationResult, OutcomeType, Sugestao, ConteudoAI } from './interfaces/interfaceUniversalAgentEngine';
 import { UniversalValidators } from './universalValidators';
 import { LLMService } from './services/llmService';
-import { LLMProvider, LLMResponse } from './interfaces/interfaceLLM';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
 import fs from 'fs/promises';
-import { any } from 'zod/v4';
+import { RetornoOpenclaw } from './interfaces/interfaceRestostasIA';
+
 // ============================================================================
 // 1. CONTRATOS (Interfaces)
 // ============================================================================
@@ -43,7 +43,7 @@ export class UniversalAgentEngine {
 
             try {
                 // 1. CHAMA A IA
-                const response: LLMResponse = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
+                const response: RetornoOpenclaw = await this.llmService.execute(promptAtual, promptSistema, llmOptions); 
                 
                 if (!response.success) {
                     await log(`💥 [Motor Universal] Erro na execução da IA: ${response.error}`);
@@ -55,15 +55,9 @@ export class UniversalAgentEngine {
                     }
                     throw new Error(response.error);
                 }
-                if (response.content) {
-                    if (!response.raw) {
-                        response.raw = {
-                            response: response.content ? response.content : response
-                        }
-                    }   
-                }
+                
                 // 2. VALIDA A RESPOSTA
-                const validation = await this.validateResponse(response.raw, config, ctx);
+                const validation = await this.validateResponse(response.content, config, ctx);
 
                 // 3. DECISÃO
                 if (validation.isValid) {
@@ -116,7 +110,7 @@ export class UniversalAgentEngine {
     // ============================================================================
 
     private async validateResponse(
-        raw: any, 
+        content: string, 
         config: AIExecutionConfig, 
         ctx: ContextoExecucaoMotorIA
     ): Promise<ValidationResult> {
@@ -131,18 +125,18 @@ export class UniversalAgentEngine {
             switch (outcome.type) {
                 case OutcomeType.CUSTOM:
                     if (!outcome.customValidator) throw new Error("Validador CUSTOM exigido, mas nenhuma função foi fornecida.");
-                    result = await outcome.customValidator(raw.response, ctx);
+                    result = await outcome.customValidator(content, ctx);
                     break;
                 case OutcomeType.JSON:
                     // Limpa a sujeira antes de tentar validar!
-                    const jsonLimpo = this.extractJSONFromMarkdown(raw.response);
+                    const jsonLimpo = this.extractJSONFromMarkdown(content);
                     result = this.universalValidators.defaultValidateJSON(jsonLimpo, outcome);
                     break;
                 case OutcomeType.FILE_CREATION:
-                    result = await this.universalValidators.defaultValidateFileCreation(raw.response, ctx, outcome.targetFile);
+                    result = await this.universalValidators.defaultValidateFileCreation(content, ctx, outcome.targetFile);
                     break;
                 case OutcomeType.ANY:
-                    result = { isValid: true, parsedData: { rawOutput: raw.response } };
+                    result = { isValid: true, parsedData: { rawOutput: content } };
                     break;
                 default:
                     result = { isValid: false, feedbackParaIA: `Validador ${outcome.type} não implementado.` };

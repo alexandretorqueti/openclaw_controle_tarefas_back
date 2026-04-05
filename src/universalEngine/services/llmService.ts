@@ -1,5 +1,5 @@
-import axios from 'axios';
-import { spawn } from 'child_process';
+import axios, { AxiosResponse } from 'axios';
+import { ChildProcess, spawn } from 'child_process';
 import { log } from '../../aux/logger';
 import { LLMOptions, LLMProvider, LLMResponse, EsquemaSimples } from '../interfaces/interfaceLLM';
 import { AgentConfigService } from './agentConfigService';
@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
+import { RetornoOllamaObjeto, RetornoOllamaOpenAI, RetornoOllamaTexto, RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
 export class LLMService {
     private readonly OLLAMA_ENDPOINT = 'http://localhost:11434/api/generate';
 
@@ -25,28 +26,41 @@ export class LLMService {
     // ============================================================================
     // OLLAMA (Requisição HTTP Direta)
     // ============================================================================
-    private async executeOllama(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
+    private async executeOllama(prompt: string, promptSistema: string, options: LLMOptions): Promise<RetornoOpenclaw> {
         try {
             const model = options.model?.replace(/^ollama\//, '');
             
-            const response = await axios.post(this.OLLAMA_ENDPOINT, {
+            // 1. A MÁGICA AQUI: Dizemos ao Axios qual é a interface exata que o Ollama vai devolver
+            const response: AxiosResponse = await axios.post<RetornoOllamaTexto>(this.OLLAMA_ENDPOINT, {
                 model: model,
                 prompt: prompt,
                 system: promptSistema,
                 stream: false,
+                // O Ollama aceita format: "json" nativamente!
                 ...(options.format && { format: options.format })
             }, { timeout: options.timeout });
 
-            const content = response.data.response || response.data.thinking || '';
+            // 2. Agora o TypeScript autocompleta e valida o response.data.response
+            // (O texto bruto do LLM está seguro aqui dentro)
+            const content = response.data.response || '';
             
+            // 3. Você converte (adapta) o formato do Ollama para o formato padrão do seu sistema!
             return {
                 success: true,
-                content: content,
-                raw: response.data
+                content: content, 
+                raw: response.data // Guarda o RetornoOllamaTexto original caso precise debugar
             };
+            
         } catch (error: any) {
-            await log(`❌ [Ollama] Erro: ${error.response.data.error}`);
-            return { success: false, content: '', error: error.response.data.error };
+            // Prevenção de crash caso o erro não venha da API (ex: erro de rede local)
+            const errorMsg = error.response?.data?.error || error.message || 'Erro desconhecido';
+            await log(`❌ [Ollama] Erro: ${errorMsg}`);
+            
+            return { 
+                success: false, 
+                content: '', 
+                error: errorMsg 
+            };
         }
     }
 
@@ -99,86 +113,86 @@ export class LLMService {
     // OPENCLAW (Execução CLI via Spawn)
     // ============================================================================
     private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions): Promise<LLMResponse> {
-    return new Promise(async (resolve) => {
-        const agent = options.agentId || 'main';
-        const sessionId = options.sessionId || `session-${Date.now()}`;
-        const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
+        return new Promise(async (resolve) => {
+            const agent = options.agentId || 'main';
+            const sessionId = options.sessionId || `session-${Date.now()}`;
+            const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
 
-        // 1. OTIMIZAÇÃO DE PROMPT
-        let promptBlindado = prompt;
+            // 1. OTIMIZAÇÃO DE PROMPT
+            let promptBlindado = prompt;
 
-        if (options.format) {
-        // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
-        const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
-        const formatoDesejado = typeof options.format === 'string' 
-            ? options.format 
-            : JSON.stringify(exemploDoEsquema, null, 2);
+            if (options.format) {
+            // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
+            const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
+            const formatoDesejado = typeof options.format === 'string' 
+                ? options.format 
+                : JSON.stringify(exemploDoEsquema, null, 2);
 
-            promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta em formato JSON, seguindo EXATAMENTE esta estrutura de exemplo: \n\`\`\`json\n${formatoDesejado}\n\`\`\``;
-        } else {
-            promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
-        }
-
-        // 2. RECUPERANDO O CONTEXTO DE DIRETÓRIO (O CWD)
-        let spawnCwd: string = os.homedir();
-        if (agentConfig.workspace && fs.existsSync(agentConfig.workspace)) {
-            spawnCwd = agentConfig.workspace;
-        }
-
-        const OPENCLAW_NODE = process.env.OPENCLAW_NODE!; 
-        const OPENCLAW_MJS = process.env.OPENCLAW_MJS!;
-
-        const childArgs = [
-            'agent',
-            '--agent', agent,
-            '--session-id', sessionId,
-            '-m', promptBlindado,
-            '--thinking', 'medium',
-            '--timeout', Math.floor(options.timeout / 1000).toString()
-        ];
-
-        const env: NodeJS.ProcessEnv = { 
-            ...process.env,
-            OPENCLAW_MODEL: options.model,
-            OPENCLAW_EXEC_HOST: 'host',
-            OPENCLAW_BROWSER_TARGET: 'host',
-            OPENCLAW_THINKING: String(agentConfig.thinking), 
-            OPENCLAW_BROWSER_PROFILE: agentConfig.browserProfile,
-            OPENCLAW_BROWSER_ASK: 'off',
-            OPENCLAW_EXEC_ELEVATED: agentConfig.execElevated,
-            OPENCLAW_EXEC_ASK: 'on-miss',
-            OPENCLAW_EXEC_SECURITY: 'allowlist',
-            OPENCLAW_EXEC_ALLOWLIST: [
-                'ls', 'pwd', 'cd', 'cat', 'grep', 'find', 'ps', 'df', 'du',
-                'git status', 'git log', 'git diff', 'git pull', 'git fetch',
-                'npm run', 'npm test', 'npm start', 'node', 'npx',
-                'openclaw status', 'openclaw agents', 'openclaw models',
-                'curl -s', 'wget -q', 'echo', 'date', 'whoami', 'uname -a'
-            ].join('|'),
-            OPENCLAW_BROWSER_ENABLED: agentConfig.tools.includes('browser') ? 'true' : 'false',
-            OPENCLAW_WEB_ENABLED: agentConfig.tools.includes('web_search') ? 'true' : 'false',
-        };
-       
-        // 3. RECUPERANDO A MEMÓRIA DO AGENTE
-        if (agentConfig.workspace) {
-            const memoryDir = path.join(agentConfig.workspace, 'memory');
-            if (!fs.existsSync(memoryDir)) {
-                fs.mkdirSync(memoryDir, { recursive: true });
+                promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta em formato JSON, seguindo EXATAMENTE esta estrutura de exemplo: \n\`\`\`json\n${formatoDesejado}\n\`\`\``;
+            } else {
+                promptBlindado += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
             }
-            env.OPENCLAW_MEMORY_PATH = memoryDir;
-        }
 
-        delete env.NODE_OPTIONS;
+            // 2. RECUPERANDO O CONTEXTO DE DIRETÓRIO (O CWD)
+            let spawnCwd: string = os.homedir();
+            if (agentConfig.workspace && fs.existsSync(agentConfig.workspace)) {
+                spawnCwd = agentConfig.workspace;
+            }
 
-        if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
-            throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
-        }
-        const child = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
-            cwd: spawnCwd, 
-            env, 
-            shell: false,
-            stdio: ['ignore', 'pipe', 'pipe']
-        });
+            const OPENCLAW_NODE = process.env.OPENCLAW_NODE!; 
+            const OPENCLAW_MJS = process.env.OPENCLAW_MJS!;
+
+            const childArgs = [
+                'agent',
+                '--agent', agent,
+                '--session-id', sessionId,
+                '-m', promptBlindado,
+                '--thinking', 'medium',
+                '--timeout', Math.floor(options.timeout / 1000).toString()
+            ];
+
+            const env: NodeJS.ProcessEnv = { 
+                ...process.env,
+                OPENCLAW_MODEL: options.model,
+                OPENCLAW_EXEC_HOST: 'host',
+                OPENCLAW_BROWSER_TARGET: 'host',
+                OPENCLAW_THINKING: String(agentConfig.thinking), 
+                OPENCLAW_BROWSER_PROFILE: agentConfig.browserProfile,
+                OPENCLAW_BROWSER_ASK: 'off',
+                OPENCLAW_EXEC_ELEVATED: agentConfig.execElevated,
+                OPENCLAW_EXEC_ASK: 'on-miss',
+                OPENCLAW_EXEC_SECURITY: 'allowlist',
+                OPENCLAW_EXEC_ALLOWLIST: [
+                    'ls', 'pwd', 'cd', 'cat', 'grep', 'find', 'ps', 'df', 'du',
+                    'git status', 'git log', 'git diff', 'git pull', 'git fetch',
+                    'npm run', 'npm test', 'npm start', 'node', 'npx',
+                    'openclaw status', 'openclaw agents', 'openclaw models',
+                    'curl -s', 'wget -q', 'echo', 'date', 'whoami', 'uname -a'
+                ].join('|'),
+                OPENCLAW_BROWSER_ENABLED: agentConfig.tools.includes('browser') ? 'true' : 'false',
+                OPENCLAW_WEB_ENABLED: agentConfig.tools.includes('web_search') ? 'true' : 'false',
+            };
+        
+            // 3. RECUPERANDO A MEMÓRIA DO AGENTE
+            if (agentConfig.workspace) {
+                const memoryDir = path.join(agentConfig.workspace, 'memory');
+                if (!fs.existsSync(memoryDir)) {
+                    fs.mkdirSync(memoryDir, { recursive: true });
+                }
+                env.OPENCLAW_MEMORY_PATH = memoryDir;
+            }
+
+            delete env.NODE_OPTIONS;
+
+            if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
+                throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
+            }
+            const child: ChildProcess = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
+                cwd: spawnCwd, 
+                env, 
+                shell: false,
+                stdio: ['ignore', 'pipe', 'pipe']
+            });
 
             // 1. Variáveis de Estado no escopo correto (Closure)
             let stdout = '';
@@ -188,7 +202,7 @@ export class LLMService {
             const MAX_SAFE_OUTPUT_LENGTH = 500000;
 
             // 2. Função unificada de finalização
-            const settle = (result: LLMResponse) => {
+            const settle = (result: RetornoOpenclaw) => {
                 if (isSettled) return;
                 isSettled = true;
                 clearTimeout(timeoutTimer);

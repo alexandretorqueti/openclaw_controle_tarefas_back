@@ -3,6 +3,7 @@ import { AIExecutionConfig, ValidationResult, OutcomeType, JsonSchema, executeWi
 import { ContextoExecucaoMotorIA } from '../interfaces/interfaceMonitor';
 import { LLMOptions, LLMProvider } from '../interfaces/interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
+import { RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
 
 // 1. MOCK DO LOGGER PARA NÃO SUJAR O TERMINAL
 jest.mock('../../aux/logger', () => ({
@@ -247,7 +248,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 format: meuContrato
             }
             const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
-            const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
+            const resultado: RetornoOpenclaw = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
 
             // Verificações de Coesão
             const primeiroPromptEnviado = mockLlmCall.mock.calls[0][0];
