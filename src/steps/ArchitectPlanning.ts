@@ -336,7 +336,7 @@ class ArchitectPlanningStep {
      * @returns Resultado do planejamento
      */
 }
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 
 const passoArchitectPlanning: Passo = {
     name: 'Analista de Sistemas',

@@ -1,6 +1,6 @@
 // src/steps/PreparaSessaoEPromptInicial.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import container from '../container';
  const formatarComentarios = (comments: any[]): string => {

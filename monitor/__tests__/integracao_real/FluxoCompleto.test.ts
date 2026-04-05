@@ -14,7 +14,7 @@ import { MacroFaseProgramador } from '../../passos/macro/FaseProgramador';
 import { MacroFaseAnaliseProgramador } from '../../passos/macro/FaseAnaliseProgramador';
 import { PassoExecutarComando } from '../../passos/atomicos/PassoExecutarComando';
 import { MacroFaseFinalizacao } from '../../passos/macro/FaseFinaliza';
-import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
+import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 
 import {
   criarLoggerMock,

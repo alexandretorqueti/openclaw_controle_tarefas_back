@@ -9,7 +9,7 @@
 import type { Passo, ContextoExecucao } from '../../interfaces';
 import { PassoDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
 import type { DependenciasDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
-import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
+import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 
 export class PassoDecompoeTarefaAdapter implements Passo {
   readonly name = "Decompõe Tarefa";

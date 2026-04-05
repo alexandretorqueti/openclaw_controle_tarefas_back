@@ -6,7 +6,7 @@ import container = require('./container');
 import config from './aux/config';
 import { log } from './aux/logger';
 import { mapaDeTransicoes } from "./aux/workflowMap"; 
-import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "./interfaces/interfaceMonitor_old";
 
 // 2. DEPOIS: Importa os passos (que dependem da infraestrutura já estar pronta)
 import { passoVerificaLock } from "./steps/VerificaLock";

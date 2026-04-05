@@ -1,5 +1,5 @@
 // src/steps/VerificacaoDominio.ts
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/legacyTaskFailure';
 

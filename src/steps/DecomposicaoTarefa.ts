@@ -1,6 +1,6 @@
 // src/steps/DecomposicaoTarefa.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import { createLegacyCallAnalyst } from '../steps/adapters/legacyCallAnalyst';
 

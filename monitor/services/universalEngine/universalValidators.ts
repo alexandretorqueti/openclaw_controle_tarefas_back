@@ -1,6 +1,6 @@
 import { JSONSchema7 } from "json-schema";
-import { ContextoExecucaoMotorIA } from "./interfaces/interfaceMonitor";
 import { ExpectedOutcome, JsonSchema, ValidationResult } from "./interfaces/interfaceUniversalAgentEngine";
+import { ContextoExecucao } from "../../interfaces";
 
 export class UniversalValidators {
     constructor() {
@@ -95,7 +95,7 @@ export class UniversalValidators {
         return true;
     }
 
-    public async defaultValidateFileCreation(rawOutput: string, ctx: ContextoExecucaoMotorIA, targetFile?: string): Promise<ValidationResult> {
+    public async defaultValidateFileCreation(rawOutput: string, ctx: ContextoExecucao, targetFile?: string): Promise<ValidationResult> {
         return { isValid: true, parsedData: { fileCreated: targetFile } };
     }
 

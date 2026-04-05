@@ -1,6 +1,6 @@
 
 // config/workflowMap.ts
-import { Rota } from '../interfaces/interfaceMonitor';
+import { Rota } from '../interfaces/interfaceMonitor_old';
 
 export const mapaDeTransicoes: Record<string, Rota[]> = {
     

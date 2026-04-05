@@ -39,7 +39,7 @@ import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutpu
 import { DependenciasAnaliseProgramador, AnaliseProgramadorInput, AnaliseProgramadorOutput, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
 import { FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
 import { DependenciasExecutarComando, ExecutarComandoInput, ExecutarComandoOutput, PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
-import { FabricaPromptsIA } from './utils/FabricaPrompts';
+import { FabricaPromptsIA } from './utils/fabricaPrompts';
 import { DependenciasBase } from './passos';
 import { DependenciasFinalizacao } from './passos/macro/FaseFinaliza';
 import { DoneFileServiceDeps } from './services/DoneFileService';
@@ -50,6 +50,10 @@ import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
 import type { FeedbackService } from './services/FeedbackService';
 import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
+import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa, preAnaliseEscopoTarefaIn } from './passos/atomicos/PreAnaliseEscopoTarefaStep';
+import PromptFactory from '../src/utils/promptFactory';
+import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
+import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType } from './interfaces/retornosIA';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -77,6 +81,7 @@ export interface DependenciasGlobais {
   // Novos serviços para feedback iterativo (TODOs 4 e 6)
   sessionManager?: SessionManager;
   feedbackService?: FeedbackService;
+  motorUniversal?: UniversalAgentEngine;
   // utils
   criarContexto: () => ContextoExecucao;
 }
@@ -285,6 +290,23 @@ export class OrquestradorTarefas {
         ctx.controle.taskDir = inicializacao.taskDir;
       }
 
+
+      // PASSO 5: PREANALISE ESCOPO TAREFA COM IA
+      {
+        const preanalise: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType = await new passoPreAnaliseEscopoTarerefa({
+          logger,
+          FabricaPromptsIA: FabricaPromptsIA,
+          motorUniversal: this.deps.motorUniversal
+        } as DependenciasPreAnaliseEscopoTarerefa)
+        .execute
+        (
+          { 
+            tarefa: ctx.tarefaAtual,
+            project: ctx.project,
+            files: ctx.files,
+            
+          } as preAnaliseEscopoTarefaIn);
+      }
       // PASSO 5: SUPER VALIDAÇÃO
       {
         const superValidacao = await new PassoSuperValidacao({
@@ -381,8 +403,11 @@ export class OrquestradorTarefas {
 
         // TODO TERMINAR AQUI
         const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
+          analysisPlan: ctx.analysisPlan,
+          resultados: ctx.resultados,
           tarefaAtual: ctx.tarefaAtual,
-          erroerroerpreprepreprep: ctx.erro,
+          userId: ctx.UserId,
+          controle: ctx.controle
         } as AnaliseArquitetoEAnaliseArquitetoInput);
 
 

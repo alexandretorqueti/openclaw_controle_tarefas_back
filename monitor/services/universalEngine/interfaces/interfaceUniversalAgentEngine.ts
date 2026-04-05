@@ -1,8 +1,9 @@
 import { config } from 'dotenv';
-import { ContextoExecucaoMotorIA } from './interfaceMonitor';
+
 import { LLMOptions } from './interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
-export type CustomValidator = (rawOutput: string, ctx: ContextoExecucaoMotorIA) => Promise<ValidationResult>;
+import { ContextoExecucao } from '../../../../src/interfaces/interfaceMonitor_old';
+export type CustomValidator = (rawOutput: string, ctx: ContextoExecucao) => Promise<ValidationResult>;
 
 // ✨ NOVO: Representação de Interface em tempo de execução
 export interface JsonSchema {
@@ -48,7 +49,7 @@ export interface AIExecutionConfig {
 
 export interface executeWithValidationLoopArgs {
     config: AIExecutionConfig,
-    ctx: ContextoExecucaoMotorIA,
+    ctx: ContextoExecucao,
     llmOptions?: LLMOptions
 }
 

@@ -1,6 +1,6 @@
 import { AgentConfig, AgentData, AgentContext, AgentIdentity  } from '../interfaces/interfaceAgentConfig';
 import { AgentService } from './agentService';
-import { log } from '../../aux/logger';
+import { log } from '../../../../src/aux/logger';
 
 export class AgentConfigService {
   /**

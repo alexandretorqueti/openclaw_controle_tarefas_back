@@ -14,6 +14,36 @@ import { Project } from '@prisma/client';
 
 export class FabricaPromptsIA {
   
+
+  public static preAnaliseEEscopoDaTarefa(task: TarefaCompleta, project: Project): string {
+    return `
+      Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
+      
+      PROJETO:
+      - Base: ${project?.pastaBase}
+      - Frontend Path: ${project?.frontendPath || 'N/A'}
+      - Backend Path: ${project?.backendPath || 'N/A'}
+
+      TAREFA:
+      - Título: ${task.title}
+      - Descrição: ${task.description}
+
+      REGRAS DE CLASSIFICAÇÃO:
+      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
+      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
+      3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
+      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
+      5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
+      6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
+      
+      REGRAS DE EXECUÇÃO:
+      1. Tarefas 'analysis' serão EXECUTADAS IMEDIATAMENTE pelo arquiteto (sem passar para o desenvolvedor).
+      2. Tarefas 'automation' simples serão executadas pelo arquiteto; complexas passarão para o desenvolvedor.
+      3. Tarefas 'development' sempre passarão para o desenvolvedor após planejamento.
+    `.trim();
+  
+  }
+
   // ==========================================================
   // 1. ARQUITETO (Planejamento - Versão Aprimorada do Legado)
   // ==========================================================
@@ -48,10 +78,6 @@ ${ctxFisico}${ctxPortas}
 
 `.trim();
   }
-
-
-
-
 
   // ==========================================================
   // 1.1. Prompt para Análise da Resposta do Arquiteto
@@ -244,6 +270,33 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
 
 REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se a tarefa pertence ao FRONTEND ou BACKEND baseado na descrição. Se não for possível deduzir, retorne "UNKNOWN". Se já vier preenchido, apenas repita-o.
 `;
+  }
+
+  public static buildTaskAnalysisPrompt(task: TarefaCompleta, project: Project, preAnalysisFile = null) {
+    return `
+      Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
+      
+      PROJETO:
+      - Base: ${project?.pastaBase}
+      - Frontend Path: ${project?.frontendPath || 'N/A'}
+      - Backend Path: ${project?.backendPath || 'N/A'}
+
+      TAREFA:
+      - Título: ${task.title}
+      - Descrição: ${task.description}
+
+      REGRAS DE CLASSIFICAÇÃO:
+      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
+      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
+      3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
+      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
+      6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
+      
+      REGRAS DE EXECUÇÃO:
+      1. Tarefas 'analysis' serão EXECUTADAS IMEDIATAMENTE pelo arquiteto (sem passar para o desenvolvedor).
+      2. Tarefas 'automation' simples serão executadas pelo arquiteto; complexas passarão para o desenvolvedor.
+      3. Tarefas 'development' sempre passarão para o desenvolvedor após planejamento.
+    `.trim();
   }
 
   // ==========================================================

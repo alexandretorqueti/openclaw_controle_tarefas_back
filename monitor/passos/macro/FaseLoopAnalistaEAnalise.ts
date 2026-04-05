@@ -2,7 +2,7 @@ import { DependenciasBase, PassoBase } from "../PassoBase";
 import { AnaliseArquitetoInput, AnaliseArquitetoOutput, DependenciasAnaliseArquiteto, MacroFaseAnaliseArquiteto } from "./FaseAnaliseArquiteto";
 import { FaseArquitetoInput, FaseArquitetoOutput, DependenciasFaseArquiteto, MacroFaseArquiteto } from "./FaseArquiteto";
 import { Snapshot, SnapshotInput, WorkspaceSnapshotService } from '../../services/WorkspaceSnapshotService';
-import { FabricaPromptsIA } from "../../utils/FabricaPrompts";
+import { FabricaPromptsIA } from "../../utils/fabricaPrompts";
 import { ConfiguracaoMonitor, ControleGeral, PlanoDeAnalise, ResultadosPassos, TarefaCompleta } from "../../interfaces";
 import { ServicoDisco } from "../atomicos/PassoManipularArquivo";
 import { DependenciasFinalizacao, FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from "./FaseFinaliza";

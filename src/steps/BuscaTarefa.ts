@@ -1,6 +1,6 @@
 // src/steps/BuscaTarefa.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import { createLegacyGetNextTask } from '../steps/adapters/legacyGetNextTask';
 

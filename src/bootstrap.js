@@ -32,6 +32,7 @@ const TaskExecutionService = require('./services/taskExecutionService');
 const TaskExecutionOrchestrator = require('./steps/TaskExecutionOrchestrator');
 const UserService = require('./services/userService'); // <-- Importa o UserService para resolver o usuário atual
 const ValidationService = require('./services/validationService');
+const { UniversalAgentEngine } = require('../monitor/services/universalEngine/universalAgentEngine');
 
 const { log } = require('./aux/logger'); // caminho relativo ao bootstrap
 const config = require('./aux/config');
@@ -40,6 +41,7 @@ const axios = require('axios');
 const path = require('path');
 
 // Registra as dependências
+container.register('motorUniversalClass', UniversalAgentEngine);
 container.register('openClawService', OpenClawService);
 container.register('promptFactory', PromptFactory);
 container.register('sessionChainUtils', SessionChainUtils);
@@ -76,7 +78,7 @@ container.register('lockService', lockServiceInstance);
 const monitorStateServiceInstance = new MonitorStateService(config.TASKS_DIR);
 container.register('monitorStateService', monitorStateServiceInstance);
 container.register('apiService', axios.create({ baseURL: config.API_URL }));
-
+container.register('motorUniversal', new UniversalAgentEngine());
 container.register('validationService', ValidationService); // <-- Registra o ValidationService
 
 module.exports = container;

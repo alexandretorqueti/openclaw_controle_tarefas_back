@@ -1,7 +1,7 @@
 
 // src/steps/VerificaLock.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import { handleTaskTimeoutCheck } from '../steps/adapters/legacyTaskTimeoutCheck';
 import { segundosToMinutos_Segundos } from '../utils/timeUtils';

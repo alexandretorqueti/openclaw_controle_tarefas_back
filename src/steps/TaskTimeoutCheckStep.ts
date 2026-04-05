@@ -1,4 +1,4 @@
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import { segundosToMinutos_Segundos } from '../utils/timeUtils';
 

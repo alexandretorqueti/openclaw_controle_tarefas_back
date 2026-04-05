@@ -43,6 +43,9 @@ export function criarContextoLimpo(deps: DependenciasFabricaContexto): ContextoE
       loopsExecutados: 0,
     },
     erros: {},
-    resultados: {},
+    resultados: {
+      dominio: null,
+      superValidacao: null,
+    },
   };
 }

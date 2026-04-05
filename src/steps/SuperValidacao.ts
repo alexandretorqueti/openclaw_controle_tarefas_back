@@ -1,6 +1,6 @@
 // src/steps/SuperValidacao.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 import container from '../container';
 import { handleTaskFailure as legacyHandleTaskFailure } from '../steps/adapters/legacyTaskFailure';

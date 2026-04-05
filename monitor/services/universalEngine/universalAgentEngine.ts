@@ -1,18 +1,11 @@
-import { log } from '../aux/logger';
-import { ContextoExecucaoMotorIA } from './interfaces/interfaceMonitor';
+import { log } from '../../../src/aux/logger';
 import { AIExecutionConfig, ValidationResult, OutcomeType, Sugestao, ConteudoAI } from './interfaces/interfaceUniversalAgentEngine';
 import { UniversalValidators } from './universalValidators';
 import { LLMService } from './services/llmService';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
 import fs from 'fs/promises';
 import { RetornoOpenclaw } from './interfaces/interfaceRestostasIA';
-
-// ============================================================================
-// 1. CONTRATOS (Interfaces)
-// ============================================================================
-
-
-
+import { ContextoExecucao } from '../../../monitor/interfaces/tipos';
 
 // ============================================================================
 // 2. O MOTOR UNIVERSAL
@@ -86,8 +79,6 @@ export class UniversalAgentEngine {
         const erroMsg = `[Motor Universal] Abortando: O agente falhou em gerar uma saída válida após ${retries} tentativas.`;
         await log(`❌ ${erroMsg}`);
         
-        ctx.shouldAbort = true;
-        ctx.abortReason = erroMsg;
         throw new Error(erroMsg);
     }
 
@@ -108,7 +99,7 @@ export class UniversalAgentEngine {
     private async validateResponse(
         content: string, 
         config: AIExecutionConfig, 
-        ctx: ContextoExecucaoMotorIA
+        ctx: ContextoExecucao
     ): Promise<ValidationResult> {
         
         let allValid = true;

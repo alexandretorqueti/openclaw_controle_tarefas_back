@@ -1,7 +1,7 @@
 // monitor/__tests__/integracao_real/DecomposicaoReal.test.ts
 // Teste REAL de decomposição usando IA com analista-junior e qwen3.5:9b
 
-import { FabricaPromptsIA } from '../../utils/FabricaPrompts';
+import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 import { criarTarefaFake } from '../fixtures/fabricaMocks';
 
 // Configurações do teste

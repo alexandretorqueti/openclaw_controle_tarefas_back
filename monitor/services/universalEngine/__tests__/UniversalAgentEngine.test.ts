@@ -1,15 +1,16 @@
 import { UniversalAgentEngine } from '../universalAgentEngine';
 import { AIExecutionConfig, ValidationResult, OutcomeType, JsonSchema, executeWithValidationLoopArgs, ExpectedOutcome } from '../interfaces/interfaceUniversalAgentEngine';   
-import { ContextoExecucaoMotorIA } from '../interfaces/interfaceMonitor';
 import { LLMOptions, LLMProvider } from '../interfaces/interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
 import { RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
-
+import { z } from 'zod';
+import { zodToJsonSchema } from 'zod-to-json-schema';
+import { ContextoExecucao } from '../../../interfaces';
 
 describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
     let engine: UniversalAgentEngine;
     
-    let mockContext: ContextoExecucaoMotorIA;
+    let mockContext: ContextoExecucao;
     let mockOptions: LLMOptions;
     let mockLlmCall: jest.SpyInstance;
 
@@ -30,9 +31,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
         mockContext = {
             tarefaAtual: { id: 'task-123' } as any,
             config: {} as any,
-            shouldAbort: false,
-            abortReason: undefined
-        } as ContextoExecucaoMotorIA;
+        } as ContextoExecucao;
         const timeStamp = new Date().getTime();
         mockOptions = {
             provider: LLMProvider.OPENCLAW,
@@ -67,7 +66,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             const rawOutput = resultado.rawOutput;
             expect(mockLlmCall).toHaveBeenCalledTimes(1);
             expect(rawOutput).toContain("Olá, eu sou o Jarbas!");
-            expect(mockContext.shouldAbort).toBe(false); 
+
         });
 
         it('deve validar, fazer o parse e retornar o objeto quando expectedOutcomes pedir JSON', async () => {
@@ -152,8 +151,6 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             await expect(engine.executeWithValidationLoop(args)).rejects.toThrow(/Abortando/);
 
             expect(mockLlmCall).toHaveBeenCalledTimes(2); 
-            expect(mockContext.shouldAbort).toBe(true);
-            expect(mockContext.abortReason).toContain('falhou em gerar uma saída válida após 2 tentativas');
         });
     });
 
@@ -352,35 +349,25 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             // você espiona novamente, mas DESTA VEZ sem colocar o .mockResolvedValue()
             mockLlmCall = jest.spyOn((engine as any).llmService, 'execute');
             const prompt = 'Crie uma lista de tarefas para desenvolver um cadastro de funcionários, usando node, typescrypt, react e prisma';
-            const comando: JSONSchema7 = {
-                type: 'object',
-                properties: {
-                    comando: { type: 'string', description: 'Comando para executar' },
-                }
-            }
-
-            const comandos: JSONSchema7 = {
-                type: 'array',
-                items: comando,
-            }
-
-            const tarefa: JSONSchema7 = {
-                type: 'object',
-                properties: {
-                    id: { type: 'string', description: 'ID da tarefa' },
-                    titulo: { type: 'string', description: 'Título da tarefa' },
-                    descricao: { type: 'string', description: 'Descrição detalhada passo a passo' },
-                    ordem: { type: 'number', description: 'Ordem de execução das tarefa' },
-                    dificuldade : { type: 'number', description: 'Um valor de 0% a 100%' },
-                    escopo: { type: 'string', description: 'Escopo da tarefa: FRONTEND ou BACKEND' },
-                    comandos: comandos
-                }
-            }
+            const comando = z.object({
+                comando: z.string().describe('Comando para executar')
+            })
             
-            const esquema : JSONSchema7 = {
-                    type: 'array',
-                    items: tarefa,
-                }
+            const comandos = z.array(comando);
+            
+            const tarefa = z.object({
+                id: z.string().describe('ID da tarefa'),
+                titulo: z.string().describe('Título da tarefa'),
+                descricao: z.string().describe('Descrição detalhada passo a passo'),
+                ordem: z.number().describe('Ordem de execução das tarefa'),
+                dificuldade : z.number().describe('Um valor de 0% a 100%'),
+                escopo: z.string().describe('Escopo da tarefa: FRONTEND ou BACKEND'),
+                comandos: comandos
+            })
+
+            const esquemaZod = z.array(tarefa);
+
+            const esquema: JSONSchema7 = zodToJsonSchema(esquemaZod) as JSONSchema7;
 
             const outcome: ExpectedOutcome = {
                 type: OutcomeType.JSON,
@@ -394,7 +381,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 expectedOutcomes: [ outcome ]
             };
 
-            // 2. CONFIGURANDO PARA O OLLAMA:
+            // 2. CONFIGURANDO PARA O OPENCLAW:
             // Precisamos garantir que as opções mandem a requisição para o lugar certo
             const opcoesReaisParaOpenclaw: LLMOptions = {
                 provider: LLMProvider.OPENCLAW,
@@ -404,7 +391,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 format:  esquema as JSONSchema7
             };
 
-            const args = { 
+            const args: executeWithValidationLoopArgs = { 
                 config, 
                 ctx: mockContext, 
                 llmOptions: opcoesReaisParaOpenclaw 

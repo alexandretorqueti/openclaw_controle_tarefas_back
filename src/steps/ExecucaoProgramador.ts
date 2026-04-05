@@ -1,7 +1,7 @@
 
 // src/steps/ExecucaoProgramador.ts
 
-import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor";
+import { Passo, ContextoExecucao } from "../interfaces/interfaceMonitor_old";
 import { log } from '../aux/logger';
 
 export const passoExecucaoProgramador: Passo = {

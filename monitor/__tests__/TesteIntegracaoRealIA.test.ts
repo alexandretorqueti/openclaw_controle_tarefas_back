@@ -3,8 +3,8 @@
 // AVISO: Este teste pode custar tokens e levar tempo considerável
 
 import { PassoDecompoeTarefaAdapter } from '../passos/adapters/DecomposicaoAdapter';
-import { PassoDecompoeTarefa } from '../passos/atomicos/PassoDecompoeTarefa';
-import { FabricaPromptsIA } from '../utils/FabricaPrompts';
+import { DecomposicaoOutput, PassoDecompoeTarefa } from '../passos/atomicos/PassoDecompoeTarefa';
+import { FabricaPromptsIA } from '../utils/fabricaPrompts';
 import {
   criarLoggerMock,
   criarContextoMock,
@@ -77,16 +77,16 @@ describe('Teste de Integração REAL com IA (Decomposição)', () => {
     console.log('🧪 Iniciando chamada REAL para IA...');
     console.log(`📝 Prompt enviado: ${promptDecomposicao.substring(0, 200)}...`);
     
-    const resultado = await passoPuro.execute(input);
+    const resultado: DecomposicaoOutput = await passoPuro.execute(input);
 
     console.log(`✅ Resposta da IA: ${JSON.stringify(resultado)}`);
     
     // Validações básicas
     expect(resultado.sucesso).toBe(true);
-    expect(resultado.quantidadeSubtarefas).toBeGreaterThan(0);
+    expect(resultado.subtasksCreated).toBeGreaterThan(0);
     
     // Log para inspeção manual
-    console.log(`📊 Subtarefas criadas: ${resultado.quantidadeSubtarefas}`);
+    console.log(`📊 Subtarefas criadas: ${resultado.subtasksCreated}`);
   }, 120000); // Timeout de 2 minutos para a IA
 
   it('deve executar adapter de decomposição com contexto real', async () => {

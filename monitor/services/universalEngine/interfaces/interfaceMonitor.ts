@@ -1,6 +1,7 @@
 // src/interfaces/interfaceMonitor.ts
 
 import { Prisma, Project } from '@prisma/client';
+import { ContextoExecucao } from '../../../interfaces';
 
 // ============================================================================
 // 1. TIPOS DO BANCO DE DADOS (PRISMA)
@@ -91,5 +92,5 @@ export interface ContextoExecucaoMotorIA {
  */
 export interface Passo {
     name: string;
-    func: (ctx: ContextoExecucaoMotorIA) => Promise<void>;
+    func: (ctx: ContextoExecucao) => Promise<void>;
 }

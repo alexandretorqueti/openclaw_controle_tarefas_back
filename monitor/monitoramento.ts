@@ -63,6 +63,7 @@ import type { ChamarIAInput } from './passos/atomicos/PassoChamarIA';
 import type { TarefaCompleta } from './interfaces';
 import * as fs from 'fs';
 import axios from 'axios';
+import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
 
 /**
  * Adapter para usar o módulo "fs" real no FileSystem
@@ -249,6 +250,7 @@ export class Monitoramento {
     const taskAnalysisService = container.resolve('taskAnalysisService') as ServicoAnaliseTarefa;
     const promptFactory = container.resolve('promptFactory') as FabricaPrompts;
     const llmServiceClass = container.resolve('llmService') as any;
+    const motorUniversal = container.resolve('motorUniversal') as UniversalAgentEngine;
     const llmService = new llmServiceClass();
     // ─── Adapter para UserService ───
     const userService: ServicoUsuario = {
@@ -400,6 +402,7 @@ Responda APENAS no formato JSON:
       servicoDisco: new ServicoDiscoLegacy(),
       jsonValidator: new JsonValidator(),
       gerenciadorFalha: new GerenciadorFalhaLegacy(),
+      motorUniversal: motorUniversal,
       // Novos serviços para feedback iterativo (TODOs 4 e 6)
       sessionManager,
       feedbackService,
@@ -412,7 +415,7 @@ Responda APENAS no formato JSON:
           userService,
           taskAnalysisService,
         },
-        utils: { promptFactory },
+        utils: { promptFactory }
       }),
     });
   }

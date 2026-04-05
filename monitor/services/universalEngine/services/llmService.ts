@@ -1,6 +1,6 @@
 import axios, { AxiosResponse } from 'axios';
 import { ChildProcess, spawn } from 'child_process';
-import { log } from '../../aux/logger';
+import { log } from '../../../../src/aux/logger';
 import { LLMOptions, LLMProvider, LLMResponse, EsquemaSimples } from '../interfaces/interfaceLLM';
 import { AgentConfigService } from './agentConfigService';
 import { AgentConfig } from '../interfaces/interfaceAgentConfig';
