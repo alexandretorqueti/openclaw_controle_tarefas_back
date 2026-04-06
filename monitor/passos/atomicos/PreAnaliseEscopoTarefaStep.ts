@@ -18,10 +18,6 @@ import { UniversalAgentEngine } from '../../services/universalEngine/universalAg
 // ============================================================================
 // INTERFACES (Contratos de Tipagem)
 // ============================================================================
-export interface preAnaliseEscopoTarefaIn {
-
-}
-
 
 export interface DependenciasPreAnaliseEscopoTarerefa {
     logger: any;
@@ -34,11 +30,10 @@ const path = require('path');
 // CLASSE PRINCIPAL
 // ============================================================================
 
-class passoPreAnaliseEscopoTarerefa extends PassoBase<preAnaliseEscopoTarefaIn, retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
+class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
     readonly nome: string = 'PreAnaliseEscopoTarerefa';
 
     private log: any;
-    private FabricaPromptsIA: any;
     private motorUniversal: any;
     /**
      * Construtor que obtém dependências do container.
@@ -46,8 +41,11 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<preAnaliseEscopoTarefaIn, 
      */
     constructor(deps: DependenciasPreAnaliseEscopoTarerefa) {
         super(deps);
-        this.FabricaPromptsIA = deps.FabricaPromptsIA;
         this.motorUniversal = deps.motorUniversal;
+    }
+
+    async execute(context: ContextoExecucao): Promise<retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
+        return this.processar(context);
     }
 
     /**
@@ -61,10 +59,11 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<preAnaliseEscopoTarefaIn, 
             project, 
             files, 
             initialSnapshot, 
-            config, 
+            config,
+            configIA, 
         } = context;
         
-        if (!tarefaAtual || !files || !config) {
+        if (!tarefaAtual || !configIA || !project || !configIA) {
             await this.log(`⚠️ ArchitectPlanningStep: contexto incompleto`);
             context.architectPlanningResult = {
                 success: false,
@@ -73,14 +72,15 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<preAnaliseEscopoTarefaIn, 
             return;
         }
         
-        const promptParaIA = await this.FabricaPromptsIA.getArchitectPlanningPrompt(tarefaAtual, project, files, initialSnapshot);
+        const promptParaIA = await FabricaPromptsIA.preAnaliseEEscopoDaTarefa(tarefaAtual, project);
 
         const opcoesParaIA: LLMOptions = {
-            provider: LLMProvider.OPENCLAW,
+            provider: LLMProvider.OLLAMA,
             agentId: project.agent,
             sessionId: `session-${tarefaAtual.id}`,
             temperature: 0.5,
             timeout: config.TASK_TIMEOUT_MS/1000,
+            model: project.modeloAuxiliar,
             format: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema as JSONSchema7,
         }
         const outcome: ExpectedOutcome = {
@@ -95,7 +95,7 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<preAnaliseEscopoTarefaIn, 
         };
 
         const args: executeWithValidationLoopArgs = {
-            config: configIaExecution,
+            configIA: configIaExecution,
             ctx: context,
             llmOptions: opcoesParaIA
         }

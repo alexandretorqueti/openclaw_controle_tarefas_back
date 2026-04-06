@@ -44,7 +44,7 @@ export class LLMService {
 
             // 2. Agora o TypeScript autocompleta e valida o response.data.response
             // (O texto bruto do LLM está seguro aqui dentro)
-            const content = response.data.response || '';
+            const content = (response.data.response) || (response.data.thinking) || '';
             
             // 3. Você converte (adapta) o formato do Ollama para o formato padrão do seu sistema!
             return {

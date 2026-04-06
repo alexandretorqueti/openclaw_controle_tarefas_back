@@ -12,6 +12,7 @@ import { VerificaAtomicidadeOutput } from '../passos/atomicos/PassoVerificaAtomi
 import { DecomposicaoOutput } from '../passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
 import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
+import { AIExecutionConfig } from '../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -219,6 +220,7 @@ export interface ContextoExecucao {
   tarefaAtual: TarefaCompleta | null;
   UserId: string | null;
   config: ConfiguracaoMonitor;
+  configIA: AIExecutionConfig;
   services: ServicosDoMonitor;
   utils: UtilidadesDoMonitor;
   lockAtivo: boolean;

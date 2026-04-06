@@ -48,7 +48,7 @@ export interface AIExecutionConfig {
 }
 
 export interface executeWithValidationLoopArgs {
-    config: AIExecutionConfig,
+    configIA: AIExecutionConfig,
     ctx: ContextoExecucao,
     llmOptions?: LLMOptions
 }

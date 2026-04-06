@@ -5,14 +5,22 @@ import { JSONSchema7 } from 'json-schema';
 import { RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
-import { ContextoExecucao } from '../../../interfaces';
-
+import { ConfiguracaoMonitor, ContextoExecucao, ServicosDoMonitor, TarefaCompleta, UtilidadesDoMonitor } from '../../../interfaces';
+import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa } from '../../../passos/atomicos/PreAnaliseEscopoTarefaStep';
+import { FabricaPromptsIA } from '../../../utils/fabricaPrompts';
+import { log } from '../../../../src/aux/logger';
+import { title } from 'node:process';
+import { de } from 'zod/v4/locales';
+import { Project } from '@prisma/client';
+import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema }
+    from '../../../interfaces/retornosIA';
 describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
     let engine: UniversalAgentEngine;
     
     let mockContext: ContextoExecucao;
     let mockOptions: LLMOptions;
     let mockLlmCall: jest.SpyInstance;
+    let mockContextStepPreAnalise: ContextoExecucao;
 
     beforeEach(() => {
         jest.clearAllMocks();
@@ -61,7 +69,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 raw: { response: 'Olá, eu sou o Jarbas!' }
             });
 
-            const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(
                 args as executeWithValidationLoopArgs
             );
@@ -88,7 +96,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                     raw: { response: '\`\`\`json\n{"nome": "Jarbas", "status": "ativo"}\n\`\`\`' }
                 }
             );
-            const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
 
             expect(mockLlmCall).toHaveBeenCalledTimes(1);
@@ -119,7 +127,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                     content: '{ "nome": "Jarbas" }', // O JSON que seu motor vai validar
                     raw: { response: '{"nome": "Jarbas"}' }
                 });   // Sucesso
-            const args = { config, ctx: mockContext, llmOptions:mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, llmOptions:mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop
                 (
                     args as executeWithValidationLoopArgs,
@@ -151,7 +159,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 content: 'Isto não é um JSON', // O JSON que seu motor vai validar
                 raw: { response: 'Isto não é um JSON' }
             });
-            const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
 
             await expect(engine.executeWithValidationLoop(args)).rejects.toThrow(/Abortando/);
 
@@ -192,7 +200,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                     content: 'Eu gosto de ABACAXI', // O JSON que seu motor vai validar
                     raw: { response: 'Eu gosto de ABACAXI' }
                 }); 
-            const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
 
             expect(validadorChato).toHaveBeenCalledTimes(2); 
@@ -245,7 +253,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 ...mockOptions,
                 format: meuContrato
             }
-            const args = { config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
+            const args = { configIA: config, ctx: mockContext, mockOptions } as executeWithValidationLoopArgs;
             const resultado: RetornoOpenclaw = await engine.executeWithValidationLoop(args as executeWithValidationLoopArgs);
 
             // Verificações de Coesão
@@ -313,8 +321,9 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                 format:  esquema as JSONSchema7
             };
 
-            const args = { 
-                config, 
+            const args = {
+                configIA: config as AIExecutionConfig, 
+                config: {} as ConfiguracaoMonitor, 
                 ctx: mockContext, 
                 llmOptions: opcoesReaisParaOllama 
             } as executeWithValidationLoopArgs;            
@@ -397,7 +406,8 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
             };
 
             const args: executeWithValidationLoopArgs = { 
-                config, 
+                configIA: config as AIExecutionConfig, 
+                config: {} as ConfiguracaoMonitor,
                 ctx: mockContext, 
                 llmOptions: opcoesReaisParaOpenclaw 
             } as executeWithValidationLoopArgs;            
@@ -424,4 +434,56 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
         }, 600000); 
     });
     
+    describe('Testando passo 2 - PreAnaliseEscopoTarefas', () => {
+        it('deve chamar o modelo real e retornar uma resposta coerente', async () => {
+            const prompt = 'Desenvolva um sistema para controle de borracharia';
+
+            const deps: DependenciasPreAnaliseEscopoTarerefa = {
+                logger: log,
+                FabricaPromptsIA: new FabricaPromptsIA(),
+                motorUniversal: engine
+            };
+
+            const mockProject = {
+                id: 'project-123',
+                name: 'Sistema para borracharia',
+                frontendPath: 'frontend',
+                backendPath: 'backend',
+                pastaBase: '/projeto/sistema-borracharia/',
+                modeloAuxiliar: 'qwen3.5:9b',
+            } as Project
+            mockContextStepPreAnalise = {
+                tarefaAtual: { id: 'task-123',
+                    title: 'Sistema para borracharia',
+                    description: 'Desenvolva um sistema para controle de borracharia',
+                    isCompleted: false,
+                    isRecurring: false,
+                    project: mockProject as Project
+            } as TarefaCompleta,
+                project: mockProject as Project,
+                config: {
+                    TASK_TIMEOUT_MS: 600000000,
+
+                } as ConfiguracaoMonitor,
+                configIA: {
+                   agentId: 'analista-junior',
+                   systemPrompt: 'Voce é um assistente amigável.',
+                   userPrompt: prompt,
+                   expectedOutcomes: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema,
+                   maxRetries: 1,
+                } as AIExecutionConfig,
+                services: {} as ServicosDoMonitor,
+                utils: {} as UtilidadesDoMonitor,
+            } as ContextoExecucao;
+
+            const contexto : ContextoExecucao = mockContext;
+
+            // TODO CONTINUAR DAQUI
+
+            const preAnalise = new passoPreAnaliseEscopoTarerefa(deps);
+
+            const resultado = await preAnalise.execute(mockContextStepPreAnalise);
+
+        });
+    });
 });

@@ -15,10 +15,10 @@ export class UniversalAgentEngine {
     private readonly universalValidators = new UniversalValidators();
     private readonly llmService = new LLMService();
     public async executeWithValidationLoop<T = any>(
-        { config, ctx, llmOptions } : executeWithValidationLoopArgs
+        { configIA: config, ctx, llmOptions } : executeWithValidationLoopArgs
     ): Promise<T> { 
         
-        const retries = config.maxRetries || 3;
+        const retries = config.maxRetries || 1;
         let tentativaAtual = 1;
         let promptAtual = config.userPrompt;
         let promptSistema = config.systemPrompt;
@@ -66,12 +66,22 @@ export class UniversalAgentEngine {
 
                 // 4. PREPARA O LOOP DE BRONCA
                 await log(`⚠️ [Motor Universal] Validação falhou. Motivo:\n${validation.feedbackParaIA}`);
-                
                 promptAtual = `Sua resposta anterior foi rejeitada.\n\n${validation.feedbackParaIA}\n\nPor favor, corrija os erros na estrutura do JSON e tente novamente obedecendo ao contrato.`;
+                try {
+                    await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', promptAtual, 'utf8'); 
+                } catch (error) {
+                    
+                }
+
                 tentativaAtual++;
 
             } catch (error: any) {
                 await log(`💥 [Motor Universal] Erro fatal na execução: ${error.message}`);
+                try {
+                    await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', `💥 [Motor Universal] Erro fatal na execução: ${JSON.stringify(error)}`, 'utf8'); 
+                } catch (error) {
+                    
+                }
                 throw error; 
             }
         }
