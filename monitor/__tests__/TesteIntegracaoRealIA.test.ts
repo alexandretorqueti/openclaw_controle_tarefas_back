@@ -10,6 +10,7 @@ import {
   criarContextoMock,
   criarTarefaFake,
 } from './fixtures/fabricaMocks';
+import { ServicoAnalistaLegacy } from '../monitoramento';
 
 // Configurações do ambiente de teste real
 const CONFIG_TESTE = {
@@ -51,16 +52,10 @@ describe('Teste de Integração REAL com IA (Decomposição)', () => {
   });
 
   it('deve decompor uma tarefa não-atômica usando IA real', async () => {
-    // SKIP se não houver configuração do OpenClaw disponível
-    if (!process.env.OPENCLAW_API_KEY) {
-      console.warn('⚠️  OPENCLAW_API_KEY não configurada. Pulando teste de IA real.');
-      return;
-    }
-
     const logger = criarLoggerMock();
     
     // Usar serviço REAL de análise (não mockado)
-    const { ServicoAnalistaLegacy } = require('../monitoramento');
+    
     const analista = new ServicoAnalistaLegacy();
 
     // Criar prompt especializado usando a nova fábrica

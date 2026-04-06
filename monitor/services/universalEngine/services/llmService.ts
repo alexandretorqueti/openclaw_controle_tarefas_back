@@ -12,7 +12,7 @@ import * as os from 'os';
 import { RetornoOllamaObjeto, RetornoOllamaOpenAI, RetornoOllamaTexto, RetornoOpenclaw } from '../interfaces/interfaceRestostasIA';
 import { ExpectedOutcome, OutcomeType } from '../interfaces/interfaceUniversalAgentEngine';
 export class LLMService {
-    private readonly OLLAMA_ENDPOINT = 'http://localhost:11434/api/generate';
+    private readonly OLLAMA_ENDPOINT = process.env.OLLAMA_ENDPOINT;
 
 
     /**
@@ -33,7 +33,7 @@ export class LLMService {
             const model = options.model?.replace(/^ollama\//, '');
             
             // 1. A MÁGICA AQUI: Dizemos ao Axios qual é a interface exata que o Ollama vai devolver
-            const response: AxiosResponse = await axios.post<RetornoOllamaTexto>(this.OLLAMA_ENDPOINT, {
+            const response: any = await axios.post<any>(this.OLLAMA_ENDPOINT, {
                 model: model,
                 prompt: prompt,
                 system: promptSistema,

@@ -181,7 +181,15 @@ export function criarContextoMock(
       loopsExecutados: 0,
     },
     erros: {},
-    resultados: {},
+    resultados: {
+      dominio: {
+        dominioValido: false
+      },
+      superValidacao: {
+       valido: false
+
+      },
+    },
     ...overrides,
   };
 }
@@ -210,6 +218,7 @@ export function criarTarefaFake(
       description: 'Projeto de teste',
       createdAt: new Date(),
       updatedAt: new Date(),
+      agent: 'analista-junior'
     },
     comments: [],
     ...overrides,

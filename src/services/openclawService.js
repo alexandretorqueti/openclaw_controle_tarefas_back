@@ -51,18 +51,6 @@ class AgentConfigService {
         bindingsList: agent.bindingsList || []
       };
       
-      // Ajustar configurações baseadas no tipo de agente
-      if (agentType.includes('programador') || agentType.includes('developer')) {
-        config.model = config.model || 'gpt-4-turbo';
-        config.tools = ['exec', 'read', 'write', 'edit', 'browser', 'process', 'web_search', 'web_fetch'];
-      } else if (agentType.includes('analista') || agentType.includes('analyst')) {
-        config.model = config.model || 'claude-3-opus';
-        config.tools = ['read', 'exec', 'browser', 'web_search', 'web_fetch', 'process', 'web_fetch'];
-      } else if (agentType.includes('main') || agentType.includes('jarbas')) {
-        config.model = config.model || 'deepseek/deepseek-chat';
-        config.tools = ['exec', 'read', 'write', 'edit', 'browser', 'process', 'web_search', 'web_fetch'];
-      }
-      
       await log(`⚙️ [AgentConfig] Configuração obtida para ${agentName}: modelo=${config.model}, workspace=${config.workspace}`);
       return config;
       

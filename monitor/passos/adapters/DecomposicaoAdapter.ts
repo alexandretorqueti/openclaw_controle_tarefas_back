@@ -36,7 +36,8 @@ export class PassoDecompoeTarefaAdapter implements Passo {
       // 3. O EFEITO COLATERAL: Centraliza a escrita e atualiza o contexto global com o resultado
       ctx.resultados.decomposicao = {
         sucesso: resultado.sucesso,
-        subtasksCreated: resultado.quantidadeSubtarefas,
+        subtasksCreated: resultado.subtasksCreated,
+        subtasks: resultado.subtasks
       };
 
     } catch (erro: unknown) {
