@@ -190,6 +190,16 @@ export interface ArquivosSessao {
 export interface ConfiguracaoMonitor {
   BASE_DIR: string;
   TASKS_DIR: string;
+  FRONT_DIR: string;
+  BACK_DIR: string;
+  LOCK_DIR: string;
+  PLAN_DIR: string;
+  REPORT_DIR: string;
+  AGENTE_ANALISTA: string;
+  AGENTE_ARQUITETO: string;
+  AGENTE_PROGRAMADOR: string;
+  MODELO_AUXILIAR: string;
+  NICKNAME: string;
   PROCESSED_DIR: string;
   ERROR_DIR: string;
   API_URL: string;
@@ -205,6 +215,8 @@ export interface ConfiguracaoMonitor {
   DEBUG_TASK_PROMPT: boolean;
   DEBUG_TASK_CONTRACT: boolean;
   servicesConfig: Record<string, unknown>;
+  TIMEOUT_LOCK_MS: number;
+  TIMEOUT_IA_MS: number;
   STATUS: {
     IN_PROGRESS: string;
     COMPLETED: string;

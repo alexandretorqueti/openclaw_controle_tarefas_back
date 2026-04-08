@@ -18,7 +18,7 @@ export class UniversalAgentEngine {
         { configIA: config, ctx, llmOptions } : executeWithValidationLoopArgs
     ): Promise<T> { 
         
-        const retries = config.maxRetries || 1;
+        const retries = config.maxRetries || 3;
         let tentativaAtual = 1;
         let promptAtual = config.userPrompt;
         let promptSistema = config.systemPrompt;
@@ -55,12 +55,7 @@ export class UniversalAgentEngine {
                     // /home/alexandrebragatorqueti/logllm.txt
                     
                     // TODO : TEMPORÁRIO TIRAR
-                    try {
-                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', 
-                            JSON.stringify(validation.parsedData || response.raw).split('\\n').join('\n'), 'utf8'); 
-                    } catch (error) {
-                        
-                    }
+                    
                     return validation.parsedData || response.raw;
                 }
 
@@ -68,7 +63,13 @@ export class UniversalAgentEngine {
                 await log(`⚠️ [Motor Universal] Validação falhou. Motivo:\n${validation.feedbackParaIA}`);
                 promptAtual = `Sua resposta anterior foi rejeitada.\n\n${validation.feedbackParaIA}\n\nPor favor, corrija os erros na estrutura do JSON e tente novamente obedecendo ao contrato.`;
                 try {
-                    await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', promptAtual, 'utf8'); 
+                    await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', 
+                        `
+                        ${ promptAtual }\n\n
+                        
+                        ${JSON.stringify(validation.parsedData || response.raw).split('\\n').join('\n')}
+                        
+                        `, 'utf8'); 
                 } catch (error) {
                     
                 }
@@ -88,7 +89,6 @@ export class UniversalAgentEngine {
 
         const erroMsg = `[Motor Universal] Abortando: O agente falhou em gerar uma saída válida após ${retries} tentativas.`;
         await log(`❌ ${erroMsg}`);
-        
         throw new Error(erroMsg);
     }
 

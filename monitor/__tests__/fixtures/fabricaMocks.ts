@@ -136,6 +136,18 @@ export function criarConfigMock(
     DEBUG_TASK_PROMPT: false,
     DEBUG_TASK_CONTRACT: false,
     servicesConfig: {},
+    AGENTE_ANALISTA: 'analistamonitortarefas',
+    AGENTE_ARQUITETO: 'arquitetopleno',
+    AGENTE_PROGRAMADOR: 'programadorpleno',
+    BACK_DIR: '/tmp/back',
+    FRONT_DIR: '/tmp/front',
+    LOCK_DIR: '/tmp/locks',
+    MODELO_AUXILIAR: null,
+    NICKNAME: 'jarbas',
+    PLAN_DIR: '/tmp/plans',
+    REPORT_DIR: '/tmp/reports',
+    TIMEOUT_IA_MS: 30000,
+    TIMEOUT_LOCK_MS: 30000,
     STATUS: {
       IN_PROGRESS: 'Em Andamento',
       COMPLETED: 'Concluída',
@@ -154,6 +166,10 @@ export function criarContextoMock(
 ): ContextoExecucao {
   return {
     tarefaAtual: null,
+    architectPlanningResult: {
+      success: false
+    },
+    configIA: null,
     UserId: null,
     config: criarConfigMock(),
     services: {

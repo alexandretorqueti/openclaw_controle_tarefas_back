@@ -20,9 +20,9 @@ export class LLMService {
      */
     public async execute(prompt: string, promptSistema: string, options: LLMOptions, expectedOutcomes: ExpectedOutcome[]): Promise<LLMResponse> {
         if (options.provider === LLMProvider.OPENCLAW) {
-            return this.executeOpenClaw(prompt, promptSistema, options, expectedOutcomes);
+            return await this.executeOpenClaw(prompt, promptSistema, options, expectedOutcomes);
         }
-        return this.executeOllama(prompt, promptSistema, options);
+        return await this.executeOllama(prompt, promptSistema, options);
     }
 
     // ============================================================================
@@ -238,7 +238,7 @@ export class LLMService {
             if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
                 throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
             }
-            const child: ChildProcess = spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
+            const child: ChildProcess = await spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
                 cwd: spawnCwd, 
                 env, 
                 shell: false,

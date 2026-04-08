@@ -50,7 +50,7 @@ import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
 import type { FeedbackService } from './services/FeedbackService';
 import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
-import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa, preAnaliseEscopoTarefaIn } from './passos/atomicos/PreAnaliseEscopoTarefaStep';
+import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa } from './passos/atomicos/PreAnaliseEscopoTarefaStep';
 import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
 import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType } from './interfaces/retornosIA';
@@ -301,11 +301,11 @@ export class OrquestradorTarefas {
         .execute
         (
           { 
-            tarefa: ctx.tarefaAtual,
+            tarefaAtual: ctx.tarefaAtual,
             project: ctx.project,
             files: ctx.files,
             
-          } as preAnaliseEscopoTarefaIn);
+          } as ContextoExecucao);
       }
       // PASSO 5: SUPER VALIDAÇÃO
       {

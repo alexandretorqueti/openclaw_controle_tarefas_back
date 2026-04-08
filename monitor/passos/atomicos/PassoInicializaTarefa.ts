@@ -19,9 +19,9 @@ export interface InicializaTarefaInput {
 export interface DependenciasInicializaTarefa extends DependenciasBase {
   lockService: ServicoLock;
   stateService: ServicoEstado;
-  clienteApi: ClienteApiStatus;
   fileSystem: FileSystemMinimo;
   config: ConfiguracaoMonitor;
+  clienteApi: ClienteApiStatus;
   path: {
     join(...segments: string[]): string;
   };
@@ -56,8 +56,8 @@ export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, Inic
     this.lockService = deps.lockService;
     this.stateService = deps.stateService;
     this.fileSystem = deps.fileSystem;
-    this.clienteApi = deps.clienteApi;
     this.pathUtil = deps.path;
+    this.clienteApi = deps.clienteApi;
   }
 
   protected async processar(input: InicializaTarefaInput): Promise<InicializaTarefaOutput> {

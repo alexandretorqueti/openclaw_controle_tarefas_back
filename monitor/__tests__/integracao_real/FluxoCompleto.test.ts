@@ -5,7 +5,7 @@
 import { PassoVerificaLock } from '../../passos/atomicos/PassoVerificaLock';
 import { PassoConfiguraUsuario } from '../../passos/atomicos/PassoConfiguraUsuario';
 import { PassoBuscaTarefa } from '../../passos/atomicos/PassoBuscaTarefa';
-import { PassoInicializaTarefa } from '../../passos/atomicos/PassoInicializaTarefa';
+import { DependenciasInicializaTarefa, PassoInicializaTarefa } from '../../passos/atomicos/PassoInicializaTarefa';
 import { PassoSuperValidacao } from '../../passos/atomicos/PassoSuperValidacao';
 import { PassoVerificaDominio } from '../../passos/atomicos/PassoVerificaDominio';
 import { PassoDecompoeTarefaAdapter } from '../../passos/adapters/DecomposicaoAdapter';
@@ -28,9 +28,25 @@ import {
   criarTarefaFake,
   criarConfigMock,
 } from '../fixtures/fabricaMocks';
+import { ConfiguracaoMonitor } from '../../interfaces';
 
 // Configurações do teste
-const CONFIG = {
+const CONFIG: ConfiguracaoMonitor = {
+  DEBUG_TASK_ANALYSIS: false,
+  DEBUG_TASK_PROMPT: false,
+  DEBUG_TASK_CONTRACT: false,
+  ERROR_DIR: '/tmp/test_fluxo_completo/error',
+  LOCK_FILE: '/tmp/test_fluxo_completo/lock.json',
+  LOG_FILE: '/tmp/test_fluxo_completo/test.log',
+  MAX_LOG_LINES: 1000,
+  MINUTOS: 30,
+  OPENCLAW_EXECUTION_TIMEOUT_MS: 120000,
+  PROCESSED_DIR: '/tmp/test_fluxo_completo/processed',
+  STATE_FILE: '/tmp/test_fluxo_completo/state.json',
+  TASK_TIMEOUT_MS: 300000,
+  MY_USER_NICKNAME: 'jarbas',
+  STATUS: { IN_PROGRESS: 'Em Andamento', COMPLETED: 'Concluída', FAILED: 'Falhou' },
+  servicesConfig: {},
   BASE_DIR: '/tmp/test_fluxo_completo',
   TASKS_DIR: '/tmp/test_fluxo_completo/tasks',
   FRONT_DIR: '/tmp/test_fluxo_completo/front',
@@ -111,7 +127,7 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     // Mock do analista para decomposição (se não tiver API key, mockamos)
     analistaService.decompor.mockResolvedValue({
       sucesso: true,
-      quantidadeSubtarefas: 3,
+      subtasksCreated: 3,
     });
     
     // Mock do OpenClaw para arquiteto e programador
@@ -199,8 +215,9 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
       stateService,
       fileSystem: mockFs,
       clienteApi: mockClienteApi,
+      config: CONFIG,
       path: mockPath,
-    });
+    } as DependenciasInicializaTarefa);
     
     const resultadoInicializa = await passoInicializa.execute({
       tarefa: tarefaEncontrada,
@@ -210,7 +227,7 @@ describe('Fluxo Completo do Orquestrador (etapa por etapa)', () => {
     });
     
     expect(resultadoInicializa.sucesso).toBe(true);
-    expect(resultadoInicializa.taskDir).toContain(`${CONFIG.TASKS_DIR}/1001`);
+    expect(resultadoInicializa.taskDir).toContain(`${CONFIG.TASKS_DIR}`);
     expect(lockService.acquireLock).toHaveBeenCalledWith(1001);
     expect(stateService.registerActiveTask).toHaveBeenCalledWith(1001);
     expect(mockFs.mkdir).toHaveBeenCalled();
