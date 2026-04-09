@@ -12,6 +12,8 @@ const
             .optional()
             .describe('Camadas esperadas'),
         difficult: z.number().min(0).max(100).default(0).describe('Dificuldade da tarefa'),
+        error: z.string().optional().describe('Erro detectado na tarefa'),
+        success: z.boolean().describe('Indica se a tarefa foi analisada com sucesso')
     });
 
 export type retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType = z.infer<typeof retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacao>;

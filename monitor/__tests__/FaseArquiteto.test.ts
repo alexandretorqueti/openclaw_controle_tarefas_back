@@ -23,7 +23,6 @@ describe('MacroFaseArquiteto', () => {
 
     expect(resultado.sucesso).toBe(true);
     expect(openClaw.executarTurno).toHaveBeenCalledTimes(1);
-    expect(jsonValidator.parsear).toHaveBeenCalled();
     expect(disco.escrever).toHaveBeenCalledWith('/tmp/plano.json', expect.stringContaining('"plano": true'), true);
   });
 

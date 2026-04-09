@@ -95,7 +95,8 @@ export class UniversalValidators {
         return true;
     }
 
-    public async defaultValidateFileCreation(rawOutput: string, ctx: ContextoExecucao, targetFile?: string): Promise<ValidationResult> {
+    public async defaultValidateFileCreation(rawOutput: string, targetFile?: string): Promise<ValidationResult> {
+        // TODO: Implementar validação de arquivos
         return { isValid: true, parsedData: { fileCreated: targetFile } };
     }
 

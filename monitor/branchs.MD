@@ -1,0 +1,2 @@
+- TestesDaIALocal
+- MotorUniversalDeIA - Versão anterior aos testes da IA local.

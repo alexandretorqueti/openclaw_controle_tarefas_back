@@ -57,19 +57,23 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
         const { 
             tarefaAtual, 
             project, 
-            files, 
-            initialSnapshot, 
             config,
             configIA, 
         } = context;
-        
+        let architectPlanningResult: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType = {
+            taskType: 'development',
+            expectedLayers: [],
+            difficult: 0,
+            error: '',
+            success: false
+        }
         if (!tarefaAtual || !configIA || !project || !configIA) {
             await this.log(`⚠️ ArchitectPlanningStep: contexto incompleto`);
-            context.architectPlanningResult = {
+            architectPlanningResult = {
                 success: false,
                 error: 'contexto incompleto (task, files ou config faltando)'
             }
-            return;
+            return architectPlanningResult;
         }
         
         const promptParaIA = await FabricaPromptsIA.preAnaliseEEscopoDaTarefa(tarefaAtual, project);
@@ -96,7 +100,6 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
 
         const args: executeWithValidationLoopArgs = {
             configIA: configIaExecution,
-            ctx: context,
             llmOptions: opcoesParaIA
         }
         const analise: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType 

@@ -3,7 +3,7 @@
 
 class PromptFactory {
   /**
-   * Gera o prompt para a análise inicial de escopo da tarefa.
+   * Gera o prompt para a análise inicial de escopo da tarefa. x
    */
   static buildTaskAnalysisPrompt(task, project, preAnalysisFile = null) {
     return `

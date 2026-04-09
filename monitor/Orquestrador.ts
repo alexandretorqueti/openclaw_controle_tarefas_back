@@ -305,112 +305,121 @@ export class OrquestradorTarefas {
             project: ctx.project,
             files: ctx.files,
             
-          } as ContextoExecucao);
-      }
-      // PASSO 5: SUPER VALIDAÇÃO
-      {
-        const superValidacao = await new PassoSuperValidacao({
-          logger,
-          taskAnalysisService: this.deps.servicoAnaliseTarefa
-        } as DependenciasSuperValidacao).execute({ tarefa: ctx.tarefaAtual } as SuperValidacaoInput);
+          } as ContextoExecucao
+        );
 
-        if (!superValidacao.valido) {
-          ctx.erros.fatalIA = true;
-          return; // Tarefa malformada
+        if (!preanalise) {
+          return; // Falha grave de FileSystem
         }
-        ctx.analysisPlan = superValidacao.planoDeAnalise || null;
-      }
-
-      // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE
-      {
-        if (ctx.tarefaAtual.isAtomic === undefined || ctx.tarefaAtual.isAtomic === null) {
-          const resultadoAtomicidade = await new PassoVerificaAtomicidade({
-            logger,
-            servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
-            fabricaPrompts: FabricaPromptsIA,
-          } as DependenciasVerificaAtomicidade).execute({ tarefa: ctx.tarefaAtual } as VerificaAtomicidadeInput);
-          
-          ctx.tarefaAtual.isAtomic = resultadoAtomicidade.isAtomic;
-          await logger.info(`🔍 Atomicidade: ${ctx.tarefaAtual.isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'}`);
+        if (preanalise.success === false) {
+          return;
         }
-      }
-
-      // PASSO 7: DECOMPOSIÇÃO
-      if (ctx.tarefaAtual.isAtomic === false) {
-        const decomposicao: DecomposicaoOutput = await new PassoDecompoeTarefa({
-          logger,
-          analista: this.deps.servicoAnalista,
-        } as DependenciasDecompoeTarefa).execute({
-          tarefaAtual: ctx.tarefaAtual,
-          userId: ctx.UserId,
-          prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
-        } as DecomposicaoInput);
-
-        if (!decomposicao.sucesso) {
-          await logger.erro('IA falhou ao decompor tarefa.');
+        if (preanalise.taskType === null) {
           return;
         }
 
-        if (decomposicao.subtasksCreated > 0) {
-          return; // Tarefa mãe virou épico, encerra por aqui pois as filhas entrarão na fila
+        ctx.analysisPlan = preanalise || null;
+      }
+
+      // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
+      {
+        if (ctx.analysisPlan?.taskType !== 'development') {
+          if (ctx.tarefaAtual.isAtomic === undefined || ctx.tarefaAtual.isAtomic === null) {
+            const resultadoAtomicidade = await new PassoVerificaAtomicidade({
+              logger,
+              servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
+              fabricaPrompts: FabricaPromptsIA,
+            } as DependenciasVerificaAtomicidade).execute({ tarefa: ctx.tarefaAtual } as VerificaAtomicidadeInput);
+            
+            ctx.tarefaAtual.isAtomic = resultadoAtomicidade.isAtomic;
+            await logger.info(`🔍 Atomicidade: ${ctx.tarefaAtual.isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'}`);
+          }
         }
-        ctx.tarefaAtual.isAtomic = true; // Fallback: IA decidiu não decompor
+      }
+
+      // PASSO 7: DECOMPOSIÇÃO // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
+      {
+        if (ctx.analysisPlan?.taskType !== 'development') {
+          if (ctx.tarefaAtual.isAtomic === false) {
+            const decomposicao: DecomposicaoOutput = await new PassoDecompoeTarefa({
+              logger,
+              analista: this.deps.servicoAnalista,
+            } as DependenciasDecompoeTarefa).execute({
+              tarefaAtual: ctx.tarefaAtual,
+              userId: ctx.UserId,
+              prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
+            } as DecomposicaoInput);
+
+            if (!decomposicao.sucesso) {
+              await logger.erro('IA falhou ao decompor tarefa.');
+              return;
+            }
+
+            if (decomposicao.subtasksCreated > 0) {
+              return; // Tarefa mãe virou épico, encerra por aqui pois as filhas entrarão na fila
+            }
+            ctx.tarefaAtual.isAtomic = true; // Fallback: IA decidiu não decompor
+          }
+        }
       }
 
       // PASSO 8: DETERMINAÇÃO DE DOMÍNIO
       {
-        const dominio = await new PassoVerificaDominio({
-          logger,
-          gerenciadorFalha: this.deps.gerenciadorFalha,
-          servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
-          fabricaPrompts: FabricaPromptsIA,
-        } as DependenciasVerificaDominio).execute({
-          tarefa: ctx.tarefaAtual,
-          userId: ctx.UserId,
-          configFalha: { apiUrl: ctx.config.API_URL, tasksDir: ctx.config.TASKS_DIR, errorDir: ctx.config.ERROR_DIR }
-        } as VerificaDominioInput);
+        if (ctx.analysisPlan?.taskType !== 'development') {
+          const dominio = await new PassoVerificaDominio({
+            logger,
+            gerenciadorFalha: this.deps.gerenciadorFalha,
+            servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
+            fabricaPrompts: FabricaPromptsIA,
+          } as DependenciasVerificaDominio).execute({
+            tarefa: ctx.tarefaAtual,
+            userId: ctx.UserId,
+            configFalha: { apiUrl: ctx.config.API_URL, tasksDir: ctx.config.TASKS_DIR, errorDir: ctx.config.ERROR_DIR }
+          } as VerificaDominioInput);
 
-        if (!dominio.dominioValido) return;
-        if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
+          if (!dominio.dominioValido) return;
+          if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
+        }
       }
 
       // CAPTURA DO SNAPSHOT INICIAL (Pré-Arquiteto)
       {
-        const snapshotService = new WorkspaceSnapshotService({ logger, fileSystem: this.deps.fileSystem } as WorkspaceSnapshotServiceDeps);
-        ctx.initialSnapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
+        if (ctx.analysisPlan?.taskType !== 'development') {
+          const snapshotService = new WorkspaceSnapshotService({ logger, fileSystem: this.deps.fileSystem } as WorkspaceSnapshotServiceDeps);
+          ctx.initialSnapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
+        }
       }
 
       // PASSO 9: FASE DO ARQUITETO
      
       {
-        
-        const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
-          clienteApi: this.deps.clienteApi,
-          config: this.deps.config,
-          disco: this.deps.servicoDisco,
-          fabricaPrompts: FabricaPromptsIA,
-          fileSystem: this.deps.fileSystem,
-          jsonValidator: this.deps.jsonValidator,
-          openClaw: this.deps.servicoOpenClaw,
-          snapshot: this.deps.servicoSnapshot,
-          logger,
-          pathUtil: this.deps.pathUtil,
-          servicoDisco: this.deps.servicoDisco,
-          servicoSnapshot: this.deps.servicoSnapshot,
-          servicoOpenClaw: this.deps.servicoOpenClaw
-        } as DependenciasArquitetoEAnaliseArquiteto)
-        
+        if (ctx.analysisPlan?.taskType !== 'development') {
+          const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
+            clienteApi: this.deps.clienteApi,
+            config: this.deps.config,
+            disco: this.deps.servicoDisco,
+            fabricaPrompts: FabricaPromptsIA,
+            fileSystem: this.deps.fileSystem,
+            jsonValidator: this.deps.jsonValidator,
+            openClaw: this.deps.servicoOpenClaw,
+            snapshot: this.deps.servicoSnapshot,
+            logger,
+            pathUtil: this.deps.pathUtil,
+            servicoDisco: this.deps.servicoDisco,
+            servicoSnapshot: this.deps.servicoSnapshot,
+            servicoOpenClaw: this.deps.servicoOpenClaw
+          } as DependenciasArquitetoEAnaliseArquiteto)
+          
 
-        // TODO TERMINAR AQUI
-        const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
-          analysisPlan: ctx.analysisPlan,
-          resultados: ctx.resultados,
-          tarefaAtual: ctx.tarefaAtual,
-          userId: ctx.UserId,
-          controle: ctx.controle
-        } as AnaliseArquitetoEAnaliseArquitetoInput);
-
-
+          // TODO TERMINAR AQUI
+          const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
+            analysisPlan: ctx.analysisPlan,
+            resultados: ctx.resultados,
+            tarefaAtual: ctx.tarefaAtual,
+            userId: ctx.UserId,
+            controle: ctx.controle
+          } as AnaliseArquitetoEAnaliseArquitetoInput);
+        }
       }
 
 

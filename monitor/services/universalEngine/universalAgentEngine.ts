@@ -15,7 +15,7 @@ export class UniversalAgentEngine {
     private readonly universalValidators = new UniversalValidators();
     private readonly llmService = new LLMService();
     public async executeWithValidationLoop<T = any>(
-        { configIA: config, ctx, llmOptions } : executeWithValidationLoopArgs
+        { configIA: config, llmOptions } : executeWithValidationLoopArgs
     ): Promise<T> { 
         
         const retries = config.maxRetries || 3;
@@ -46,7 +46,7 @@ export class UniversalAgentEngine {
                 }
                 
                 // 2. VALIDA A RESPOSTA
-                const validation = await this.validateResponse(response.content, config, ctx);
+                const validation = await this.validateResponse(response.content, config);
 
                 // 3. DECISÃO
                 if (validation.isValid) {
@@ -108,8 +108,7 @@ export class UniversalAgentEngine {
 
     private async validateResponse(
         content: string, 
-        config: AIExecutionConfig, 
-        ctx: ContextoExecucao
+        config: AIExecutionConfig
     ): Promise<ValidationResult> {
         
         let allValid = true;
@@ -122,7 +121,7 @@ export class UniversalAgentEngine {
             switch (outcome.type) {
                 case OutcomeType.CUSTOM:
                     if (!outcome.customValidator) throw new Error("Validador CUSTOM exigido, mas nenhuma função foi fornecida.");
-                    result = await outcome.customValidator(content, ctx);
+                    result = await outcome.customValidator(content);
                     break;
                 case OutcomeType.JSON:
                     // Limpa a sujeira antes de tentar validar!
@@ -130,7 +129,7 @@ export class UniversalAgentEngine {
                     result = this.universalValidators.defaultValidateJSON(jsonLimpo, outcome);
                     break;
                 case OutcomeType.FILE_CREATION:
-                    result = await this.universalValidators.defaultValidateFileCreation(content, ctx, outcome.targetFile);
+                    result = await this.universalValidators.defaultValidateFileCreation(content, outcome.targetFile);
                     break;
                 case OutcomeType.ANY:
                     result = { isValid: true, parsedData: { rawOutput: content } };

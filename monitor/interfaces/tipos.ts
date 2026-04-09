@@ -13,6 +13,7 @@ import { DecomposicaoOutput } from '../passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
 import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
 import { AIExecutionConfig } from '../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
+import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType } from './retornosIA';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -239,7 +240,7 @@ export interface ContextoExecucao {
   project?: Project | null;
   files: ArquivosSessao;
   initialSnapshot?: Snapshot | null;
-  analysisPlan: PlanoDeAnalise | null;
+  analysisPlan: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType | null;
   developerPrompt?: string;
   currentInput?: string;
   architectPlanningResult?: ResultadoPlanejamentoArquiteto;
