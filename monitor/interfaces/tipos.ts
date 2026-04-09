@@ -8,12 +8,12 @@ import type { Project, Task, Prisma } from '@prisma/client';
 import { Snapshot } from '../services/WorkspaceSnapshotService';
 import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
 import { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
-import { VerificaAtomicidadeOutput } from '../passos/atomicos/PassoVerificaAtomicidade';
+import { VerificaAtomicidadeOutput } from '../interfaces/retornosIA';
 import { DecomposicaoOutput } from '../passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
 import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
 import { AIExecutionConfig } from '../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
-import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType } from './retornosIA';
+import { retornoTipoDaTarefaType } from './retornosIA';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -240,7 +240,7 @@ export interface ContextoExecucao {
   project?: Project | null;
   files: ArquivosSessao;
   initialSnapshot?: Snapshot | null;
-  analysisPlan: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType | null;
+  analysisPlan: retornoTipoDaTarefaType | null;
   developerPrompt?: string;
   currentInput?: string;
   architectPlanningResult?: ResultadoPlanejamentoArquiteto;

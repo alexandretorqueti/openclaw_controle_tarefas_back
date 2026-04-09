@@ -1,4 +1,5 @@
-import { z } from 'zod';
+
+// src/steps/PreAnaliseEscopoTarerefaStep.ts
 
 /**
  * Step responsável pela análise e planejamento do arquiteto.
@@ -6,13 +7,13 @@ import { z } from 'zod';
  * Inclui validação inteligente de evidências e decisão de fluxo.
  */
 
-import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType, 
-    retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema } from '../../interfaces/retornosIA';
+import { retornoTipoDaTarefaType, 
+    retornoTipoDaTarefaSchema } from '../../interfaces/retornosIA';
 import { AIExecutionConfig, executeWithValidationLoopArgs, ExpectedOutcome, OutcomeType } from '../../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
 import { LLMOptions, LLMProvider } from '../../services/universalEngine/interfaces/interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
 import { ContextoExecucao } from '../../interfaces';
-import { DependenciasBase, PassoBase } from '../PassoBase';
+import { PassoBase } from '../PassoBase';
 import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 import { UniversalAgentEngine } from '../../services/universalEngine/universalAgentEngine';
 // ============================================================================
@@ -30,7 +31,7 @@ const path = require('path');
 // CLASSE PRINCIPAL
 // ============================================================================
 
-class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
+class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoTipoDaTarefaType> {
     readonly nome: string = 'PreAnaliseEscopoTarerefa';
 
     private log: any;
@@ -44,7 +45,7 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
         this.motorUniversal = deps.motorUniversal;
     }
 
-    async execute(context: ContextoExecucao): Promise<retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
+    async execute(context: ContextoExecucao): Promise<retornoTipoDaTarefaType> {
         return this.processar(context);
     }
 
@@ -53,14 +54,14 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
      * @param context - Contexto do pipeline (deve conter dados do SetupContextStep)
      * @returns Contexto atualizado com análise do arquiteto
      */
-    async processar(context: ContextoExecucao): Promise<retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType> {
+    async processar(context: ContextoExecucao): Promise<retornoTipoDaTarefaType> {
         const { 
             tarefaAtual, 
             project, 
             config,
             configIA, 
         } = context;
-        let architectPlanningResult: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType = {
+        let architectPlanningResult: retornoTipoDaTarefaType = {
             taskType: 'development',
             expectedLayers: [],
             difficult: 0,
@@ -85,11 +86,11 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
             temperature: 0.5,
             timeout: config.TASK_TIMEOUT_MS/1000,
             model: project.modeloAuxiliar,
-            format: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema as JSONSchema7,
+            format: retornoTipoDaTarefaSchema as JSONSchema7,
         }
         const outcome: ExpectedOutcome = {
             type: OutcomeType.JSON,
-            schema: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema
+            schema: retornoTipoDaTarefaSchema
         }
         const configIaExecution: AIExecutionConfig = {
             agentId: project.agent,
@@ -102,7 +103,7 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
             configIA: configIaExecution,
             llmOptions: opcoesParaIA
         }
-        const analise: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType 
+        const analise: retornoTipoDaTarefaType 
         = await this.motorUniversal.executeWithValidationLoop(args);
        
         return analise;
@@ -110,3 +111,4 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoA
 }
 
 export default passoPreAnaliseEscopoTarerefa;
+

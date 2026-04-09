@@ -42,7 +42,7 @@ import { LoggerConsole } from './utils/LoggerConsole';
 import { criarContextoLimpo } from './utils/fabricaContexto';
 import { salvarContextoParaDebug } from './utils/debugContexto';
 import { OrquestradorTarefas } from './Orquestrador';
-
+import  TaskService from '../src/services/taskService';
 // ─────────────────────────────────────────────────────
 // 3. NOVOS SERVIÇOS PARA FEEDBACK ITERATIVO (TODOs 4 e 6)
 // ─────────────────────────────────────────────────────
@@ -417,6 +417,7 @@ Responda APENAS no formato JSON:
         },
         utils: { promptFactory }
       }),
+      servicoTarefas: TaskService
     });
   }
 

@@ -12,7 +12,7 @@ import { log } from '../../../../src/aux/logger';
 import { title } from 'node:process';
 import { de } from 'zod/v4/locales';
 import { Project } from '@prisma/client';
-import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema }
+import { retornoTipoDaTarefaSchema }
     from '../../../interfaces/retornosIA';
 describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
     let engine: UniversalAgentEngine;
@@ -254,7 +254,7 @@ describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
                    agentId: 'analista-junior',
                    systemPrompt: 'Voce é um assistente amigável.',
                    userPrompt: prompt,
-                   expectedOutcomes: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema,
+                   expectedOutcomes: retornoTipoDaTarefaSchema,
                    maxRetries: 2,
                 } as AIExecutionConfig,
                 services: {} as ServicosDoMonitor,

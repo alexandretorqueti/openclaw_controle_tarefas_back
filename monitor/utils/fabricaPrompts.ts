@@ -260,14 +260,6 @@ INFORMAÇÕES DA TAREFA:
 - Projeto: ${task.project.name}
 - Domínio: ${task.domain || 'Não especificado'}
 
-FORMATO DE RESPOSTA OBRIGATÓRIO (APENAS JSON):
-{
-  "isIdeal": boolean,
-  "reason": "Explique brevemente por que a tarefa tem um bom escopo funcional ou por que é um épico grande demais.",
-  "confidence": number,
-  "inferredDomain": "FRONTEND | BACKEND | UNKNOWN" 
-}
-
 REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se a tarefa pertence ao FRONTEND ou BACKEND baseado na descrição. Se não for possível deduzir, retorne "UNKNOWN". Se já vier preenchido, apenas repita-o.
 `;
   }

@@ -12,7 +12,7 @@ import { log } from '../../../../src/aux/logger';
 import { title } from 'node:process';
 import { de } from 'zod/v4/locales';
 import { Project } from '@prisma/client';
-import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoSchema }
+import { retornoTipoDaTarefaSchema }
     from '../../../interfaces/retornosIA';
 describe('UniversalAgentEngine - Testes do Motor de Loop', () => {
     let engine: UniversalAgentEngine;

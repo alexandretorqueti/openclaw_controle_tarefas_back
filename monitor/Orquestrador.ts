@@ -32,7 +32,7 @@ import { InicializaTarefaOutput, PassoInicializaTarefa } from './passos/atomicos
 import { DependenciasSuperValidacao, PassoSuperValidacao, SuperValidacaoInput, SuperValidacaoOutput } from './passos/atomicos/PassoSuperValidacao';
 import { DependenciasDecompoeTarefa, PassoDecompoeTarefa, DecomposicaoOutput, DecomposicaoInput } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
-import { PassoVerificaAtomicidade, VerificaAtomicidadeOutput } from './passos/atomicos/PassoVerificaAtomicidade';
+import PassoVerificaAtomicidade from './passos/atomicos/PassoVerificaAtomicidade';
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
 import { DependenciasAnaliseArquiteto, AnaliseArquitetoInput, AnaliseArquitetoOutput, MacroFaseAnaliseArquiteto } from './passos/macro/FaseAnaliseArquiteto';
 import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutput, MacroFaseProgramador } from './passos/macro/FaseProgramador';
@@ -53,7 +53,8 @@ import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquite
 import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa } from './passos/atomicos/PreAnaliseEscopoTarefaStep';
 import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
-import { retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType } from './interfaces/retornosIA';
+import { retornoTipoDaTarefaType, VerificaAtomicidadeOutput } from './interfaces/retornosIA';
+import TaskService from '../src/services/taskService';
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -84,6 +85,7 @@ export interface DependenciasGlobais {
   motorUniversal?: UniversalAgentEngine;
   // utils
   criarContexto: () => ContextoExecucao;
+  servicoTarefas: any
 }
 
 export class OrquestradorTarefas {
@@ -290,10 +292,9 @@ export class OrquestradorTarefas {
         ctx.controle.taskDir = inicializacao.taskDir;
       }
 
-
       // PASSO 5: PREANALISE ESCOPO TAREFA COM IA
       {
-        const preanalise: retornoAnalisaTarefaParaDefinirSeEDesenvolvimentoAnaliseOuAutomacaoType = await new passoPreAnaliseEscopoTarerefa({
+        const preanalise: retornoTipoDaTarefaType = await new passoPreAnaliseEscopoTarerefa({
           logger,
           FabricaPromptsIA: FabricaPromptsIA,
           motorUniversal: this.deps.motorUniversal
@@ -324,16 +325,33 @@ export class OrquestradorTarefas {
       // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
       {
         if (ctx.analysisPlan?.taskType !== 'development') {
-          if (ctx.tarefaAtual.isAtomic === undefined || ctx.tarefaAtual.isAtomic === null) {
-            const resultadoAtomicidade = await new PassoVerificaAtomicidade({
-              logger,
-              servicoLlmAtomicidade: this.deps.servicoLlmAtomicidade,
-              fabricaPrompts: FabricaPromptsIA,
-            } as DependenciasVerificaAtomicidade).execute({ tarefa: ctx.tarefaAtual } as VerificaAtomicidadeInput);
-            
-            ctx.tarefaAtual.isAtomic = resultadoAtomicidade.isAtomic;
-            await logger.info(`🔍 Atomicidade: ${ctx.tarefaAtual.isAtomic ? 'ATÔMICA' : 'NÃO ATÔMICA'}`);
+          const verificacaoAtomicidade: VerificaAtomicidadeOutput = await new PassoVerificaAtomicidade({
+            logger,
+            FabricaPromptsIA: FabricaPromptsIA,
+            motorUniversal: this.deps.motorUniversal
+          }).execute
+          (
+            { 
+              tarefaAtual: ctx.tarefaAtual,
+              project: ctx.project,
+              config: ctx.config,
+              configIA: ctx.configIA            
+            } as VerificaAtomicidadeInput
+          );
+
+          if (!verificacaoAtomicidade) {
+            return; // Falha grave de FileSystem
           }
+          if (verificacaoAtomicidade.success === false) {
+            return;
+          }
+          if (verificacaoAtomicidade.isIdeal === null) {
+            return;
+          }
+          if (verificacaoAtomicidade.isIdeal) {
+            ctx.tarefaAtual.isAtomic = true;
+            await this.deps.servicoTarefas.atualizarTarefa(ctx.tarefaAtual);
+          }       
         }
       }
 
