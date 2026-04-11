@@ -14,6 +14,9 @@ import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
 import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
 import { AIExecutionConfig } from '../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
 import { retornoTipoDaTarefaType } from './retornosIA';
+import { LoggerConsole as Logger } from '../utils/LoggerConsole';
+import { UniversalAgentEngine } from '../services/universalEngine/universalAgentEngine';
+import { BaseIAInput } from '../passos/passoIAAbstrato';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -229,7 +232,7 @@ export interface ConfiguracaoMonitor {
 // 7. CONTEXTO DE EXECUÇÃO (O "sangue" do sistema)
 // ═══════════════════════════════════════════════════════
 
-export interface ContextoExecucao {
+export interface ContextoExecucao extends BaseIAInput{
   tarefaAtual: TarefaCompleta | null;
   UserId: string | null;
   config: ConfiguracaoMonitor;
@@ -240,11 +243,12 @@ export interface ContextoExecucao {
   project?: Project | null;
   files: ArquivosSessao;
   initialSnapshot?: Snapshot | null;
-  analysisPlan: retornoTipoDaTarefaType | null;
-  developerPrompt?: string;
-  currentInput?: string;
-  architectPlanningResult?: ResultadoPlanejamentoArquiteto;
-  
+  architectPlanningResult?: ResultadoPlanejamentoArquiteto | null;
+  outputPassos: {
+    preanalise: retornoTipoDaTarefaType | null;
+    verificacaoAtomicidade?: VerificaAtomicidadeOutput | null;
+    decomposicaoTarefa?: DecomposicaoOutput | null;
+  };
   // Trilha de auditoria embutida
   historicoPassos: string[];
   
@@ -255,11 +259,13 @@ export interface ContextoExecucao {
 }
 
 export interface ServicosDoMonitor {
+  logger: Logger;
   lockService: ServicoLock;
   stateService: ServicoEstado;
   fileService: ServicoArquivosTarefa;
   userService: ServicoUsuario;
   taskAnalysisService: ServicoAnaliseTarefa;
+  motorUniversal: UniversalAgentEngine;
 }
 
 export interface UtilidadesDoMonitor {

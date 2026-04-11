@@ -191,7 +191,7 @@ export function criarContextoMock(
       architectPlanFile: null,
       architectLogFile: null,
     },
-    analysisPlan: null,
+    preanalise: null,
     historicoPassos: [],
     controle: {
       loopsExecutados: 0,

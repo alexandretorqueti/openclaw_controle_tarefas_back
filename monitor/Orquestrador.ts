@@ -23,7 +23,6 @@ import {
 import { DependenciasInicializaTarefa, InicializaTarefaInput } from './passos/atomicos/PassoInicializaTarefa';
 import { ConfiguraUsuarioInput } from './passos/atomicos/PassoConfiguraUsuario';
 import { PassoVerificaTimeout, VerificaTimeoutInput } from './passos/atomicos/PassoVerificaTimeout';
-import { DependenciasVerificaAtomicidade, VerificaAtomicidadeInput} from './passos/atomicos/PassoVerificaAtomicidade';
 import { VerificaDominioInput, VerificaDominioOutput, DependenciasVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import { WorkspaceSnapshotServiceDeps, SnapshotInput, Snapshot, WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
 import { ConfiguraUsuarioOutput, DependenciasConfiguraUsuario, PassoConfiguraUsuario } from './passos/atomicos/PassoConfiguraUsuario';
@@ -50,11 +49,12 @@ import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
 import type { FeedbackService } from './services/FeedbackService';
 import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
-import passoPreAnaliseEscopoTarerefa, { DependenciasPreAnaliseEscopoTarerefa } from './passos/atomicos/PreAnaliseEscopoTarefaStep';
+import passoPreAnaliseEscopoTarerefa from './passos/atomicos/PassoPreAnaliseEscopoTarefa';
 import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
 import { retornoTipoDaTarefaType, VerificaAtomicidadeOutput } from './interfaces/retornosIA';
 import TaskService from '../src/services/taskService';
+
 
 export interface DependenciasGlobais {
   logger: Logger;
@@ -89,7 +89,10 @@ export interface DependenciasGlobais {
 }
 
 export class OrquestradorTarefas {
-  constructor(private readonly deps: DependenciasGlobais) {}
+  
+  constructor(private readonly deps: DependenciasGlobais) {
+    
+  }
 
   /**
    * Avalia a necessidade de correção baseada na análise do programador
@@ -245,7 +248,7 @@ export class OrquestradorTarefas {
 
       // PASSO 2: CONFIGURAÇÃO DO USUÁRIO
       {
-        const configUsuario = await new PassoConfiguraUsuario({
+        const configUsuario: ConfiguraUsuarioOutput = await new PassoConfiguraUsuario({
           logger,
           userService: this.deps.servicoUsuario,
         } as DependenciasConfiguraUsuario).execute({ nickname: ctx.config.MY_USER_NICKNAME } as ConfiguraUsuarioInput);
@@ -265,12 +268,15 @@ export class OrquestradorTarefas {
         }
 
         ctx.tarefaAtual = busca.tarefa;
+        ctx.project = busca.tarefa.project;
         await logger.info(`🎯 Tarefa selecionada: ${ctx.tarefaAtual.title} [${ctx.tarefaAtual.id}]`);
       }
 
       // PASSO 4: INICIALIZAÇÃO DA TAREFA
+      // TODO: Retirar diretório de trabalho isolado (taskDir)
+      // Vamos trabalhar com JSONS (Pensar antes de implementar)
       {
-        const inicializacao = await new PassoInicializaTarefa({
+        const inicializacao: InicializaTarefaOutput = await new PassoInicializaTarefa({
           logger,
           stateService: this.deps.servicoEstado,
           lockService: this.deps.servicoLock,
@@ -294,20 +300,7 @@ export class OrquestradorTarefas {
 
       // PASSO 5: PREANALISE ESCOPO TAREFA COM IA
       {
-        const preanalise: retornoTipoDaTarefaType = await new passoPreAnaliseEscopoTarerefa({
-          logger,
-          FabricaPromptsIA: FabricaPromptsIA,
-          motorUniversal: this.deps.motorUniversal
-        } as DependenciasPreAnaliseEscopoTarerefa)
-        .execute
-        (
-          { 
-            tarefaAtual: ctx.tarefaAtual,
-            project: ctx.project,
-            files: ctx.files,
-            
-          } as ContextoExecucao
-        );
+        const preanalise: retornoTipoDaTarefaType = await new passoPreAnaliseEscopoTarerefa(this.deps).execute(ctx);
 
         if (!preanalise) {
           return; // Falha grave de FileSystem
@@ -319,26 +312,13 @@ export class OrquestradorTarefas {
           return;
         }
 
-        ctx.analysisPlan = preanalise || null;
+        ctx.outputPassos.preanalise = preanalise || null;
       }
 
       // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
       {
-        if (ctx.analysisPlan?.taskType !== 'development') {
-          const verificacaoAtomicidade: VerificaAtomicidadeOutput = await new PassoVerificaAtomicidade({
-            logger,
-            FabricaPromptsIA: FabricaPromptsIA,
-            motorUniversal: this.deps.motorUniversal
-          }).execute
-          (
-            { 
-              tarefaAtual: ctx.tarefaAtual,
-              project: ctx.project,
-              config: ctx.config,
-              configIA: ctx.configIA            
-            } as VerificaAtomicidadeInput
-          );
-
+        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
+          const verificacaoAtomicidade: VerificaAtomicidadeOutput = await new PassoVerificaAtomicidade(this.deps).execute(ctx);
           if (!verificacaoAtomicidade) {
             return; // Falha grave de FileSystem
           }
@@ -350,6 +330,7 @@ export class OrquestradorTarefas {
           }
           if (verificacaoAtomicidade.isIdeal) {
             ctx.tarefaAtual.isAtomic = true;
+            ctx.outputPassos.verificacaoAtomicidade = verificacaoAtomicidade;
             await this.deps.servicoTarefas.atualizarTarefa(ctx.tarefaAtual);
           }       
         }
@@ -357,7 +338,7 @@ export class OrquestradorTarefas {
 
       // PASSO 7: DECOMPOSIÇÃO // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
       {
-        if (ctx.analysisPlan?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
           if (ctx.tarefaAtual.isAtomic === false) {
             const decomposicao: DecomposicaoOutput = await new PassoDecompoeTarefa({
               logger,
@@ -376,14 +357,16 @@ export class OrquestradorTarefas {
             if (decomposicao.subtasksCreated > 0) {
               return; // Tarefa mãe virou épico, encerra por aqui pois as filhas entrarão na fila
             }
+            
             ctx.tarefaAtual.isAtomic = true; // Fallback: IA decidiu não decompor
+            ctx.outputPassos.decomposicaoTarefa = decomposicao;
           }
         }
       }
 
       // PASSO 8: DETERMINAÇÃO DE DOMÍNIO
       {
-        if (ctx.analysisPlan?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
           const dominio = await new PassoVerificaDominio({
             logger,
             gerenciadorFalha: this.deps.gerenciadorFalha,
@@ -402,16 +385,15 @@ export class OrquestradorTarefas {
 
       // CAPTURA DO SNAPSHOT INICIAL (Pré-Arquiteto)
       {
-        if (ctx.analysisPlan?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
           const snapshotService = new WorkspaceSnapshotService({ logger, fileSystem: this.deps.fileSystem } as WorkspaceSnapshotServiceDeps);
           ctx.initialSnapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
         }
       }
 
       // PASSO 9: FASE DO ARQUITETO
-     
       {
-        if (ctx.analysisPlan?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
           const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
             clienteApi: this.deps.clienteApi,
             config: this.deps.config,
@@ -431,7 +413,7 @@ export class OrquestradorTarefas {
 
           // TODO TERMINAR AQUI
           const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
-            analysisPlan: ctx.analysisPlan,
+            analysisPlan: ctx.outputPassos.preanalise,
             resultados: ctx.resultados,
             tarefaAtual: ctx.tarefaAtual,
             userId: ctx.UserId,

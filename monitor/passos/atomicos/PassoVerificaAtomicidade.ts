@@ -1,121 +1,58 @@
-
-// src/steps/PassoVerificaAtomicidade.ts
-
-/**
- * Step responsável pela verificação de atomicidade
- * A IA analisa se a tarefa é complexa ou simples
- * Sendo simples, ela é atômica
- */
-
-import { VerificaAtomicidadeOutput, 
-        VerificaAtomicidadeSchema    
-  } from '../../interfaces/retornosIA';
-import { AIExecutionConfig, executeWithValidationLoopArgs, ExpectedOutcome, OutcomeType } from '../../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
-import { LLMOptions, LLMProvider } from '../../services/universalEngine/interfaces/interfaceLLM';
 import { JSONSchema7 } from 'json-schema';
-import { ConfiguracaoMonitor, ContextoExecucao, TarefaCompleta } from '../../interfaces';
-import { PassoBase } from '../PassoBase';
 import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
-import { UniversalAgentEngine } from '../../services/universalEngine/universalAgentEngine';
-import { Project } from '@prisma/client';
+import { PassoIAAbstrato } from '../passoIAAbstrato';
+import z from 'zod';
+import zodToJsonSchema from 'zod-to-json-schema';
+import { ContextoExecucao } from '../../interfaces';
 // ============================================================================
 // INTERFACES (Contratos de Tipagem)
 // ============================================================================
 
-export type VerificaAtomicidadeInput = {
-    tarefaAtual: TarefaCompleta;
-    project: Project;
-    config: ConfiguracaoMonitor;
-    configIA: AIExecutionConfig;
-}
+const retornoVerificaAtomicidade
+    = z.object({
+        isIdeal: z.boolean().describe('Indica se a tarefa tem o "Tamanho Ideal" para ser entregue a um desenvolvedor senior'),
+        reason: z.string().optional().describe('Razão que justifica o reprovado'),
+        confidence: z.number().min(0).max(100).default(0).describe('Confiança da tarefa'),
+        inferredDomain: z.enum(['backend', 'frontend']).optional().describe('Domínio inferido da tarefa'),
+        success: z.boolean().describe('Indica se a tarefa foi verificada com sucesso'),
+        error: z.string().optional().describe('Se houve algum erro no seu processamento')
+    });
 
-export interface DependenciasVerificaAtomicidade {
-    logger: any;
-    FabricaPromptsIA: FabricaPromptsIA;
-    motorUniversal: UniversalAgentEngine;
-}
+export type VerificaAtomicidadeOutput = z.infer<typeof retornoVerificaAtomicidade>;
+const VerificaAtomicidadeSchema: JSONSchema7 = zodToJsonSchema(retornoVerificaAtomicidade) as JSONSchema7;
 
 const path = require('path');
 // ============================================================================
 // CLASSE PRINCIPAL
 // ============================================================================
 
-class PassoVerificaAtomicidade extends PassoBase<VerificaAtomicidadeInput, VerificaAtomicidadeOutput> {
+class PassoVerificaAtomicidade extends PassoIAAbstrato<ContextoExecucao, VerificaAtomicidadeOutput> {
     readonly nome: string = 'VerificaçãodeAtomicidade';
+    protected readonly schema: JSONSchema7 = VerificaAtomicidadeSchema;
 
-    private log: any;
-    private motorUniversal: any;
-    /**
-     * Construtor que obtém dependências do container.
-     * Aceita instâncias opcionais para facilitar testes.
+     /**
+     * Define o que retornar caso os dados de input não sejam válidos.
      */
-    constructor(deps: DependenciasVerificaAtomicidade) {
-        super(deps);
-        this.motorUniversal = deps.motorUniversal;
-    }
-
-    async execute(input: VerificaAtomicidadeInput): Promise<VerificaAtomicidadeOutput> {
-        return this.processar(input);
-    }
-
-    /**
-     * Executa o step de planejamento do arquiteto
-     * @param context - Contexto do pipeline (deve conter dados do SetupContextStep)
-     * @returns Contexto atualizado com análise do arquiteto
-     */
-    async processar(input: VerificaAtomicidadeInput): Promise<VerificaAtomicidadeOutput> {
-        const { 
-            tarefaAtual, 
-            project, 
-            config,
-            configIA, 
-        } = input;
-        let verificaAtomicidadeResult: VerificaAtomicidadeOutput = {
-            isIdeal: false,
+    protected getResultadoFallback(mensagemErro: string): VerificaAtomicidadeOutput {
+        return {
             confidence: 0,
+            error: mensagemErro,
             inferredDomain: null,
-            reason: ''
-        }
-        if (!tarefaAtual || !configIA || !project || !configIA) {
-            await this.log(`⚠️ ArchitectPlanningStep: contexto incompleto`);
-            verificaAtomicidadeResult = {
-                success: false,
-                error: 'contexto incompleto (task, files ou config faltando)'
-            }
-            return verificaAtomicidadeResult;
-        }
-        
-        const promptParaIA = await FabricaPromptsIA.gerarPromptParaVerificarAtomicidadeeDominio(tarefaAtual);
-
-        const opcoesParaIA: LLMOptions = {
-            provider: LLMProvider.OLLAMA,
-            agentId: project.agent,
-            sessionId: `session-${tarefaAtual.id}`,
-            temperature: 0.5,
-            timeout: config.TASK_TIMEOUT_MS/1000,
-            model: project.modeloAuxiliar,
-            format: VerificaAtomicidadeSchema as JSONSchema7,
-        }
-        const outcome: ExpectedOutcome = {
-            type: OutcomeType.JSON,
-            schema: VerificaAtomicidadeSchema
-        }
-        const configIaExecution: AIExecutionConfig = {
-            agentId: project.agent,
-            systemPrompt: "",
-            userPrompt: promptParaIA,
-            expectedOutcomes: [outcome],
-        };
-
-        const args: executeWithValidationLoopArgs = {
-            configIA: configIaExecution,
-            llmOptions: opcoesParaIA
-        }
-        const analise: VerificaAtomicidadeOutput 
-        = await this.motorUniversal.executeWithValidationLoop(args);
-       
-        return analise;
+            isIdeal: false,
+            reason: '',
+            success: false,
+        } as VerificaAtomicidadeOutput;
     }
+
+    /**
+     * Define como o prompt desta etapa específica é gerado.
+     */
+    protected async construirPrompt(input: ContextoExecucao): Promise<string> {
+        return await FabricaPromptsIA.gerarPromptParaVerificarAtomicidadeeDominio(
+            input.tarefaAtual, 
+        );
+    }
+
 }
 
 export default PassoVerificaAtomicidade;

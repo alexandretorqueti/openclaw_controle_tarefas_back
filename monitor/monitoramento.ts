@@ -31,6 +31,7 @@ import type {
   ServicoUsuario,
   ServicoAnaliseTarefa,
   FabricaPrompts,
+  ServicosDoMonitor,
 } from './interfaces';
 import type { Logger } from './interfaces/logger';
 
@@ -409,12 +410,14 @@ Responda APENAS no formato JSON:
       criarContexto: () => criarContextoLimpo({
         config: configuracao,
         services: {
+          logger: this.logger,
           lockService,
           stateService,
           fileService,
           userService,
           taskAnalysisService,
-        },
+          motorUniversal
+        } as ServicosDoMonitor,
         utils: { promptFactory }
       }),
       servicoTarefas: TaskService

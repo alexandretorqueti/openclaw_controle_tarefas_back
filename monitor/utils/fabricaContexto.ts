@@ -33,7 +33,7 @@ export function criarContextoLimpo(deps: DependenciasFabricaContexto): ContextoE
       architectPlanFile: null,
       architectLogFile: null,
     },
-    analysisPlan: null,
+    preanalise: null,
     
     // Trilha de auditoria vazia no início
     historicoPassos: [],

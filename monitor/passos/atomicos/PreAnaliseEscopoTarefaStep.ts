@@ -16,15 +16,8 @@ import { ContextoExecucao } from '../../interfaces';
 import { PassoBase } from '../PassoBase';
 import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 import { UniversalAgentEngine } from '../../services/universalEngine/universalAgentEngine';
-// ============================================================================
-// INTERFACES (Contratos de Tipagem)
-// ============================================================================
-
-export interface DependenciasPreAnaliseEscopoTarerefa {
-    logger: any;
-    FabricaPromptsIA: FabricaPromptsIA;
-    motorUniversal: UniversalAgentEngine;
-}
+import { LoggerConsole as Logger } from '../../utils/LoggerConsole';
+import { DependenciasGlobais } from '../../Orquestrador';
 
 const path = require('path');
 // ============================================================================
@@ -34,19 +27,14 @@ const path = require('path');
 class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoTipoDaTarefaType> {
     readonly nome: string = 'PreAnaliseEscopoTarerefa';
 
-    private log: any;
     private motorUniversal: any;
     /**
      * Construtor que obtém dependências do container.
      * Aceita instâncias opcionais para facilitar testes.
      */
-    constructor(deps: DependenciasPreAnaliseEscopoTarerefa) {
+    constructor(deps: DependenciasGlobais) {
         super(deps);
         this.motorUniversal = deps.motorUniversal;
-    }
-
-    async execute(context: ContextoExecucao): Promise<retornoTipoDaTarefaType> {
-        return this.processar(context);
     }
 
     /**
@@ -69,7 +57,7 @@ class passoPreAnaliseEscopoTarerefa extends PassoBase<ContextoExecucao, retornoT
             success: false
         }
         if (!tarefaAtual || !configIA || !project || !configIA) {
-            await this.log(`⚠️ ArchitectPlanningStep: contexto incompleto`);
+            await this.logger.erro(`⚠️ ArchitectPlanningStep: contexto incompleto`);
             architectPlanningResult = {
                 success: false,
                 error: 'contexto incompleto (task, files ou config faltando)'
