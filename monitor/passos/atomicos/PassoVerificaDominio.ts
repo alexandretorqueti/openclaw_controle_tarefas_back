@@ -1,23 +1,9 @@
-// monitor/passos/atomicos/PassoVerificaDominio.ts
-// ─────────────────────────────────────────────────────
-// Passo Atômico PURO: Valida e determina o domínio da tarefa.
-// Se a tarefa não tem domínio, chama LLM com modelo auxiliar para determinar.
-// ─────────────────────────────────────────────────────
-
-import { PassoBase } from '../PassoBase';
-import type { DependenciasBase } from '../PassoBase';
-import type { TarefaCompleta, FabricaPrompts } from '../../interfaces';
-
-export interface VerificaDominioInput {
-  tarefa: TarefaCompleta;
-  userId: string | null;
-  configFalha: ConfiguracaoFalha;
-}
-
-export interface VerificaDominioOutput {
-  dominioValido: boolean;
-  dominio?: string; // 'backend' ou 'frontend'
-}
+import { JSONSchema7 } from 'json-schema';
+import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
+import { PassoIAAbstrato } from '../passoIAAbstrato';
+import z from 'zod';
+import zodToJsonSchema from 'zod-to-json-schema';
+import { ContextoExecucao, TarefaCompleta } from '../../interfaces';
 
 export interface ConfiguracaoFalha {
   apiUrl: string;
@@ -25,119 +11,74 @@ export interface ConfiguracaoFalha {
   errorDir: string;
 }
 
-export interface GerenciadorFalhaTarefa {
-  registrarFalha(
-    tarefa: TarefaCompleta,
-    erro: Error,
-    userId: string | null,
-    config: ConfiguracaoFalha
-  ): Promise<void>;
+export interface VerificaDominioInput {
+  tarefa: TarefaCompleta;
+  userId: string | null;
+  configFalha: ConfiguracaoFalha;
 }
 
-/** Contrato do serviço LLM com modelo auxiliar */
-export interface ServicoLlmAuxiliar {
-  determinarDominioTarefa(
-    titulo: string,
-    descricao: string,
-    contextoProjeto: any,
-    prompt: string
-  ): Promise<'BACKEND' | 'FRONTEND' | 'UNKNOWN'>;
-}
+export type DependenciasVerificaDominio = any;
 
-export interface DependenciasVerificaDominio extends DependenciasBase {
-  gerenciadorFalha: GerenciadorFalhaTarefa;
-  servicoLlmAuxiliar?: ServicoLlmAuxiliar;
-  fabricaPrompts?: FabricaPrompts;
-}
+const retornoDominioSchema = z.object({
+    isIdeal: z.boolean().describe('Indica se a tarefa é atômica'),
+    reason: z.string().describe('Explicação da análise'),
+    confidence: z.number().describe('Nível de confiança de 0 a 100'),
+    inferredDomain: z.enum(['BACKEND', 'FRONTEND', 'UNKNOWN', 'INFRASTRUCTURE', 'FULLSTACK']).describe('Domínio inferido pela IA')
+});
 
-export interface ResultadoCheckDominio {
-  isIdeal: boolean,
-  reason: string,
-  confidence: number,
-  inferredDomain: string | null;
-}
+export type VerificaDominioOutput = {
+    dominioValido: boolean;
+    dominio?: string;
+};
 
-export class PassoVerificaDominio extends PassoBase<VerificaDominioInput, VerificaDominioOutput> {
-  readonly nome = 'Verificação de Domínio';
+const DominioJsonSchema: JSONSchema7 = zodToJsonSchema(retornoDominioSchema) as JSONSchema7;
 
-  private readonly gerenciadorFalha: GerenciadorFalhaTarefa;
-  private readonly servicoLlmAuxiliar?: ServicoLlmAuxiliar;
-  private readonly fabricaPrompts?: FabricaPrompts;
+export class PassoVerificaDominio extends PassoIAAbstrato<ContextoExecucao, any> {
+    readonly nome = 'Verificação de Domínio';
+    protected readonly schema: JSONSchema7 = DominioJsonSchema;
 
-  constructor(deps: DependenciasVerificaDominio) {
-    super(deps);
-    this.gerenciadorFalha = deps.gerenciadorFalha;
-    this.servicoLlmAuxiliar = deps.servicoLlmAuxiliar;
-    this.fabricaPrompts = deps.fabricaPrompts;
-  }
-
-  protected async processar(input: VerificaDominioInput): Promise<VerificaDominioOutput> {
-    const { tarefa, userId, configFalha } = input;
-
-    // CASO 1: Tarefa já tem domínio definido
-    if (tarefa.domain) {
-      await this.logger.info(`✅ Verificação de domínio aprovada: ${tarefa.domain}.`);
-      return { dominioValido: true, dominio: tarefa.domain };
+    protected getResultadoFallback(mensagemErro: string): VerificaDominioOutput {
+        return { dominioValido: false };
     }
 
-    // CASO 2: Tarefa não tem domínio, mas temos serviço LLM auxiliar
-    if (this.servicoLlmAuxiliar && this.fabricaPrompts) {
-      await this.logger.info(`🔍 Tarefa sem domínio. Chamando LLM auxiliar para determinar...`);
+    protected async construirPrompt(input: ContextoExecucao): Promise<string> {
+        return FabricaPromptsIA.gerarPromptParaVerificarAtomicidadeeDominio(input.tarefaAtual);
+    }
 
-      try {
-        // Gerar prompt para determinar domínio
-        const promptDominio = this.fabricaPrompts.gerarPromptParaVerificarAtomicidadeeDominio(tarefa);
+    async processar(input: ContextoExecucao): Promise<VerificaDominioOutput> {
+        const { tarefaAtual, UserId, config } = input;
 
-        // Chamar LLM auxiliar
-        const dominioDeterminado : string = await this.servicoLlmAuxiliar.determinarDominioTarefa(
-          tarefa.title,
-          tarefa.description || '',
-          tarefa.project,
-          promptDominio
-        );
-
-        if (dominioDeterminado === 'UNKNOWN') {
-          await this.logger.erro(`❌ LLM não conseguiu determinar domínio para tarefa [${tarefa.id}].`);
-          await this.registrarFalhaDominio(tarefa, userId, configFalha);
-          return { dominioValido: false };
+        if (tarefaAtual.domain && tarefaAtual.domain !== 'UNKNOWN') {
+            await this.logger.info(`✅ Domínio já definido no banco: ${tarefaAtual.domain}`);
+            return { dominioValido: true, dominio: tarefaAtual.domain };
         }
 
-        await this.logger.info(`✅ Domínio determinado pela LLM: ${dominioDeterminado}`);
-        return { dominioValido: true, dominio: dominioDeterminado };
+        const resultadoIA = await super.processar(input);
 
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
-        await this.logger.erro(`❌ Erro ao chamar LLM para determinar domínio: ${msg}`);
-        await this.registrarFalhaDominio(tarefa, userId, configFalha);
-        return { dominioValido: false };
-      }
+        if (!resultadoIA || resultadoIA.inferredDomain === 'UNKNOWN') {
+            await this.logger.erro(`❌ Não foi possível determinar o domínio para a tarefa ${tarefaAtual.id}`);
+            
+            const deps = (this as any).deps;
+            if (deps.gerenciadorFalha) {
+                await deps.gerenciadorFalha.registrarFalha(
+                    tarefaAtual, 
+                    new Error('Domínio não identificado pela IA'), 
+                    UserId, 
+                    { 
+                        apiUrl: config.API_URL, 
+                        tasksDir: config.TASKS_DIR, 
+                        errorDir: config.ERROR_DIR 
+                    }
+                );
+            }
+            return { dominioValido: false };
+        }
+
+        return { 
+            dominioValido: true, 
+            dominio: resultadoIA.inferredDomain 
+        };
     }
-
-    // CASO 3: Tarefa sem domínio e sem serviço LLM disponível
-    await this.logger.erro(`❌ Tarefa [${tarefa.id}] sem domínio definido e sem LLM auxiliar disponível.`);
-    await this.registrarFalhaDominio(tarefa, userId, configFalha);
-    return { dominioValido: false };
-  }
-
-  private async registrarFalhaDominio(
-    tarefa: TarefaCompleta,
-    userId: string | null,
-    configFalha: ConfiguracaoFalha
-  ): Promise<void> {
-    const mensagemErro = 'A tarefa é atômica, mas não foi possível inferir seu domínio (IA não detectou).';
-    
-    try {
-      await this.gerenciadorFalha.registrarFalha(
-        tarefa,
-        new Error(mensagemErro),
-        userId,
-        configFalha
-      );
-    } catch (cleanupError: unknown) {
-      const msg = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-      await this.logger.erro(
-        `⚠️ Falha na rotina de limpeza do erro de domínio: ${msg}`
-      );
-    }
-  }
 }
+
+export default PassoVerificaDominio;

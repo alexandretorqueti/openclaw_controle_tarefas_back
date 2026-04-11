@@ -6,107 +6,136 @@ const exec = util.promisify(require('child_process').exec); // Permite usar asyn
 const URL_DO_SITE = 'https://gemini.google.com/'; 
 const SELETOR_COMANDO = 'code'; // Pega o código isolado do Angular
 const SELETOR_CAIXA_TEXTO = '.ql-editor'; // Pega o editor de texto rico
-const TEMPO_DE_ESPERA_MS = 5000;
+const TEMPO_DE_ESPERA_MS = 10000;
+// O seletor do botão de parar. No Gemini em português, geralmente ele tem esse aria-label.
+// Se estiver em inglês, pode ser 'button[aria-label*="Stop"]'
+const SELETOR_BOTAO_STOP = 'button[aria-label*="Parar"]';
 
 async function iniciarBot() {
     console.log('🤖 Iniciando o bot...');
-    
-    // Abre o navegador. Mude headless para false se quiser ver o robô trabalhando
     console.log('🔗 Conectando ao seu Chrome pessoal...');
     
-    // Conecta na porta 9222 do Chrome que você abriu pelo terminal do Pop!_OS
     const browser = await puppeteer.connect({ 
         browserURL: 'http://127.0.0.1:9222',
-        defaultViewport: null // Isso evita que o Puppeteer esmague o tamanho da sua janela
+        defaultViewport: null 
     });
     
-    // Lista todas as abas que já estão abertas nesse Chrome
     const abasAbertas = await browser.pages();
-    
-    // Procura se você já tem uma aba do Gemini aberta
     let page = abasAbertas.find(aba => aba.url().includes('gemini.google.com'));
     
     if (page) {
         console.log('✅ Aba do Gemini encontrada! Assumindo o controle...');
-        await page.bringToFront(); // Puxa a aba pro foco
+        await page.bringToFront(); 
     } else {
         console.log('⚠️ Aba do Gemini não encontrada. Abrindo uma nova...');
         page = await browser.newPage();
         await page.goto(URL_DO_SITE, { waitUntil: 'networkidle2' });
     }
+    
     let ultimoComandoRodado = '';
 
-    // Loop infinito para ficar verificando o site continuamente
     while (true) {
         try {
-            // 1. Tenta ler o comando do site
-            // Aguarda o elemento existir na tela antes de tentar ler
             await page.waitForSelector(SELETOR_COMANDO, { timeout: 5000 }).catch(() => {});
             
-            // Usamos $$eval (dois cifrões) para pegar TODOS os elementos que deram match
-            const comandoAtual = await page.$$eval(SELETOR_COMANDO, elementos => {
-                if (elementos.length === 0) return null; // Se não achou nada, retorna null
-                
-                // Pega o último elemento da lista
-                const ultimoElemento = elementos[elementos.length - 1];
-                return ultimoElemento.innerText.trim();
-            });
-
-            // 2. Verifica se é um comando válido e se já não foi rodado
+            // 1. Tenta ler o comando preliminar
+            let comandoAtual = await lerUltimoComando(page);
+            console.log(comandoAtual);
+            // 2. Se achou um comando novo, ESPERA a geração terminar antes de agir
             if (comandoAtual && comandoAtual !== ultimoComandoRodado) {
+                
+                // Aguarda início da Geração
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                // Trava o script até a IA parar de gerar a resposta
+                await aguardarFimDaGeracao(page);
+                
+                // 3. Lê novamente, pois o comando pode ter sido completado durante a espera!
+                comandoAtual = await lerUltimoComando(page);
+
+                // Dupla checagem de segurança
+                if (comandoAtual === ultimoComandoRodado) continue;
+
                 console.log(`\n======================================`);
-                console.log(`🔥 Novo comando detectado: ${comandoAtual}`);
+                console.log(`🔥 Novo comando detectado e completo:\n${comandoAtual}`);
                 
                 let resultadoTerminal = '';
 
-                // 3. Executa o comando no terminal
                 try {
+                    // Executa o comando completo
                     const { stdout, stderr } = await exec(comandoAtual);
-                    resultadoTerminal = stdout || stderr; // Pega a saída (sucesso ou erro)
+                    resultadoTerminal = stdout || stderr; 
                 } catch (erro) {
                     resultadoTerminal = `Erro na execução:\n${erro.message}`;
                 }
-
+                if (!resultadoTerminal || resultadoTerminal.length === 0) {
+                    resultadoTerminal = 'Comando executado.';
+                }
                 console.log(`Saída capturada:\n${resultadoTerminal}`);
-
-                // --- COLE ESTA NOVA PARTE NO LUGAR ---
                 console.log('📝 Inserindo o resultado no editor de texto...');
 
-                // 4. Aguarda a caixa de texto existir e foca nela
                 await page.waitForSelector(SELETOR_CAIXA_TEXTO, { visible: true });
                 await page.click(SELETOR_CAIXA_TEXTO);
 
-                // 5. Limpa qualquer texto antigo (Simula Ctrl+A e Backspace)
-                await page.keyboard.down('Control'); // No Mac, troque 'Control' por 'Meta' se der erro
+                await page.keyboard.down('Control'); 
                 await page.keyboard.press('A');
                 await page.keyboard.up('Control');
                 await page.keyboard.press('Backspace');
 
-                // 6. Cola o resultado instantaneamente (Truque do execCommand)
                 await page.evaluate((seletor, texto) => {
                     const caixaDeTexto = document.querySelector(seletor);
                     caixaDeTexto.focus();
                     document.execCommand('insertText', false, texto);
                 }, SELETOR_CAIXA_TEXTO, resultadoTerminal);
 
-                // 7. Pequeno atraso pro site processar e aperta Enter para enviar
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // Pequeno atraso para garantir que o front-end do Gemini registrou o 'insertText'
+                await new Promise(resolve => setTimeout(resolve, 2000));
                 await page.keyboard.press('Enter');
                 console.log('✅ Resultado enviado!');
-                // -------------------------------------
 
-                // Atualiza a memória do bot
                 ultimoComandoRodado = comandoAtual;
+            } else {
+                console.log('⏳ Nenhum novo comando detectado.');
             }
 
         } catch (erro) {
             console.error(`Erro durante o ciclo: ${erro.message}`);
         }
 
-        // 6. Aguarda o tempo definido antes de checar novamente
         await new Promise(resolve => setTimeout(resolve, TEMPO_DE_ESPERA_MS));
     }
 }
 
-// Executa a função
 iniciarBot();
+
+// Função auxiliar para evitar repetição de código na hora de ler o DOM
+async function lerUltimoComando(page) {
+    return await page.$$eval(SELETOR_COMANDO, elementos => {
+        if (elementos.length === 0) return null;
+        return elementos[elementos.length - 1].innerText.trim();
+    });
+}
+
+// Nova função baseada na verificação do botão
+async function aguardarFimDaGeracao(page) {
+    console.log('⏳ Detectada nova resposta. Aguardando o botão de "Stop" sumir...');
+
+    // Damos 1 segundinho de "gordura" para garantir que a interface 
+    // teve tempo de trocar o botão Play pelo botão Stop após o envio do comando.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    try {
+        // O pulo do gato está aqui: { hidden: true }
+        // O Puppeteer vai ficar travado nesta linha até que o elemento do botão STOP
+        // seja removido do DOM ou fique invisível (display: none).
+        // timeout: 0 significa que ele vai esperar para sempre se for preciso (para respostas muito longas).
+        await page.waitForSelector(SELETOR_BOTAO_STOP, { hidden: true, timeout: 0 });
+        
+        // Damos mais um tempinho mínimo só para garantir que a tag <code> terminou de ser renderizada
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        console.log('✅ Resposta concluída pela IA!');
+    } catch (erro) {
+        console.log(`⚠️ Erro ao monitorar o botão: ${erro.message}`);
+    }
+}

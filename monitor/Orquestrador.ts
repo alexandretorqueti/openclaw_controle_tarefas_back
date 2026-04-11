@@ -1,4 +1,3 @@
-
 // monitor/Orquestrador.ts
 // ─────────────────────────────────────────────────────
 // ORQUESTRADOR IMPERATIVO (Imperative Orchestration)
@@ -29,7 +28,7 @@ import { ConfiguraUsuarioOutput, DependenciasConfiguraUsuario, PassoConfiguraUsu
 import { BuscaTarefaInput, BuscaTarefaOutput, DependenciasBuscaTarefa, PassoBuscaTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import { InicializaTarefaOutput, PassoInicializaTarefa } from './passos/atomicos/PassoInicializaTarefa';
 import { DependenciasSuperValidacao, PassoSuperValidacao, SuperValidacaoInput, SuperValidacaoOutput } from './passos/atomicos/PassoSuperValidacao';
-import { DependenciasDecompoeTarefa, PassoDecompoeTarefa, DecomposicaoOutput, DecomposicaoInput } from './passos/atomicos/PassoDecompoeTarefa';
+import { PassoDecompoeTarefa, DecompoeTarefaOutput } from './passos/atomicos/PassoDecompoeTarefa';
 import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import PassoVerificaAtomicidade from './passos/atomicos/PassoVerificaAtomicidade';
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
@@ -49,7 +48,7 @@ import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
 import type { FeedbackService } from './services/FeedbackService';
 import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
-import passoPreAnaliseEscopoTarerefa from './passos/atomicos/PassoPreAnaliseEscopoTarefa';
+import passoPreAnaliseEscopoTarefa from './passos/atomicos/PassoPreAnaliseEscopoTarefa';
 import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
 import { retornoTipoDaTarefaType, VerificaAtomicidadeOutput } from './interfaces/retornosIA';
@@ -269,6 +268,7 @@ export class OrquestradorTarefas {
 
         ctx.tarefaAtual = busca.tarefa;
         ctx.project = busca.tarefa.project;
+        ctx.configIA = { agentId: ctx.project.agent } as any;
         await logger.info(`🎯 Tarefa selecionada: ${ctx.tarefaAtual.title} [${ctx.tarefaAtual.id}]`);
       }
 
@@ -300,7 +300,7 @@ export class OrquestradorTarefas {
 
       // PASSO 5: PREANALISE ESCOPO TAREFA COM IA
       {
-        const preanalise: retornoTipoDaTarefaType = await new passoPreAnaliseEscopoTarerefa(this.deps).execute(ctx);
+        const preanalise: retornoTipoDaTarefaType = await new passoPreAnaliseEscopoTarefa(this.deps).execute(ctx);
 
         if (!preanalise) {
           return; // Falha grave de FileSystem
@@ -317,7 +317,7 @@ export class OrquestradorTarefas {
 
       // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
       {
-        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType === 'development') {
           const verificacaoAtomicidade: VerificaAtomicidadeOutput = await new PassoVerificaAtomicidade(this.deps).execute(ctx);
           if (!verificacaoAtomicidade) {
             return; // Falha grave de FileSystem
@@ -338,45 +338,43 @@ export class OrquestradorTarefas {
 
       // PASSO 7: DECOMPOSIÇÃO // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
       {
-        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
-          if (ctx.tarefaAtual.isAtomic === false) {
-            const decomposicao: DecomposicaoOutput = await new PassoDecompoeTarefa({
-              logger,
-              analista: this.deps.servicoAnalista,
-            } as DependenciasDecompoeTarefa).execute({
-              tarefaAtual: ctx.tarefaAtual,
-              userId: ctx.UserId,
-              prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
-            } as DecomposicaoInput);
+        if (ctx.outputPassos.preanalise?.taskType === 'development' && ctx.tarefaAtual.isAtomic === false) {
+          const decomposicao: DecompoeTarefaOutput = await new PassoDecompoeTarefa(this.deps).execute(ctx);
 
-            if (!decomposicao.sucesso) {
-              await logger.erro('IA falhou ao decompor tarefa.');
-              return;
-            }
-
-            if (decomposicao.subtasksCreated > 0) {
-              return; // Tarefa mãe virou épico, encerra por aqui pois as filhas entrarão na fila
-            }
-            
-            ctx.tarefaAtual.isAtomic = true; // Fallback: IA decidiu não decompor
-            ctx.outputPassos.decomposicaoTarefa = decomposicao;
+          if (!decomposicao.success) {
+            await logger.erro('IA falhou ao decompor tarefa.');
+            return;
           }
+
+          if (decomposicao.precisaDividir && decomposicao.subtarefas.length > 0) {
+            await logger.info(`🎯 Tarefa decomposta em ${decomposicao.subtarefas.length} subtarefas. Persistindo no banco...`);
+            for (const sub of decomposicao.subtarefas) {
+              await this.deps.servicoTarefas.createTask({
+                title: sub.title,
+                description: sub.description,
+                projectId: ctx.tarefaAtual.projectId,
+                priorityId: ctx.tarefaAtual.priorityId,
+                statusId: ctx.tarefaAtual.statusId,
+                createdById: ctx.UserId,
+                assignedToId: ctx.tarefaAtual.assignedToId,
+                parentTaskId: ctx.tarefaAtual.id,
+                domain: sub.domain,
+                deadline: ctx.tarefaAtual.deadline,
+              });
+            }
+            await logger.info("✅ Todas as subtarefas foram criadas. Encerrando execução da tarefa pai.");
+            return; // Tarefa mãe virou épico
+          }
+          
+          ctx.tarefaAtual.isAtomic = true; 
+          ctx.outputPassos.decomposicaoTarefa = decomposicao;
         }
       }
 
       // PASSO 8: DETERMINAÇÃO DE DOMÍNIO
       {
-        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
-          const dominio = await new PassoVerificaDominio({
-            logger,
-            gerenciadorFalha: this.deps.gerenciadorFalha,
-            servicoLlmAuxiliar: this.deps.servicoLlmAuxiliar,
-            fabricaPrompts: FabricaPromptsIA,
-          } as DependenciasVerificaDominio).execute({
-            tarefa: ctx.tarefaAtual,
-            userId: ctx.UserId,
-            configFalha: { apiUrl: ctx.config.API_URL, tasksDir: ctx.config.TASKS_DIR, errorDir: ctx.config.ERROR_DIR }
-          } as VerificaDominioInput);
+        if (ctx.outputPassos.preanalise?.taskType === 'development') {
+          const dominio = await new PassoVerificaDominio(this.deps as any).execute(ctx);
 
           if (!dominio.dominioValido) return;
           if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
@@ -385,7 +383,7 @@ export class OrquestradorTarefas {
 
       // CAPTURA DO SNAPSHOT INICIAL (Pré-Arquiteto)
       {
-        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType === 'development') {
           const snapshotService = new WorkspaceSnapshotService({ logger, fileSystem: this.deps.fileSystem } as WorkspaceSnapshotServiceDeps);
           ctx.initialSnapshot = await snapshotService.takeSnapshot({ dir: this.deps.config.BASE_DIR } as SnapshotInput);
         }
@@ -393,7 +391,7 @@ export class OrquestradorTarefas {
 
       // PASSO 9: FASE DO ARQUITETO
       {
-        if (ctx.outputPassos.preanalise?.taskType !== 'development') {
+        if (ctx.outputPassos.preanalise?.taskType === 'development') {
           const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
             clienteApi: this.deps.clienteApi,
             config: this.deps.config,
@@ -643,8 +641,4 @@ export class OrquestradorTarefas {
     return fileList;
   }
 
-  
-
-
 }
-

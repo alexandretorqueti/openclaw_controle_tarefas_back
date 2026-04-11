@@ -1,65 +1,42 @@
-// monitor/passos/atomicos/PassoDecompoeTarefa.ts
-// ─────────────────────────────────────────────────────
-// Passo Atômico PURO: Decomposição de tarefas não atômicas.
-//
-// Recebe apenas Input e devolve Output estritos.
-// Não conhece o ContextoExecucao.
-// ─────────────────────────────────────────────────────
+import { JSONSchema7 } from 'json-schema';
+import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
+import { PassoIAAbstrato } from '../passoIAAbstrato';
+import z from 'zod';
+import zodToJsonSchema from 'zod-to-json-schema';
+import { ContextoExecucao } from '../../interfaces';
 
-import { PassoBase } from '../PassoBase';
-import type { DependenciasBase } from '../PassoBase';
-import type { TarefaCompleta } from '../../interfaces';
+const retornoDecomposicao = z.object({
+    precisaDividir: z.boolean().describe('Indica se a tarefa deve ser fragmentada'),
+    motivo: z.string().describe('Explicação da decisão'),
+    subtarefas: z.array(z.object({
+        title: z.string().describe('Título da sub-tarefa'),
+        description: z.string().describe('Instruções técnicas'),
+        domain: z.enum(['FRONTEND', 'BACKEND', 'INFRASTRUCTURE', 'FULLSTACK'])
+    })),
+    success: z.boolean().default(true),
+    error: z.string().optional()
+});
 
-// 1. O QUE ENTRA (Sem "Deus Contexto")
-export interface DecomposicaoInput {
-  tarefaAtual: TarefaCompleta;
-  userId: string | null;
-  prompt: string;
-}
+export type DecompoeTarefaOutput = z.infer<typeof retornoDecomposicao>;
+const DecomposicaoSchema: JSONSchema7 = zodToJsonSchema(retornoDecomposicao) as JSONSchema7;
 
-// 2. O QUE SAI
-export interface DecomposicaoOutput {
-  sucesso: boolean;
-  subtasksCreated: number;
-  subtasks: TarefaCompleta[];
-}
+export class PassoDecompoeTarefa extends PassoIAAbstrato<ContextoExecucao, DecompoeTarefaOutput> {
+    readonly nome: string = 'DecomposiçãoDeTarefa';
+    protected readonly schema: JSONSchema7 = DecomposicaoSchema;
 
-// 3. CONTRATO DO SERVIÇO DE NEGÓCIO
-export interface ServicoAnalistaTarefa {
-  decompor(tarefa: TarefaCompleta, userId: string | null, prompt: string): Promise<DecomposicaoOutput>;
-}
-
-export interface DependenciasDecompoeTarefa extends DependenciasBase {
-  analista: ServicoAnalistaTarefa;
-}
-
-// 4. A CLASSE PURA (A Regra de Negócio)
-export class PassoDecompoeTarefa extends PassoBase<DecomposicaoInput, DecomposicaoOutput> {
-  readonly nome = "Decompõe Tarefa";
-  private readonly analista: ServicoAnalistaTarefa;
-
-  constructor(deps: DependenciasDecompoeTarefa) {
-    super(deps);
-    this.analista = deps.analista;
-  }
-
-  protected async processar(input: DecomposicaoInput): Promise<DecomposicaoOutput> {
-    await this.logger.info(
-      `🔍 Solicitando decomposição ao Analista (Tarefa: ${input.tarefaAtual.id})...`
-    );
-
-    const resultado = await this.analista.decompor(input.tarefaAtual, input.userId, input.prompt);
-
-    if (resultado.subtasksCreated > 0) {
-      await this.logger.info(
-        `✅ Tarefa-mãe decomposta em ${resultado.subtasksCreated} subtarefa(s).`
-      );
-    } else {
-      await this.logger.info(
-        `⚠️ Analista não criou subtarefas para a tarefa [${input.tarefaAtual.id}].`
-      );
+    protected getResultadoFallback(mensagemErro: string): DecompoeTarefaOutput {
+        return {
+            precisaDividir: false,
+            motivo: 'Erro ao processar decomposição',
+            subtarefas: [],
+            success: false,
+            error: mensagemErro
+        };
     }
 
-    return resultado;
-  }
+    protected async construirPrompt(input: ContextoExecucao): Promise<string> {
+        return FabricaPromptsIA.gerarPromptDecomposicao(input.tarefaAtual);
+    }
 }
+
+export default PassoDecompoeTarefa;

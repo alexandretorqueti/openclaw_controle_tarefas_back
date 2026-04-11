@@ -1,0 +1,2 @@
+Iniciando implementação da persistência de subtarefas no Passo 7 do Orquestrador.ts. Verificando métodos disponíveis em src/services/taskService.ts.
+Iniciando a implementação da persistência de subtarefas no Passo 7 do Orquestrador.ts. As subtarefas geradas pela IA serão mapeadas e salvas via servicoTarefas.createTask, herdando metadados da tarefa pai.

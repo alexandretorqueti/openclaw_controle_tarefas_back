@@ -1,5 +1,5 @@
 import { OrquestradorTarefas } from '../Orquestrador';
-import { passoPreAnaliseEscopoTarerefa } from '../passos/atomicos/PassoPreAnaliseEscopoTarefa';
+import { PassoPreAnaliseEscopoTarefa } from '../passos/atomicos/PassoPreAnaliseEscopoTarefa';
 import PassoVerificaAtomicidade from '../passos/atomicos/PassoVerificaAtomicidade';
 import { PassoVerificaLock } from '../passos/atomicos/PassoVerificaLock';
 import { PassoConfiguraUsuario } from '../passos/atomicos/PassoConfiguraUsuario';
@@ -55,7 +55,7 @@ describe('Orquestrador - Passos 5 e 6', () => {
   });
 
   it('deve PULAR o Passo 6 quando o taskType for "development"', async () => {
-    (passoPreAnaliseEscopoTarerefa.prototype.execute as jest.Mock).mockResolvedValue({
+    (PassoPreAnaliseEscopoTarefa.prototype.execute as jest.Mock).mockResolvedValue({
       success: true,
       taskType: 'development'
     });
@@ -67,7 +67,7 @@ describe('Orquestrador - Passos 5 e 6', () => {
   });
 
   it('deve EXECUTAR o Passo 6 e atualizar tarefa se for atômica e taskType NÃO for "development"', async () => {
-    (passoPreAnaliseEscopoTarerefa.prototype.execute as jest.Mock).mockResolvedValue({
+    (PassoPreAnaliseEscopoTarefa.prototype.execute as jest.Mock).mockResolvedValue({
       success: true,
       taskType: 'feature' 
     });
