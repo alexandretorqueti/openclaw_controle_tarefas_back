@@ -410,10 +410,6 @@ export class OrquestradorTarefas {
           }
         }
       }
-
-      // ────────────────────────────────────────────────────────
-      // BLOCO 2: LOOP DE CORREÇÃO (Programador <-> Análise)
-      // ────────────────────────────────────────────────────────
       
       let precisaCorrecao = true;
       let falhaIrreversivelNoProgramador = false;
