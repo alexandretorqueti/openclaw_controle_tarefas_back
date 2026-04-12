@@ -89,7 +89,7 @@ async function iniciarBot() {
                 }, SELETOR_CAIXA_TEXTO, resultadoTerminal);
 
                 // Pequeno atraso para garantir que o front-end do Gemini registrou o 'insertText'
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 await page.keyboard.press('Enter');
                 console.log('✅ Resultado enviado!');
 

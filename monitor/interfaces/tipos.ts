@@ -7,7 +7,7 @@
 import type { Project, Task, Prisma } from '@prisma/client';
 import { Snapshot } from '../services/WorkspaceSnapshotService';
 import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
-import { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
+import { AnaliseProgramadorOutput } from '../passos/atomicos/PassoAnaliseProgramador';
 import { VerificaAtomicidadeOutput } from '../interfaces/retornosIA';
 import { DecompoeTarefaOutput } from '../passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
@@ -18,6 +18,7 @@ import { LoggerConsole as Logger } from '../utils/LoggerConsole';
 import { UniversalAgentEngine } from '../services/universalEngine/universalAgentEngine';
 import { BaseIAInput } from '../passos/passoIAAbstrato';
 import { ArquitetoOutput } from '../passos/atomicos/PassoArquiteto';
+import { ProgramadorOutput } from '../passos/atomicos/PassoProgramador';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -150,6 +151,7 @@ export interface ErrosCiclo {
 export interface ResultadosPassos {
   atomicidade?: VerificaAtomicidadeOutput;
   decomposicao?: DecompoeTarefaOutput;
+  inspecaoWorkspace?: any;
   inspecao?: {
     doneExists: boolean;
     hasRealChanges?: boolean;
@@ -160,15 +162,7 @@ export interface ResultadosPassos {
     sucesso: boolean;
     feedbackForNextTurn?: string;
   };
-  programador?: {
-    sessionId?: string;
-    rawOutput?: string;
-    ultimoErro?: string;
-    toolCall?: unknown;
-    toolResult?: unknown;
-    toolFeedback?: string;
-    evidence?: unknown;
-  };
+  programador?: ProgramadorOutput;
   arquiteto?: ArquitetoOutput;
   resultAnaliseProgramador?: AnaliseProgramadorOutput;
   dominio: VerificaDominioOutput;

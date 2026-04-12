@@ -53,6 +53,7 @@ import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
 import { retornoTipoDaTarefaType, VerificaAtomicidadeOutput } from './interfaces/retornosIA';
 import TaskService from '../src/services/taskService';
+import { ProgramadorOutput } from './passos/atomicos/PassoProgramador';
 
 
 export interface DependenciasGlobais {
@@ -95,113 +96,7 @@ export class OrquestradorTarefas {
    * Avalia a necessidade de correção baseada na análise do programador
    * (TODO 4: Centralizar lógica de decisão de feedback)
    */
-  private async avaliarNecessidadeCorrecao(
-    ctx: ContextoExecucao,
-    analise: AnaliseProgramadorOutput,
-    logger: Logger
-  ): Promise<{
-    precisaCorrecao: boolean;
-    manterSessao: boolean;
-    feedbackParaProgramador: string;
-    sessionId?: string; // ID da sessão para continuar conversação
-    novoTipoFalha?: string;
-  }> {
-    const resultadoPadrao = {
-      precisaCorrecao: false,
-      manterSessao: false,
-      feedbackParaProgramador: '',
-      sessionId: undefined,
-      novoTipoFalha: undefined
-    };
-
-    // Se workspace foi validado, não precisa correção
-    if (analise.workspaceValidado) {
-      await logger.info('✅ Workspace validado - sem necessidade de correção');
-      return resultadoPadrao;
-    }
-
-    // Verificar se temos serviços de feedback disponíveis
-    const temServicosFeedback = this.deps.feedbackService && this.deps.sessionManager;
-    
-    // Inicializar controle de sessão se necessário
-    if (!ctx.controle.tentativasCorrecao) {
-      ctx.controle.tentativasCorrecao = 0;
-      ctx.controle.maxTentativasCorrecao = 3; // Máximo de 3 tentativas de correção
-    }
-
-    // Verificar se ainda temos tentativas disponíveis
-    if (ctx.controle.tentativasCorrecao >= ctx.controle.maxTentativasCorrecao!) {
-      await logger.info(`❌ Esgotadas ${ctx.controle.maxTentativasCorrecao} tentativas de correção`);
-      return {
-        precisaCorrecao: false, // Não tenta mais, vai falhar
-        manterSessao: false,
-        feedbackParaProgramador: '',
-        sessionId: ctx.controle.sessaoId || undefined,
-        novoTipoFalha: analise.tipoFalha
-      };
-    }
-
-    // Determinar se precisa de correção baseado no tipo de falha
-    const precisaCorrecao = analise.precisaCorrecao || 
-                           analise.tipoFalha === 'SEM_DONE' ||
-                           analise.tipoFalha === 'SEM_ALTERACOES' ||
-                           analise.tipoFalha === 'ALTERACOES_INSUFICIENTES' ||
-                           analise.tipoFalha === 'NADA_FEITO' ||
-                           analise.tipoFalha === 'BUILD_FALHOU' ||
-                           analise.tipoFalha === 'TESTES_FALHARAM';
-
-    if (!precisaCorrecao) {
-      await logger.info('⚠️ Análise indica problema, mas não requer correção iterativa');
-      return resultadoPadrao;
-    }
-
-    // Incrementar contador de tentativas
-    ctx.controle.tentativasCorrecao += 1;
-    
-    // Preparar feedback
-    let feedbackParaProgramador = '';
-    let sessionId: string | undefined = undefined;
-    
-    if (temServicosFeedback) {
-      // Usar serviço de feedback para formatar mensagem
-      sessionId = ctx.controle.sessaoId 
-        ? await this.deps.sessionManager!.getOrCreateSession(
-            ctx.tarefaAtual!.id.toString(), 
-            'senior-developer'
-          )
-        : await this.deps.sessionManager!.getOrCreateSession(
-            ctx.tarefaAtual!.id.toString(),
-            'senior-developer'
-          );
-      
-      const sessionInfo = await this.deps.sessionManager!.getSessionInfo(sessionId);
-      
-      feedbackParaProgramador = await this.deps.feedbackService!.formatFeedback(analise, ctx.tarefaAtual!.id.toString(), sessionInfo);
-      
-      // Enviar feedback para a sessão
-      await this.deps.sessionManager!.sendFeedback(sessionId, feedbackParaProgramador);
-      ctx.controle.sessaoId = sessionId;
-      
-    } else {
-      // Fallback: usar mensagem da análise
-      feedbackParaProgramador = analise.mensagemCorrecao || 
-                               'O trabalho precisa de ajustes. Por favor, revise a implementação.';
-    }
-
-    await logger.info(`🔄 Correção solicitada (tentativa ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}): ${analise.tipoFalha}`);
-    
-    return {
-      precisaCorrecao: true,
-      manterSessao: true, // Mantém sessão para correção
-      feedbackParaProgramador,
-      sessionId,
-      novoTipoFalha: analise.tipoFalha
-    };
-  }
-
-
-
-/**
+  /**
    * O fluxo mestre do Jarbas.
    * Lemos este método de cima para baixo. Dividido em 3 grandes blocos:
    * 1. Setup Linear (Lock, Buscas, IA Arquiteto)
@@ -411,91 +306,61 @@ export class OrquestradorTarefas {
         }
       }
       
-      let precisaCorrecao = true;
       let falhaIrreversivelNoProgramador = false;
-      ctx.controle.tentativasCorrecao = 0;
-      ctx.controle.maxTentativasCorrecao = 3;
 
-      // Só entra no loop se o arquiteto não encerrou a tarefa sozinho
-      while (!fluxoEncerradoPrematuramente && precisaCorrecao && ctx.controle.tentativasCorrecao < ctx.controle.maxTentativasCorrecao!) {
-        ctx.controle.tentativasCorrecao++;
-        await logger.info(`🔄 Iniciando iteração do Programador: ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}`);
+      // PASSO 11 e 12: PROGRAMADOR E ANÁLISE DO WORKSPACE (Sem loop)
+      if (!fluxoEncerradoPrematuramente) {
+        await logger.info('🔄 Iniciando Fase do Programador (Sem loop)');
 
-        // PASSO 11: FASE DO PROGRAMADOR
-        const planoParaProgramador = ctx.resultados.arquiteto.planDetails || ctx.tarefaAtual.description;
-        const resultProgramador = await new MacroFaseProgramador({
-          logger, openClaw: this.deps.servicoOpenClaw, jsonValidator: this.deps.jsonValidator, config: this.deps.config
-        } as DependenciasFaseProgramador).execute({
-          tarefaAtual: ctx.tarefaAtual,
-          planoArquiteto: FabricaPromptsIA.gerarPromptProgramador(ctx.tarefaAtual, planoParaProgramador, ctx.controle.taskDir || ''),
-          sessionId: ctx.controle.sessaoId,
-          feedbackPendente: ctx.controle.feedbackPendente
-        } as FaseProgramadorInput);
+        const PassoProgramador = (await import('./passos/atomicos/PassoProgramador')).default;
+        const passoProgramador = new PassoProgramador(this.deps as any);
+        const resultProgramador = await passoProgramador.execute(ctx);
 
-        if (!resultProgramador.sucesso) {
+        if (!resultProgramador || !resultProgramador.sucesso) {
           falhaIrreversivelNoProgramador = true;
-          mensagemFinal = '❌ Programador falhou ou estourou limites de turnos na execução.';
+          mensagemFinal = '❌ Programador falhou na execução.';
           novoStatus = ctx.config.STATUS.FAILED;
-          break; // Quebra o loop, vai direto para finalização
-        }
-
-        ctx.resultados.programador = resultProgramador;
-
-        // PASSO 12: ANÁLISE DO TRABALHO (Inspeção)
-        const faseInspecaoWorkspace = new (await import('./passos/macro/FaseInspecaoWorkspace')).MacroFaseInspecaoWorkspace({
-          logger, snapshotService: this.deps.servicoSnapshot, 
-          doneFileService: new (await import('./services/DoneFileService')).DoneFileService({ logger, fileSystem: this.deps.fileSystem, path: this.deps.pathUtil }),
-          evidenceService: new (await import('./services/EvidenceService')).EvidenceService({ logger })
-        } as DependenciasInspecaoWorkspace);
-
-        const analise = await new MacroFaseAnaliseProgramador({
-          logger, inspecaoWorkspace: faseInspecaoWorkspace
-        } as DependenciasAnaliseProgramador).execute({
-          tarefaAtual: ctx.tarefaAtual,
-          caminhoTaskDir: ctx.controle.taskDir || '',
-          snapshotInicial: ctx.initialSnapshot,
-          diretorioBase: this.deps.config.BASE_DIR,
-          rawOutput: ctx.resultados.programador.rawOutput,
-          toolCall: ctx.resultados.programador.toolCall,
-          toolResult: ctx.resultados.programador.toolResult
-        } as AnaliseProgramadorInput);
-
-        ctx.resultados.resultAnaliseProgramador = analise;
-
-        // MOTOR DE DECISÃO: Continua o loop ou encerra?
-        const avaliacao = await this.avaliarNecessidadeCorrecao(ctx, analise, logger);
-
-        if (avaliacao.precisaCorrecao) {
-          // Prepara contexto para a PRÓXIMA volta do loop
-          ctx.controle.feedbackPendente = avaliacao.feedbackParaProgramador;
-          if (avaliacao.sessionId) {
-            ctx.controle.sessaoId = avaliacao.sessionId;
-            ctx.controle.sessaoAtiva = true;
-          }
-          await logger.info(`🔄 Correção solicitada. Motivo: ${avaliacao.novoTipoFalha}.`);
-          // O loop while vai girar de novo pois precisaCorrecao continua true
         } else {
-          // Sai do loop. Ou deu sucesso (validado) ou falhou por limite de tentativas
-          precisaCorrecao = false; 
+          ctx.resultados.programador = resultProgramador as ProgramadorOutput;
+
+          // INSPEÇÃO DO WORKSPACE
+          const { MacroFaseInspecaoWorkspace } = await import('./passos/macro/FaseInspecaoWorkspace');
+          const { DoneFileService } = await import('./services/DoneFileService');
+          const { EvidenceService } = await import('./services/EvidenceService');
           
-          if (analise.workspaceValidado) {
+          const faseInspecaoWorkspace = new MacroFaseInspecaoWorkspace({
+            logger, snapshotService: this.deps.servicoSnapshot, 
+            doneFileService: new DoneFileService({ logger, fileSystem: this.deps.fileSystem, path: this.deps.pathUtil }),
+            evidenceService: new EvidenceService({ logger })
+          } as any);
+
+          const inspecao = await faseInspecaoWorkspace.execute({
+            tarefaAtual: ctx.tarefaAtual,
+            snapshotInicial: ctx.initialSnapshot || new Map(),
+            taskDir: ctx.controle.taskDir || '',
+            rawOutput: resultProgramador.mensagem,
+            toolCall: {},
+            toolResult: {}
+          } as any);
+
+          ctx.resultados.inspecaoWorkspace = inspecao;
+
+          const PassoAnaliseProgramador = (await import('./passos/atomicos/PassoAnaliseProgramador')).default;
+          const passoAnalise = new PassoAnaliseProgramador(this.deps as any);
+          const analise = await passoAnalise.execute(ctx);
+
+          ctx.resultados.resultAnaliseProgramador = analise;
+
+          if (analise && analise.workspaceValidado) {
             mensagemFinal = '✅ Trabalho validado. Prosseguindo para testes locais.';
-            novoStatus = ctx.config.STATUS.IN_PROGRESS; // Continua em progresso para a Fase 3
+            novoStatus = ctx.config.STATUS.IN_PROGRESS;
           } else {
             falhaIrreversivelNoProgramador = true;
-            mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise.mensagemCorrecao}`;
+            mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise?.mensagemCorrecao}`;
             novoStatus = ctx.config.STATUS.FAILED;
           }
         }
       }
-
-      // Verificação pós-loop de tentativas
-      if (precisaCorrecao && ctx.controle.tentativasCorrecao >= ctx.controle.maxTentativasCorrecao!) {
-         falhaIrreversivelNoProgramador = true;
-         mensagemFinal = `❌ Tarefa abortada: Limite de ${ctx.controle.maxTentativasCorrecao} correções atingido.`;
-         novoStatus = ctx.config.STATUS.FAILED;
-      }
-
 
       // ────────────────────────────────────────────────────────
       // BLOCO 3: FECHAMENTO (Testes Locais e Finalização da Fila)
