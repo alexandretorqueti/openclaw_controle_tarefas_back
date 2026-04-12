@@ -315,7 +315,7 @@ export class OrquestradorTarefas {
         ctx.outputPassos.preanalise = preanalise || null;
       }
 
-      // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
+      // PASSO 6: DETERMINAÇÃO DE ATOMICIDADE // RODA APENAS SE FOR DO TIPO DEVELOPMENT
       {
         if (ctx.outputPassos.preanalise?.taskType === 'development') {
           const verificacaoAtomicidade: VerificaAtomicidadeOutput = await new PassoVerificaAtomicidade(this.deps).execute(ctx);
@@ -336,7 +336,7 @@ export class OrquestradorTarefas {
         }
       }
 
-      // PASSO 7: DECOMPOSIÇÃO // RODA APENAS SE NÃO FOR DO TIPO DEVELOPMENT
+      // PASSO 7: DECOMPOSIÇÃO // RODA APENAS SE FOR DO TIPO DEVELOPMENT
       {
         if (ctx.outputPassos.preanalise?.taskType === 'development' && ctx.tarefaAtual.isAtomic === false) {
           const decomposicao: DecompoeTarefaOutput = await new PassoDecompoeTarefa(this.deps).execute(ctx);
@@ -374,10 +374,13 @@ export class OrquestradorTarefas {
       // PASSO 8: DETERMINAÇÃO DE DOMÍNIO
       {
         if (ctx.outputPassos.preanalise?.taskType === 'development') {
-          const dominio = await new PassoVerificaDominio(this.deps as any).execute(ctx);
+          if (!ctx.tarefaAtual.domain) {
+            const dominio = await new PassoVerificaDominio(this.deps as any).execute(ctx);
 
-          if (!dominio.dominioValido) return;
-          if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
+            if (!dominio.dominioValido) return;
+            if (dominio.dominio) ctx.tarefaAtual.domain = dominio.dominio;
+            await this.deps.servicoTarefas.updateTask(ctx.tarefaAtual.id, { domain: dominio.dominio });
+          }
         }
       }
 

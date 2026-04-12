@@ -23,7 +23,7 @@ const retornoDominioSchema = z.object({
     isIdeal: z.boolean().describe('Indica se a tarefa é atômica'),
     reason: z.string().describe('Explicação da análise'),
     confidence: z.number().describe('Nível de confiança de 0 a 100'),
-    inferredDomain: z.enum(['BACKEND', 'FRONTEND', 'UNKNOWN', 'INFRASTRUCTURE', 'FULLSTACK']).describe('Domínio inferido pela IA')
+    inferredDomain: z.enum(['backend', 'frontend', 'analysis']).describe('Domínio inferido pela IA')
 });
 
 export type VerificaDominioOutput = {
@@ -42,7 +42,7 @@ export class PassoVerificaDominio extends PassoIAAbstrato<ContextoExecucao, any>
     }
 
     protected async construirPrompt(input: ContextoExecucao): Promise<string> {
-        return FabricaPromptsIA.gerarPromptParaVerificarAtomicidadeeDominio(input.tarefaAtual);
+        return FabricaPromptsIA.buildTaskAnalysisPrompt(input.tarefaAtual, input.project);
     }
 
     async processar(input: ContextoExecucao): Promise<VerificaDominioOutput> {

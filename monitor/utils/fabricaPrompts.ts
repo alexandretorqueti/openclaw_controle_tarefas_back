@@ -264,7 +264,7 @@ REGRA PARA O DOMÍNIO: Se o 'Domínio Atual' for 'Não especificado', deduza se 
 `;
   }
 
-  public static buildTaskAnalysisPrompt(task: TarefaCompleta, project: Project, preAnalysisFile = null) {
+  public static buildTaskAnalysisPrompt(task: TarefaCompleta, project: Project) {
     return `
       Você é um arquiteto de software. Analise a tarefa abaixo e defina o escopo de execução.
       

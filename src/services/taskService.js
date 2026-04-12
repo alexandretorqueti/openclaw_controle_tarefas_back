@@ -622,7 +622,8 @@ class TaskService {
       arquitetosTerminalContent: data.arquitetosTerminalContent,
       programadorTerminalContent: data.programadorTerminalContent,
       programadorReportContent: data.programadorReportContent,
-      isAtomic: data.isAtomic
+      isAtomic: data.isAtomic,
+      domain: data.domain
     };
 
     // Add recurrence fields if provided
