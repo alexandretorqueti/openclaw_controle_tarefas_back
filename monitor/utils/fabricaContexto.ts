@@ -25,6 +25,7 @@ export function criarContextoLimpo(deps: DependenciasFabricaContexto): ContextoE
     services: deps.services,
     utils: deps.utils,
     lockAtivo: false,
+    configIA: null,
     files: {
       promptFile: null,
       relatorioFile: null,
@@ -33,7 +34,11 @@ export function criarContextoLimpo(deps: DependenciasFabricaContexto): ContextoE
       architectPlanFile: null,
       architectLogFile: null,
     },
-    preanalise: null,
+    outputPassos: {
+      preanalise: null,
+      verificacaoAtomicidade: null,
+      decomposicaoTarefa: null
+    },
     
     // Trilha de auditoria vazia no início
     historicoPassos: [],

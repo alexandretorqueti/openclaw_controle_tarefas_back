@@ -47,7 +47,7 @@ import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 // Novos serviços para gestão de feedback e sessões
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
 import type { FeedbackService } from './services/FeedbackService';
-import { AnaliseArquitetoEAnaliseArquitetoInput, AnaliseArquitetoEAnaliseArquitetoOutput, DependenciasArquitetoEAnaliseArquiteto, FaseLoopAnalistaEAnalise } from './passos/macro/FaseLoopAnalistaEAnalise';
+import { ArquitetoOutput, PassoArquiteto } from './passos/atomicos/PassoArquiteto';
 import passoPreAnaliseEscopoTarefa from './passos/atomicos/PassoPreAnaliseEscopoTarefa';
 import PromptFactory from '../src/utils/promptFactory';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
@@ -69,14 +69,12 @@ export interface DependenciasGlobais {
   // Serviços de domínio/IA
   servicoBusca: any;
   servicoAnaliseTarefa: any;
-  servicoAnalista: any;
   servicoOpenClaw: any;
   servicoDisco: any;
   servicoSnapshot: WorkspaceSnapshotService;
   servicoLlmAuxiliar?: any; // Para determinar domínio
   servicoLlmAtomicidade?: any; // Para determinar atomicidade
   jsonValidator: any;
-  gerenciadorFalha: any;
   fabricaPrompts?: any; // Para gerar prompts
   // Novos serviços para feedback iterativo (TODOs 4 e 6)
   sessionManager?: SessionManager;
@@ -395,34 +393,23 @@ export class OrquestradorTarefas {
       // PASSO 9: FASE DO ARQUITETO
       {
         if (ctx.outputPassos.preanalise?.taskType === 'development') {
-          const faseLoopAnalistaEAnalise = new FaseLoopAnalistaEAnalise({
-            clienteApi: this.deps.clienteApi,
-            config: this.deps.config,
-            disco: this.deps.servicoDisco,
-            fabricaPrompts: FabricaPromptsIA,
-            fileSystem: this.deps.fileSystem,
-            jsonValidator: this.deps.jsonValidator,
-            openClaw: this.deps.servicoOpenClaw,
-            snapshot: this.deps.servicoSnapshot,
-            logger,
-            pathUtil: this.deps.pathUtil,
-            servicoDisco: this.deps.servicoDisco,
-            servicoSnapshot: this.deps.servicoSnapshot,
-            servicoOpenClaw: this.deps.servicoOpenClaw
-          } as DependenciasArquitetoEAnaliseArquiteto)
+          const passoArquiteto = new PassoArquiteto(this.deps as any);
+          const resultadoArquiteto: ArquitetoOutput = await passoArquiteto.execute(ctx);
           
+          if (!resultadoArquiteto || !resultadoArquiteto.success) {
+            await logger.erro('IA falhou na fase do arquiteto: ' + (resultadoArquiteto?.error || 'Retorno nulo'));
+            return;
+          }
 
-          // TODO TERMINAR AQUI
-          const resultadoLoopAnalistaEAnalise: AnaliseArquitetoEAnaliseArquitetoOutput = await faseLoopAnalistaEAnalise.execute({
-            analysisPlan: ctx.outputPassos.preanalise,
-            resultados: ctx.resultados,
-            tarefaAtual: ctx.tarefaAtual,
-            userId: ctx.UserId,
-            controle: ctx.controle
-          } as AnaliseArquitetoEAnaliseArquitetoInput);
+          ctx.resultados.arquiteto = resultadoArquiteto;
+
+          if (resultadoArquiteto.isFullyImplemented) {
+            fluxoEncerradoPrematuramente = true;
+            mensagemFinal = '✅ Tarefa concluída integralmente pelo arquiteto (isFullyImplemented).';
+            novoStatus = ctx.config.STATUS.COMPLETED;
+          }
         }
       }
-
 
       // ────────────────────────────────────────────────────────
       // BLOCO 2: LOOP DE CORREÇÃO (Programador <-> Análise)
@@ -439,7 +426,7 @@ export class OrquestradorTarefas {
         await logger.info(`🔄 Iniciando iteração do Programador: ${ctx.controle.tentativasCorrecao}/${ctx.controle.maxTentativasCorrecao}`);
 
         // PASSO 11: FASE DO PROGRAMADOR
-        const planoParaProgramador = ctx.resultados.arquiteto.planoArquiteto || ctx.tarefaAtual.description;
+        const planoParaProgramador = ctx.resultados.arquiteto.planDetails || ctx.tarefaAtual.description;
         const resultProgramador = await new MacroFaseProgramador({
           logger, openClaw: this.deps.servicoOpenClaw, jsonValidator: this.deps.jsonValidator, config: this.deps.config
         } as DependenciasFaseProgramador).execute({

@@ -1,47 +1,31 @@
-// monitor/passos/adapters/DecomposicaoAdapter.ts
-// ─────────────────────────────────────────────────────
-// ADAPTER PARA O WORKFLOW ENGINE (Monitor)
-//
-// Une o Contexto (Motor) com o Passo Puro (Regra).
-// Extrai o que é necessário e devolve as mutações.
-// ─────────────────────────────────────────────────────
-
 import type { Passo, ContextoExecucao } from '../../interfaces';
-import { PassoDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
-import type { DependenciasDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
-import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
+import { DecompoeTarefaOutput, PassoDecompoeTarefa } from '../atomicos/PassoDecompoeTarefa';
 
 export class PassoDecompoeTarefaAdapter implements Passo {
-  readonly name = "Decompõe Tarefa";
+  readonly name = 'Decompõe Tarefa';
   private readonly logicaPura: PassoDecompoeTarefa;
 
-  constructor(deps: DependenciasDecompoeTarefa) {
+  constructor(deps: any) {
     this.logicaPura = new PassoDecompoeTarefa(deps);
   }
 
   async execute(ctx: ContextoExecucao): Promise<void> {
     if (!ctx.tarefaAtual) return;
 
-    // 1. O QUE ENTRA: Extrai apenas o que o passo precisa (Monta o Input)
-    const inputParaDecomposicao = {
-      tarefaAtual: ctx.tarefaAtual,
-      userId: ctx.UserId,
-      prompt: FabricaPromptsIA.gerarPromptDecomposicao(ctx.tarefaAtual),
-    };
-
     try {
-      // 2. A MÁGICA: O Passo Executa livre de conhecimento sobre o contexto global
-      const resultado = await this.logicaPura.execute(inputParaDecomposicao);
+      // Agora o passo atômico recebe o ContextoExecucao inteiro
+      const resultado = await this.logicaPura.execute(ctx);
 
-      // 3. O EFEITO COLATERAL: Centraliza a escrita e atualiza o contexto global com o resultado
+      if (!ctx.resultados) ctx.resultados = {} as any;
+      
+      // Mapeia o output do Zod para o contexto global
       ctx.resultados.decomposicao = {
-        sucesso: resultado.sucesso,
-        subtasksCreated: resultado.subtasksCreated,
-        subtasks: resultado.subtasks
-      };
-
+        sucesso: resultado.success ?? false,
+        precisaDividir: resultado.precisaDividir ?? false,
+        subtasks: resultado.subtarefas ?? []
+      } as DecompoeTarefaOutput;
     } catch (erro: unknown) {
-      // Marca erro na esteira sem o passo precisar saber como fazer isso
+      if (!ctx.erros) ctx.erros = {} as any;
       ctx.erros.decomposicao = true;
     }
   }

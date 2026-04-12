@@ -18,7 +18,7 @@ export type { DependenciasInicializaTarefa, FileSystemMinimo, ClienteApiStatus }
 export { PassoSuperValidacao } from './PassoSuperValidacao';
 
 export { PassoDecompoeTarefa } from './PassoDecompoeTarefa';
-export type { DependenciasDecompoeTarefa, ServicoAnalistaTarefa, DecomposicaoOutput, DecomposicaoInput } from './PassoDecompoeTarefa';
+export type { DecompoeTarefaOutput } from './PassoDecompoeTarefa';
 
 export { PassoVerificaDominio } from './PassoVerificaDominio';
-export type { DependenciasVerificaDominio, GerenciadorFalhaTarefa, ConfiguracaoFalha } from './PassoVerificaDominio';
+export type { DependenciasVerificaDominio, ConfiguracaoFalha } from './PassoVerificaDominio';

@@ -58,13 +58,12 @@ import { FeedbackServiceImpl } from './services/FeedbackService';
 import type { BuscadorTarefa } from './passos/atomicos/PassoBuscaTarefa';
 import type { ClienteApiStatus } from './passos/atomicos/PassoInicializaTarefa';
 import { WorkspaceSnapshotService } from './services/WorkspaceSnapshotService';
-import type { ServicoAnalistaTarefa, DecomposicaoOutput } from './passos/atomicos/PassoDecompoeTarefa';
-import type { GerenciadorFalhaTarefa, ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 import type { ChamarIAInput } from './passos/atomicos/PassoChamarIA';
 import type { TarefaCompleta } from './interfaces';
 import * as fs from 'fs';
 import axios from 'axios';
 import { UniversalAgentEngine } from './services/universalEngine/universalAgentEngine';
+import { ConfiguracaoFalha } from './passos';
 
 /**
  * Adapter para usar o módulo "fs" real no FileSystem
@@ -184,42 +183,6 @@ class ClienteApiStatusViaAxios implements ClienteApiStatus {
     statusId: number
   ): Promise<void> {
     await axios.put(`${apiUrl}/api/tasks/${taskId}`, { statusId });
-  }
-}
-
-/**
- * Adapter para chamar o serviço legado de decomposição (CallAnalyst)
- */
-export class ServicoAnalistaLegacy implements ServicoAnalistaTarefa {
-  async decompor(tarefa: TarefaCompleta, userId: string | null, prompt: string): Promise<DecomposicaoOutput> {
-    const { createLegacyCallAnalyst } = require('../src/steps/adapters/legacyCallAnalyst');
-    const callAnalyst = createLegacyCallAnalyst(userId);
-    const resultado = await callAnalyst(tarefa);
-
-    return {
-      sucesso: resultado?.success ?? false,
-      subtasks: resultado?.subtasks ?? [],
-      subtasksCreated: resultado?.subtasksCreated ?? 0,
-    };
-  }
-}
-
-/**
- * Adapter para acionar a rotina legada de handleTaskFailure
- */
-class GerenciadorFalhaLegacy implements GerenciadorFalhaTarefa {
-  async registrarFalha(
-    tarefa: TarefaCompleta,
-    erro: Error,
-    userId: string | null,
-    configFalha: ConfiguracaoFalha
-  ): Promise<void> {
-    const { handleTaskFailure } = require('../src/steps/adapters/legacyTaskFailure');
-    await handleTaskFailure(tarefa, erro, userId, {
-      API_URL: configFalha.apiUrl,
-      TASKS_DIR: configFalha.tasksDir,
-      ERROR_DIR: configFalha.errorDir,
-    });
   }
 }
 
@@ -398,11 +361,9 @@ Responda APENAS no formato JSON:
       fileSystem: require('fs').promises,
       pathUtil: require('path'),
       servicoBusca: new BuscadorTarefaViaApi(configuracao.API_URL),
-      servicoAnalista: new ServicoAnalistaLegacy(),
       servicoOpenClaw: new ServicoOpenClawLegacy(),
       servicoDisco: new ServicoDiscoLegacy(),
       jsonValidator: new JsonValidator(),
-      gerenciadorFalha: new GerenciadorFalhaLegacy(),
       motorUniversal: motorUniversal,
       // Novos serviços para feedback iterativo (TODOs 4 e 6)
       sessionManager,

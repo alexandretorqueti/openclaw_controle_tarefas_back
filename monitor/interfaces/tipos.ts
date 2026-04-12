@@ -9,7 +9,7 @@ import { Snapshot } from '../services/WorkspaceSnapshotService';
 import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
 import { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
 import { VerificaAtomicidadeOutput } from '../interfaces/retornosIA';
-import { DecomposicaoOutput } from '../passos/atomicos/PassoDecompoeTarefa';
+import { DecompoeTarefaOutput } from '../passos/atomicos/PassoDecompoeTarefa';
 import { VerificaDominioOutput } from '../passos/atomicos/PassoVerificaDominio';
 import { SuperValidacaoOutput } from '../passos/atomicos/PassoSuperValidacao';
 import { AIExecutionConfig } from '../services/universalEngine/interfaces/interfaceUniversalAgentEngine';
@@ -17,6 +17,7 @@ import { retornoTipoDaTarefaType } from './retornosIA';
 import { LoggerConsole as Logger } from '../utils/LoggerConsole';
 import { UniversalAgentEngine } from '../services/universalEngine/universalAgentEngine';
 import { BaseIAInput } from '../passos/passoIAAbstrato';
+import { ArquitetoOutput } from '../passos/atomicos/PassoArquiteto';
 // ═══════════════════════════════════════════════════════
 // 1. TAREFA E PROJETO
 // ═══════════════════════════════════════════════════════
@@ -148,7 +149,7 @@ export interface ErrosCiclo {
 /** Resultados específicos de cada passo (Evita o God Object) */
 export interface ResultadosPassos {
   atomicidade?: VerificaAtomicidadeOutput;
-  decomposicao?: DecomposicaoOutput;
+  decomposicao?: DecompoeTarefaOutput;
   inspecao?: {
     doneExists: boolean;
     hasRealChanges?: boolean;
@@ -168,7 +169,7 @@ export interface ResultadosPassos {
     toolFeedback?: string;
     evidence?: unknown;
   };
-  arquiteto?: FaseArquitetoOutput;
+  arquiteto?: ArquitetoOutput;
   resultAnaliseProgramador?: AnaliseProgramadorOutput;
   dominio: VerificaDominioOutput;
   superValidacao: SuperValidacaoOutput
@@ -247,7 +248,7 @@ export interface ContextoExecucao extends BaseIAInput{
   outputPassos: {
     preanalise: retornoTipoDaTarefaType | null;
     verificacaoAtomicidade?: VerificaAtomicidadeOutput | null;
-    decomposicaoTarefa?: DecomposicaoOutput | null;
+    decomposicaoTarefa?: DecompoeTarefaOutput | null;
   };
   // Trilha de auditoria embutida
   historicoPassos: string[];
