@@ -15,7 +15,9 @@
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../interfaces/logger';
-import type { AnaliseProgramadorOutput } from '../passos/macro/FaseAnaliseProgramador';
+import type { AnaliseProgramadorOutput } from '../passos/atomicos/PassoAnaliseProgramador';
+export type AnaliseProgramadorOutputExtended = AnaliseProgramadorOutput & { fileChanges?: { total: number, modified: string[], created: string[], deleted: string[] }; hasDoneFile?: boolean; };
+
 import type { SessionInfo } from './SessionManagerService';
 
 export interface FeedbackServiceDependencies {
@@ -31,7 +33,7 @@ export interface FeedbackService {
    * @returns Mensagem de feedback formatada
    */
   formatFeedback(
-    analysis: AnaliseProgramadorOutput,
+    analysis: AnaliseProgramadorOutputExtended,
     taskId: string,
     sessionInfo?: SessionInfo | null
   ): Promise<string>;
@@ -55,13 +57,13 @@ export interface FeedbackService {
    * Determina se o feedback indica necessidade de nova tentativa
    * @param analysis Resultado da análise
    */
-  requiresNewAttempt(analysis: AnaliseProgramadorOutput): boolean;
+  requiresNewAttempt(analysis: AnaliseProgramadorOutputExtended): boolean;
 
   /**
    * Extrai instruções específicas para o tipo de falha
    * @param analysis Resultado da análise
    */
-  getSpecificInstructions(analysis: AnaliseProgramadorOutput): string;
+  getSpecificInstructions(analysis: AnaliseProgramadorOutputExtended): string;
 }
 
 export class FeedbackServiceImpl implements FeedbackService {
@@ -72,7 +74,7 @@ export class FeedbackServiceImpl implements FeedbackService {
   }
 
   public async formatFeedback(
-    analysis: AnaliseProgramadorOutput,
+    analysis: AnaliseProgramadorOutputExtended,
     taskId: string,
     sessionInfo?: SessionInfo | null
   ): Promise<string> {
@@ -133,8 +135,8 @@ export class FeedbackServiceImpl implements FeedbackService {
     }
     
     // Adicionar definição de pronto se disponível
-    if (analysis.mensagem) {
-      feedback += `\n## CONTEXTO ADICIONAL\n${analysis.mensagem}\n`;
+    if (analysis.mensagemCorrecao) {
+      feedback += `\n## CONTEXTO ADICIONAL\n${analysis.mensagemCorrecao}\n`;
     }
     
     // Assinatura do sistema
@@ -186,7 +188,7 @@ export class FeedbackServiceImpl implements FeedbackService {
     return context;
   }
 
-  public requiresNewAttempt(analysis: AnaliseProgramadorOutput): boolean {
+  public requiresNewAttempt(analysis: AnaliseProgramadorOutputExtended): boolean {
     // Precisa de nova tentativa se:
     // 1. Workspace não validado E
     // 2. Não é um erro crítico que deve abortar a tarefa
@@ -207,7 +209,7 @@ export class FeedbackServiceImpl implements FeedbackService {
     return retryableFailures.includes(analysis.tipoFalha || '');
   }
 
-  public getSpecificInstructions(analysis: AnaliseProgramadorOutput): string {
+  public getSpecificInstructions(analysis: AnaliseProgramadorOutputExtended): string {
     const tipoFalha = analysis.tipoFalha || 'NADA_FEITO';
     
     switch (tipoFalha) {
@@ -271,7 +273,7 @@ export class FeedbackServiceImpl implements FeedbackService {
   /**
    * Diagnóstico detalhado baseado no tipo de falha
    */
-  private getDiagnosis(analysis: AnaliseProgramadorOutput): string {
+  private getDiagnosis(analysis: AnaliseProgramadorOutputExtended): string {
     const tipoFalha = analysis.tipoFalha || 'NADA_FEITO';
     
     const diagnoses: Record<string, string> = {

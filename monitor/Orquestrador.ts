@@ -33,8 +33,6 @@ import { PassoVerificaDominio } from './passos/atomicos/PassoVerificaDominio';
 import PassoVerificaAtomicidade from './passos/atomicos/PassoVerificaAtomicidade';
 import { DependenciasFaseArquiteto, FaseArquitetoInput, FaseArquitetoOutput, MacroFaseArquiteto } from './passos/macro/FaseArquiteto';
 import { DependenciasAnaliseArquiteto, AnaliseArquitetoInput, AnaliseArquitetoOutput, MacroFaseAnaliseArquiteto } from './passos/macro/FaseAnaliseArquiteto';
-import { DependenciasFaseProgramador, FaseProgramadorInput, FaseProgramadorOutput, MacroFaseProgramador } from './passos/macro/FaseProgramador';
-import { DependenciasAnaliseProgramador, AnaliseProgramadorInput, AnaliseProgramadorOutput, MacroFaseAnaliseProgramador } from './passos/macro/FaseAnaliseProgramador';
 import { FinalizacaoInput, FinalizacaoOutput, MacroFaseFinalizacao } from './passos/macro/FaseFinaliza';
 import { DependenciasExecutarComando, ExecutarComandoInput, ExecutarComandoOutput, PassoExecutarComando } from './passos/atomicos/PassoExecutarComando';
 import { FabricaPromptsIA } from './utils/fabricaPrompts';
@@ -325,12 +323,10 @@ export class OrquestradorTarefas {
 
           // INSPEÇÃO DO WORKSPACE
           const { MacroFaseInspecaoWorkspace } = await import('./passos/macro/FaseInspecaoWorkspace');
-          const { DoneFileService } = await import('./services/DoneFileService');
           const { EvidenceService } = await import('./services/EvidenceService');
           
           const faseInspecaoWorkspace = new MacroFaseInspecaoWorkspace({
             logger, snapshotService: this.deps.servicoSnapshot, 
-            doneFileService: new DoneFileService({ logger, fileSystem: this.deps.fileSystem, path: this.deps.pathUtil }),
             evidenceService: new EvidenceService({ logger })
           } as any);
 

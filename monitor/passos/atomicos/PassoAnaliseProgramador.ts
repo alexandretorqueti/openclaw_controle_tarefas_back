@@ -57,17 +57,16 @@ ${plano}
 [RELATÓRIO DO SISTEMA DE ARQUIVOS (O QUE REALMENTE ACONTECEU)]
 - Arquivo .done criado? ${inspecao.existsDoneFile ? 'SIM' : 'NÃO'}
 - Houve alterações reais no código? ${inspecao.hasRealChanges ? 'SIM' : 'NÃO'}
-- Arquivos Criados: ${inspecao.changes.created.length > 0 ? inspecao.changes.created.join(', ') : 'Nenhum'}
-- Arquivos Modificados: ${inspecao.changes.modified.length > 0 ? inspecao.changes.modified.join(', ') : 'Nenhum'}
-- Arquivos Deletados: ${inspecao.changes.deleted.length > 0 ? inspecao.changes.deleted.join(', ') : 'Nenhum'}
+- Arquivos Criados: ${inspecao.fileChanges.created.length > 0 ? inspecao.fileChanges.created.join(', ') : 'Nenhum'}
+- Arquivos Modificados: ${inspecao.fileChanges.modified.length > 0 ? inspecao.fileChanges.modified.join(', ') : 'Nenhum'}
+- Arquivos Deletados: ${inspecao.fileChanges.deleted.length > 0 ? inspecao.fileChanges.deleted.join(', ') : 'Nenhum'}
 
 [MENSAGEM DO DESENVOLVEDOR]
-${input.resultados?.programador?.rawOutput || 'Sem mensagem do desenvolvedor.'}
+${input.resultados?.programador?.mensagem || 'Sem mensagem do desenvolvedor.'}
 
 REGRAS DE AVALIAÇÃO:
 1. FATOS ACIMA DE TUDO: Se o relatório de arquivos diz que não houve alterações, O DESENVOLVEDOR MENTIU. Reprove imediatamente (workspaceValidado: false).
-2. OBRIGATORIEDADE DO .DONE: Se a tarefa envolvia codificação mas o .done não existe, a tarefa não acabou.
-3. CONFORMIDADE: Os arquivos alterados correspondem ao que o Arquiteto pediu no plano? Se o plano pediu pra editar X e ele editou Y, reprove.
+2. CONFORMIDADE: Os arquivos alterados correspondem ao que o Arquiteto pediu no plano? Se o plano pediu pra editar X e ele editou Y, reprove.
 
 Se reprovar, escreva uma 'mensagemCorrecao' dura e direta instruindo o que ele DEVE consertar.
 Se aprovar, 'mensagemCorrecao' pode ser um elogio simples.

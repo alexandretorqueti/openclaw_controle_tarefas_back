@@ -2,14 +2,13 @@
 // ─────────────────────────────────────────────────────
 // Macro Passo: FASE INSPEÇÃO DO WORKSPACE
 // Responsabilidade: Inspecionar workspace após execução do programador,
-// verificar alterações físicas e coletar evidências.
+// verificar alterações físicas e coletar evidências baseadas em modificações reais.
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../../interfaces/logger';
 import { PassoBase } from '../PassoBase';
 import type { TarefaCompleta } from '../../interfaces';
 import type { Snapshot, WorkspaceSnapshotService } from '../../services/WorkspaceSnapshotService';
-import type { DoneFileService, DoneFileSearchResult } from '../../services/DoneFileService';
 import type { EvidenceService, Evidence } from '../../services/EvidenceService';
 
 export interface InspecaoWorkspaceInput {
@@ -17,14 +16,12 @@ export interface InspecaoWorkspaceInput {
   snapshotInicial: Snapshot;
   taskDir: string;
   rawOutput?: string;
-  toolCall?: Record<string, any>;
-  toolResult?: Record<string, any>;
+  toolCall?: Record<string, unknown>;
+  toolResult?: Record<string, unknown>;
 }
 
 export interface InspecaoWorkspaceOutput {
   sucesso: boolean;
-  hasDoneFile: boolean;
-  doneFilePath: string | null;
   hasRealChanges: boolean;
   fileChanges: {
     modified: string[];
@@ -39,20 +36,17 @@ export interface InspecaoWorkspaceOutput {
 export interface DependenciasInspecaoWorkspace {
   logger: Logger;
   snapshotService: WorkspaceSnapshotService;
-  doneFileService: DoneFileService;
   evidenceService: EvidenceService;
 }
 
 export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput, InspecaoWorkspaceOutput> {
   readonly nome = 'Fase Inspeção do Workspace';
   private readonly snapshotService: WorkspaceSnapshotService;
-  private readonly doneFileService: DoneFileService;
   private readonly evidenceService: EvidenceService;
 
   constructor(deps: DependenciasInspecaoWorkspace) {
     super(deps);
     this.snapshotService = deps.snapshotService;
-    this.doneFileService = deps.doneFileService;
     this.evidenceService = deps.evidenceService;
   }
 
@@ -67,19 +61,7 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
     const projeto = tarefaAtual.project;
     
     try {
-      // 1. BUSCA DE ARQUIVO .DONE
-      await this.logger.info(`📁 Buscando arquivo .done...`);
-      const doneSearch: DoneFileSearchResult = await this.doneFileService.findDoneFile(
-        taskDir,
-        projeto?.pastaBase
-      );
-      
-      const hasDoneFile = doneSearch.found;
-      const doneFilePath = doneSearch.path;
-      
-      await this.logger.info(`📁 .done encontrado: ${hasDoneFile ? 'Sim' : 'Não'} ${doneFilePath ? `(${doneFilePath})` : ''}`);
-      
-      // 2. COMPARAÇÃO DE SNAPSHOTS
+      // 1. COMPARAÇÃO DE SNAPSHOTS
       await this.logger.info(`📸 Comparando snapshots para detectar alterações...`);
       
       let hasRealChanges = false;
@@ -134,14 +116,11 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
         hasRealChanges = false;
       }
       
-      // 3. COLETA DE EVIDÊNCIAS
+      // 2. COLETA DE EVIDÊNCIAS
       await this.logger.info(`📊 Coletando e estruturando evidências...`);
       
       // Cria evidência base
       let evidence = await this.evidenceService.createEmptyEvidence(tarefaAtual.id);
-      
-      // Aplica evidência de .done
-      evidence = await this.evidenceService.applyDoneFileEvidence(evidence, doneFilePath);
       
       // Aplica evidência de alterações de arquivos
       evidence = await this.evidenceService.applyFileChangesEvidence(evidence, fileChanges);
@@ -159,7 +138,7 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
         );
       }
       
-      // 4. VALIDAÇÃO DE CONSISTÊNCIA
+      // 3. VALIDAÇÃO DE CONSISTÊNCIA
       await this.logger.info(`✅ Validando consistência das evidências...`);
       
       const consistencia = this.evidenceService.validateEvidenceConsistency(evidence);
@@ -167,7 +146,7 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
         await this.logger.info(`⚠️ Inconsistências nas evidências: ${consistencia.inconsistencies.join('; ')}`);
       }
       
-      // 5. RESUMO FINAL
+      // 4. RESUMO FINAL
       await this.logger.info(`📈 Gerando resumo final...`);
       
       const sufficiency = this.evidenceService.hasSufficientEvidence(evidence);
@@ -182,8 +161,6 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
       
       return {
         sucesso: true,
-        hasDoneFile,
-        doneFilePath,
         hasRealChanges,
         fileChanges,
         evidence
@@ -194,12 +171,10 @@ export class MacroFaseInspecaoWorkspace extends PassoBase<InspecaoWorkspaceInput
       await this.logger.erro(`💥 Erro crítico na inspeção do workspace: ${msg}`);
       
       // Retorna evidência mínima em caso de erro
-      const evidence = this.evidenceService.createEmptyEvidence(tarefaAtual.id);
+      const evidence = await this.evidenceService.createEmptyEvidence(tarefaAtual.id);
       
       return {
         sucesso: false,
-        hasDoneFile: false,
-        doneFilePath: null,
         hasRealChanges: false,
         fileChanges: {
           modified: [],

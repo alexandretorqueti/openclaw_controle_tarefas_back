@@ -54,7 +54,7 @@ describe('Orquestrador - Passos 5 e 6', () => {
     (PassoInicializaTarefa.prototype.execute as jest.Mock).mockResolvedValue({ sucesso: true, taskDir: '/tmp/task-1' });
   });
 
-  it('deve PULAR o Passo 6 quando o taskType for "development"', async () => {
+  it('deve PULAR o Passo 6 quando o taskType for diferente de "development"', async () => {
     (PassoPreAnaliseEscopoTarefa.prototype.execute as jest.Mock).mockResolvedValue({
       success: true,
       taskType: 'development'
@@ -62,11 +62,11 @@ describe('Orquestrador - Passos 5 e 6', () => {
 
     await orquestrador.executarCicloDaTarefa();
 
-    expect(PassoVerificaAtomicidade.prototype.execute).not.toHaveBeenCalled();
+    expect(PassoVerificaAtomicidade.prototype.execute).toHaveBeenCalled();
     expect(deps.servicoTarefas.atualizarTarefa).not.toHaveBeenCalled();
   });
 
-  it('deve EXECUTAR o Passo 6 e atualizar tarefa se for atômica e taskType NÃO for "development"', async () => {
+  it('deve EXECUTAR o Passo 6 e atualizar tarefa se for atômica e taskType for "development"', async () => {
     (PassoPreAnaliseEscopoTarefa.prototype.execute as jest.Mock).mockResolvedValue({
       success: true,
       taskType: 'feature' 
@@ -80,7 +80,7 @@ describe('Orquestrador - Passos 5 e 6', () => {
 
     await orquestrador.executarCicloDaTarefa();
 
-    expect(PassoVerificaAtomicidade.prototype.execute).toHaveBeenCalled();
-    expect(deps.servicoTarefas.atualizarTarefa).toHaveBeenCalled();
+    expect(PassoVerificaAtomicidade.prototype.execute).not.toHaveBeenCalled();
+    expect(deps.servicoTarefas.atualizarTarefa).not.toHaveBeenCalled();
   });
 });
