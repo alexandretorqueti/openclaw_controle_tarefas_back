@@ -1,4 +1,5 @@
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 
 class ProjectTypeController {

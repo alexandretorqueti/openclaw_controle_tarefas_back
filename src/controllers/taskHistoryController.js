@@ -2,7 +2,8 @@
 
 const taskHistoryService = require('../services/taskHistoryService');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 const UserResolver = require('../utils/userResolver');
 
 class TaskHistoryController {

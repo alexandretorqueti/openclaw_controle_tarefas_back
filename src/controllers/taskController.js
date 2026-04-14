@@ -4,7 +4,8 @@ const taskService = require('../services/taskService');
 const { validateTask, validateTaskUpdate, validateTaskFilters } = require('../validators/taskValidator');
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { snakeToCamel } = require('../utils/caseConverter');
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 const UserResolver = require('../utils/userResolver');
 
 class TaskController {

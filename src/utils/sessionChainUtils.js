@@ -8,7 +8,8 @@
  * 4. Sempre que uma tarefa for dependente de qualquer uma, deve-se procurar a PRIMEIRA tarefa da fila
  */
 
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 
 class SessionChainUtils {
   

@@ -1,4 +1,5 @@
-const prisma = require('./prismaService');
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma;
 
 class UserService {
   // Get all users

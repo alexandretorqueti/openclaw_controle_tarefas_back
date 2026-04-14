@@ -7,7 +7,8 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 
 // POST /api/auth/login - Login por nickname (sem senha)
 router.post('/login', authController.login);

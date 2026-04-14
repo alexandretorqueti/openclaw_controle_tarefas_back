@@ -5,7 +5,8 @@ const path = require('path');
 
 // src/services/taskService.js
 
-const prisma = require('./prismaService');
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma;
 const NotificationService = require('./notificationService');
 const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
 const taskHierarchyService = require('./taskHierarchyService'); // <-- Serviço de hierarquia
@@ -214,15 +215,9 @@ class TaskService {
               id: true,
               name: true,
               email: true,
-              avatarUrl: true
-            }
+              avatarUrl: true }
           },
           parentTask: {
-          select: {
-            id: true,
-            title: true
-          }
-        },
             select: {
               id: true,
               title: true
@@ -351,29 +346,6 @@ class TaskService {
             title: true
           }
         },
-          select: {
-            id: true,
-            title: true
-          }
-        },
-        subtasks: {
-          select: {
-            id: true,
-            title: true,
-            isCompleted: true
-          }
-        },
-        parentTask: {
-          select: {
-            id: true,
-            title: true
-          }
-        },
-          select: {
-            id: true,
-            title: true
-          }
-        },
       },
       orderBy: {
         [filters.sortBy || 'deadline']: filters.sortOrder || 'asc'
@@ -420,11 +392,6 @@ class TaskService {
           }
         },
         parentTask: {
-          select: {
-            id: true,
-            title: true
-          }
-        },
           select: {
             id: true,
             title: true

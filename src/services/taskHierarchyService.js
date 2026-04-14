@@ -1,7 +1,8 @@
 // src/services/taskHierarchyService.js
 // Serviço para gerenciar marcação hierárquica de tarefas em execução
 
-const prisma = require('./prismaService');
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma;
 // Removida a importação do sseService, pois o TaskService já cuida dos broadcasts.
 
 class TaskHierarchyService {

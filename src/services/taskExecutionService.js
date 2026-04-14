@@ -5,7 +5,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 // Importação dos serviços
-const prisma = require('./prismaService'); // <-- 1. Usa o Singleton ao invés de 'new PrismaClient()'
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma; // <-- 1. Usa o Singleton ao invés de 'new PrismaClient()'
 const taskService = require('./taskService'); // <-- 2. Importa o TaskService
 const agentService = require('./agentService');
 const WorkspaceSnapshotService = require('./workspaceSnapshotService');

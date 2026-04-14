@@ -1,6 +1,7 @@
 // src/services/taskHistoryService.js
 
-const prisma = require('./prismaService');
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma;
 
 class TaskHistoryService {
   // Get all history records for a task

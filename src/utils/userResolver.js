@@ -1,5 +1,6 @@
 // src/utils/userResolver.js
-const prisma = require('../services/prismaService');
+const _prisma = require('../services/prismaService');
+const prisma = _prisma.default || _prisma;
 
 /**
  * Helper para resolver usuários por apelido (nickname) ou ID

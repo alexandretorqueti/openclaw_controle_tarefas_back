@@ -1,4 +1,5 @@
-const prisma = require('./prismaService');
+const _prisma = require('./prismaService');
+const prisma = _prisma.default || _prisma;
 const logger = require('../utils/logger');
 const ProcessKiller = require('../utils/processKiller');
 const { writeFileSync, existsSync, mkdirSync, readFileSync } = require('fs');
