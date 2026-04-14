@@ -82,11 +82,48 @@ async function iniciarBot() {
                 await page.keyboard.up('Control');
                 await page.keyboard.press('Backspace');
 
-                await page.evaluate((seletor, texto) => {
+                // 1. Limpa e foca na caixa de texto desviando do Trusted Types
+                await page.evaluate((seletor) => {
                     const caixaDeTexto = document.querySelector(seletor);
+                    if (!caixaDeTexto) return;
+                    
                     caixaDeTexto.focus();
-                    document.execCommand('insertText', false, texto);
-                }, SELETOR_CAIXA_TEXTO, resultadoTerminal);
+                    
+                    // Simula um "Control+A" (Selecionar tudo)
+                    document.execCommand('selectAll', false, null);
+                    
+                    // Simula um "Delete" ou "Backspace"
+                    document.execCommand('delete', false, null);
+                    
+                }, SELETOR_CAIXA_TEXTO);
+
+                // 2. Definimos os parâmetros do fatiamento no Node.js
+                const chunkSize = 500; // Ajuste conforme a necessidade de respiro da interface
+                const tempoDeRespiro = 200; // Tempo em ms entre cada colagem
+
+                console.log(`📝 Iniciando colagem de ${resultadoTerminal.length} caracteres em pedaços...`);
+
+                // 3. O Loop agora roda no Node.js!
+                for (let i = 0; i < resultadoTerminal.length; i += chunkSize) {
+                    const chunk = resultadoTerminal.slice(i, i + chunkSize);
+
+                    // O page.evaluate agora só faz uma coisa simples e rápida: colar um pedaço
+                    await page.evaluate((seletor, pedaco) => {
+                        const caixaDeTexto = document.querySelector(seletor);
+                        caixaDeTexto.focus(); // Garante o foco no elemento a cada inserção
+                        document.execCommand('insertText', false, pedaco);
+                    }, SELETOR_CAIXA_TEXTO, chunk);
+
+                    // Pausa no Node.js para dar tempo do navegador (Angular) atualizar a UI
+                    await new Promise(resolve => setTimeout(resolve, tempoDeRespiro));
+                }
+
+                // 4. Dispara o evento de input no final para o Gemini validar o campo
+                await page.evaluate((seletor) => {
+                    document.querySelector(seletor).dispatchEvent(new Event('input', { bubbles: true }));
+                }, SELETOR_CAIXA_TEXTO);
+
+                console.log('✅ Texto massivo colado com sucesso!');
 
                 // Pequeno atraso para garantir que o front-end do Gemini registrou o 'insertText'
                 await new Promise(resolve => setTimeout(resolve, 5000));

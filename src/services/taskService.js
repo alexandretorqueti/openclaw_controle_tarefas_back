@@ -186,6 +186,13 @@ class TaskService {
           totalSubtasks: 0 // Nova tarefa começa com 0 subtasks
         },
         include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
           project: {
             select: {
               id: true,
@@ -211,6 +218,11 @@ class TaskService {
             }
           },
           parentTask: {
+          select: {
+            id: true,
+            title: true
+          }
+        },
             select: {
               id: true,
               title: true
@@ -300,6 +312,13 @@ class TaskService {
     return await prisma.task.findMany({
       where,
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: {
           select: {
             id: true,
@@ -327,6 +346,11 @@ class TaskService {
           }
         },
         parentTask: {
+          select: {
+            id: true,
+            title: true
+          }
+        },
           select: {
             id: true,
             title: true
@@ -345,6 +369,11 @@ class TaskService {
             title: true
           }
         },
+          select: {
+            id: true,
+            title: true
+          }
+        },
       },
       orderBy: {
         [filters.sortBy || 'deadline']: filters.sortOrder || 'asc'
@@ -357,6 +386,13 @@ class TaskService {
     return await prisma.task.findUnique({
       where: { id },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: {
           select: {
             id: true,
@@ -389,8 +425,20 @@ class TaskService {
             title: true
           }
         },
+          select: {
+            id: true,
+            title: true
+          }
+        },
         subtasks: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             status: true,
             priority: true,
             assignedTo: {
@@ -404,6 +452,13 @@ class TaskService {
         },
         dependencies: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             dependentTask: {
               select: {
                 id: true,
@@ -415,6 +470,13 @@ class TaskService {
         },
         dependents: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             task: {
               select: {
                 id: true,
@@ -426,6 +488,13 @@ class TaskService {
         },
         comments: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             user: {
               select: {
                 id: true,
@@ -435,6 +504,13 @@ class TaskService {
             },
             replies: {
               include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
                 user: {
                   select: {
                     id: true,
@@ -451,6 +527,13 @@ class TaskService {
         },
         attachments: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             user: {
               select: {
                 id: true,
@@ -464,6 +547,13 @@ class TaskService {
         },
         history: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             user: {
               select: {
                 id: true,
@@ -487,6 +577,13 @@ class TaskService {
     const currentTask = await prisma.task.findUnique({
       where: { id },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: true
       }
     });
@@ -723,6 +820,13 @@ class TaskService {
         where: { id },
         data: updateData,
         include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
           project: true,
           status: true,
           priority: true,
@@ -888,6 +992,13 @@ class TaskService {
       where: { id },
       data: { position },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: true,
         status: true,
         priority: true
@@ -918,6 +1029,13 @@ class TaskService {
         updatedAt: new Date()
       },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: true,
         status: true,
         priority: true
@@ -969,6 +1087,13 @@ class TaskService {
     return await prisma.task.findMany({
       where,
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: {
           select: {
             id: true,
@@ -1021,6 +1146,13 @@ class TaskService {
         ]
       },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: true,
         status: true,
         priority: true,
@@ -1078,6 +1210,13 @@ class TaskService {
       where: { id: taskId },
       data: updateData,
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         project: true,
         status: true,
         priority: true
@@ -1239,6 +1378,13 @@ class TaskService {
         ]
       },
       include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
         priority: true,
         status: true,
         project: {
@@ -1268,8 +1414,22 @@ class TaskService {
         },
         dependents: {
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             task: {
               include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
                 priority: true,
                 status: true
               }
@@ -1402,7 +1562,14 @@ class TaskService {
             nextExecutionAt: nextExecutionAt,
             isCompleted: false // Garante que a tarefa continua viva
           },
-          include: { project: true, status: true, priority: true }
+          include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        }, project: true, status: true, priority: true }
         })
       ];
       
@@ -1530,7 +1697,14 @@ class TaskService {
           lastExecutedAt: new Date(),
           nextExecutionAt: null
         },
-        include: { project: true, status: true, priority: true }
+        include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        }, project: true, status: true, priority: true }
       })
     ];
     
@@ -1581,6 +1755,13 @@ class TaskService {
             parentTaskId: parentTaskId
           },
           include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        },
             status: true
           }
         });
@@ -1596,7 +1777,14 @@ class TaskService {
           // Buscar a tarefa pai
           const parentTask = await prisma.task.findUnique({
             where: { id: parentTaskId },
-            include: { status: true }
+            include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        }, status: true }
           });
 
           if (parentTask && (!parentTask.status || !parentTask.status.isFinalState)) {
@@ -1638,7 +1826,14 @@ class TaskService {
               lastExecutedAt: new Date(),
               nextExecutionAt: null
             },
-            include: { project: true, status: true, priority: true }
+            include: {
+        subtasks: {
+          select: {
+            id: true,
+            title: true,
+            isCompleted: true
+          }
+        }, project: true, status: true, priority: true }
           })
         );
 
