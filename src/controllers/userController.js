@@ -2,7 +2,7 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const ErrorMiddleware = require('../middlewares/errorMiddleware');
 const { getAbsoluteAvatarUrl } = require('../utils/avatarUrl');
-const taskService = require('../services/taskService');
+const taskService = require('../services/taskService').default;
 
 class UserController {
   // Get all users

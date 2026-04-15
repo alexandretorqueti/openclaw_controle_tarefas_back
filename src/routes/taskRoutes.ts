@@ -1,7 +1,5 @@
-// src/routes/taskRoutes.js
-
-const express = require('express');
-const taskController = require('../controllers/taskController');
+import express from 'express';
+import taskController from '../controllers/taskController';
 
 const router = express.Router();
 
@@ -38,5 +36,4 @@ router.patch('/:id/finalize', taskController.finalizeTask);
 // PUT /api/tasks/:id/finish-execution - Finish task execution (set isExecuting to false)
 router.put('/:id/finish-execution', taskController.finishTaskExecution);
 
-module.exports = router;
-
+export default router;

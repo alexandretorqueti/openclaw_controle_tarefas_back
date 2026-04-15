@@ -41,7 +41,7 @@ class GetNextTaskStep {
     }
 
     try {
-      const response = await this.axios.get(`${apiUrl}/api/users/nickname/${nickname}/next-task`);
+      const response = await this.axios.get(`${apiUrl}/api/tasks/next/${nickname}`);
 
       // Se a API retornar uma tarefa válida, nós a devolvemos
       if (response.data && response.data?.task?.id) {

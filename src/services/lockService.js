@@ -5,7 +5,7 @@ const fs = require('fs').promises;
 const { fileExists } = require('../utils/fileUtils');
 const taskHierarchyService = require('./taskHierarchyService');
 const sseService = require('./sseService'); // <-- 1. Importa o serviço SSE
-const taskService = require('./taskService'); // <-- 2. Importa o TaskService
+const taskService = require('./taskService').default; // <-- 2. Importa o TaskService
 
 class LockService {
   constructor(lockFilePath) {

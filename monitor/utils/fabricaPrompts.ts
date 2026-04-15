@@ -74,7 +74,6 @@ Descrição: ${tarefa.description}${secaoComentarios}
 [Pastas do projeto]
 ${ctxFisico}${ctxPortas}
 
-[OBRIGATÓRIO]: Grave sua análise nesse arquivo: ${caminhoPlano}
 
 `.trim();
   }

@@ -4,16 +4,18 @@ require('dotenv').config();
 const path = require("path");
 
 const projectRoutes = require('./routes/projectRoutes');
-const taskRoutes = require('./routes/taskRoutes');
+const taskRoutes = require('./routes/taskRoutes').default || require('./routes/taskRoutes');
 const statusRoutes = require('./routes/statusRoutes');
 const priorityRoutes = require('./routes/priorityRoutes');
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
-const recurrenceRoutes = require('./routes/recurrenceRoutes');
+const recurrenceRoutesRaw = require('./routes/recurrenceRoutes');
+const recurrenceRoutes = recurrenceRoutesRaw.default || recurrenceRoutesRaw;
 const commentRoutes = require('./routes/commentRoutes');
 const logRoutes = require('./routes/logRoutes');
 const agentRoutes = require('./routes/agentRoutes');
-const errorRoutes = require('./routes/errorRoutes').default;
+const errorRoutes = require('./routes/errorRoutes').default || require('./routes/errorRoutes');
+
 const ErrorMiddleware = require('./middlewares/errorMiddleware');
 const { Logger, LOG_LEVELS } = require('./utils/logger');
 const { extractUser } = require('./middlewares/authMiddleware');
@@ -192,14 +194,17 @@ app.get("/logs", (req, res) => {
 // API Routes
 app.use('/api/projects', projectRoutes);
 app.use('/api/tasks', taskRoutes);
-app.use('/api/dependencies', require('./routes/dependencyRoutes'));
+const dependencyRoutes = require('./routes/dependencyRoutes');
+app.use('/api/dependencies', dependencyRoutes.default || dependencyRoutes);
 app.use('/api/statuses', statusRoutes);
 app.use('/api/priorities', priorityRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/project-types', require('./routes/projectTypeRoutes'));
-app.use('/api/recurrence', recurrenceRoutes);
+const projectTypeRoutes = require('./routes/projectTypeRoutes');
+app.use('/api/project-types', projectTypeRoutes.default || projectTypeRoutes);
+app.use('/api/recurrence', recurrenceRoutes.default || recurrenceRoutes);
 app.use('/api/comments', commentRoutes);
-app.use('/api/task-history', require('./routes/taskHistoryRoutes'));
+const taskHistoryRoutes = require('./routes/taskHistoryRoutes');
+app.use('/api/task-history', taskHistoryRoutes.default || taskHistoryRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/models', require('./routes/modelRoutes'));
 app.use('/api/task-executions', require('./routes/taskExecutionRoutes'));

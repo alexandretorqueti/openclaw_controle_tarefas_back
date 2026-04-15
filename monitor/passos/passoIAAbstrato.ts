@@ -77,11 +77,11 @@ export abstract class PassoIAAbstrato<TInput extends BaseIAInput, TOutput> exten
 
         // 3. Montagem das Configurações do LLM
         const opcoesParaIA: LLMOptions = {
-            provider: LLMProvider.OLLAMA,
+            provider: LLMProvider.OPENCLAW,
             agentId: project.agent,
             sessionId: `session-${tarefaAtual.id}`,
             temperature: 0.5,
-            timeout: config.TASK_TIMEOUT_MS / 1000,
+            timeout: config.TASK_TIMEOUT_MS ,
             model: project.modeloAuxiliar,
             format: this.schema,
         };

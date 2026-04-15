@@ -222,7 +222,7 @@ export class OrquestradorTarefas {
           if (verificacaoAtomicidade.isIdeal) {
             ctx.tarefaAtual.isAtomic = true;
             ctx.outputPassos.verificacaoAtomicidade = verificacaoAtomicidade;
-            await this.deps.servicoTarefas.atualizarTarefa(ctx.tarefaAtual);
+            await this.deps.servicoTarefas.updateTask(ctx.tarefaAtual.id, ctx.tarefaAtual);
           }       
         }
       }
@@ -353,7 +353,6 @@ export class OrquestradorTarefas {
           } else {
             falhaIrreversivelNoProgramador = true;
             mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise?.mensagemCorrecao}`;
-            novoStatus = ctx.config.STATUS.FAILED;
           }
         }
       }

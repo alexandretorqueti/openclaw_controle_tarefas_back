@@ -8,9 +8,10 @@ import { ContextoExecucao, TarefaCompleta } from '../../interfaces';
 const retornoArquiteto = z.object({
     planDetails: z.string().describe('O plano arquitetural detalhado passo a passo para o programador implementar.'),
     architectNotes: z.string().optional().describe('Notas adicionais, considerações de design ou avisos de arquitetura.'),
-    isFullyImplemented: z.boolean().describe('Verdadeiro APENAS se a tarefa for trivial e você já tiver resolvido tudo completamente na sua análise, dispensando a fase de programação.'),
+    isFullyImplemented: z.boolean().describe('Se a analise foi concluída com sucesso, marque como falso. Se você já ALTEROU os arquivos e IMPLEMENTOU a correção, marque como verdadeiro.'),
     success: z.boolean().describe('Indica se a análise e o plano foram gerados com sucesso.'),
-    error: z.string().optional().describe('Se houve algum erro no processamento.')
+    error: z.string().optional().describe('Se houve algum erro no processamento.'),
+    comments: z.array(z.string()).optional().describe('Comentarios adicionais')
 });
 
 export type ArquitetoOutput = z.infer<typeof retornoArquiteto>;
