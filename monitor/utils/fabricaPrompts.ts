@@ -177,24 +177,7 @@ ${planoArquiteto}
 
 [COMO ENCERRAR O SEU TRABALHO]
 Quando você tiver ABSOLUTA CERTEZA de que codificou tudo o que o Arquiteto pediu e que o código não tem erros de sintaxe óbvios:
-1. Crie um arquivo vazio chamado ".done" exatamente neste diretório: ${caminhoTaskDir}
-2. Responda OBRIGATORIAMENTE com um bloco JSON indicando seu status.
-
-Se você ainda precisa de mais turnos para terminar a codificação, responda:
-\`\`\`json
-{
-  "acao": "continuar",
-  "mensagem": "Ainda estou codificando o arquivo X..."
-}
-\`\`\`
-
-Se você já terminou e criou o arquivo .done, responda:
-\`\`\`json
-{
-  "acao": "feito",
-  "mensagem": "Código finalizado conforme o plano do arquiteto."
-}
-\`\`\`
+1. Finalize e retorne o JSON solicitado.
 `.trim();
   }
 

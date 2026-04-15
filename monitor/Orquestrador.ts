@@ -40,7 +40,7 @@ import { DependenciasBase } from './passos';
 import { DependenciasFinalizacao } from './passos/macro/FaseFinaliza';
 import { DoneFileServiceDeps } from './services/DoneFileService';
 import { EvidenceServiceDeps } from './services/EvidenceService';
-import { DependenciasInspecaoWorkspace, MacroFaseInspecaoWorkspace } from './passos/macro/FaseInspecaoWorkspace';
+import { DependenciasInspecaoWorkspace, InspecaoWorkspaceOutput, MacroFaseInspecaoWorkspace } from './passos/macro/FaseInspecaoWorkspace';
 import { ConfiguracaoFalha } from './passos/atomicos/PassoVerificaDominio';
 // Novos serviços para gestão de feedback e sessões
 import type { SessionManager, SessionInfo } from './services/SessionManagerService';
@@ -52,6 +52,7 @@ import { UniversalAgentEngine } from './services/universalEngine/universalAgentE
 import { retornoTipoDaTarefaType, VerificaAtomicidadeOutput } from './interfaces/retornosIA';
 import TaskService from '../src/services/taskService';
 import { ProgramadorOutput } from './passos/atomicos/PassoProgramador';
+import { AnaliseProgramadorOutput } from './passos/atomicos/PassoAnaliseProgramador';
 
 
 export interface DependenciasGlobais {
@@ -306,54 +307,63 @@ export class OrquestradorTarefas {
       
       let falhaIrreversivelNoProgramador = false;
 
-      // PASSO 11 e 12: PROGRAMADOR E ANÁLISE DO WORKSPACE (Sem loop)
-      if (!fluxoEncerradoPrematuramente) {
-        await logger.info('🔄 Iniciando Fase do Programador (Sem loop)');
+      // PASSO 11 e 12: PROGRAMADOR E ANÁLISE DO WORKSPACE (com loop)
+      {
+        let loopProgramador = 0;
+        const maxLoopProgramador = 3;
+        let terminou = false;
+        if (!fluxoEncerradoPrematuramente) {
+          while (!terminou && loopProgramador++ < maxLoopProgramador) {
+            await logger.info('🔄 Iniciando Fase do Programador (Sem loop)');
 
-        const PassoProgramador = (await import('./passos/atomicos/PassoProgramador')).default;
-        const passoProgramador = new PassoProgramador(this.deps as any);
-        const resultProgramador = await passoProgramador.execute(ctx);
+            const PassoProgramador = (await import('./passos/atomicos/PassoProgramador')).default;
+            const passoProgramador = new PassoProgramador(this.deps as any);
+            const resultProgramador = await passoProgramador.execute(ctx);
 
-        if (!resultProgramador || !resultProgramador.sucesso) {
-          falhaIrreversivelNoProgramador = true;
-          mensagemFinal = '❌ Programador falhou na execução.';
-          novoStatus = ctx.config.STATUS.FAILED;
-        } else {
-          ctx.resultados.programador = resultProgramador as ProgramadorOutput;
+            if (!resultProgramador || !resultProgramador.sucesso) {
+              falhaIrreversivelNoProgramador = true;
+              mensagemFinal = '❌ Programador falhou na execução.';
+              novoStatus = ctx.config.STATUS.FAILED;
+            } else {
+              ctx.resultados.programador = resultProgramador as ProgramadorOutput;
 
-          // INSPEÇÃO DO WORKSPACE
-          const { MacroFaseInspecaoWorkspace } = await import('./passos/macro/FaseInspecaoWorkspace');
-          const { EvidenceService } = await import('./services/EvidenceService');
-          
-          const faseInspecaoWorkspace = new MacroFaseInspecaoWorkspace({
-            logger, snapshotService: this.deps.servicoSnapshot, 
-            evidenceService: new EvidenceService({ logger })
-          } as any);
+              // INSPEÇÃO DO WORKSPACE
+              const { MacroFaseInspecaoWorkspace } = await import('./passos/macro/FaseInspecaoWorkspace');
+              const { EvidenceService } = await import('./services/EvidenceService');
+              
+              const faseInspecaoWorkspace = new MacroFaseInspecaoWorkspace({
+                logger, snapshotService: this.deps.servicoSnapshot, 
+                evidenceService: new EvidenceService({ logger })
+              } as any);
 
-          const inspecao = await faseInspecaoWorkspace.execute({
-            tarefaAtual: ctx.tarefaAtual,
-            snapshotInicial: ctx.initialSnapshot || new Map(),
-            taskDir: ctx.controle.taskDir || '',
-            rawOutput: resultProgramador.mensagem,
-            toolCall: {},
-            toolResult: {}
-          } as any);
+              const inspecao: InspecaoWorkspaceOutput = await faseInspecaoWorkspace.execute({
+                tarefaAtual: ctx.tarefaAtual,
+                snapshotInicial: ctx.initialSnapshot || new Map(),
+                taskDir: ctx.controle.taskDir || '',
+                rawOutput: resultProgramador.mensagem,
+                toolCall: {},
+                toolResult: {}
+              } as any);
 
-          ctx.resultados.inspecaoWorkspace = inspecao;
+              ctx.resultados.inspecaoWorkspace = inspecao;
 
-          const PassoAnaliseProgramador = (await import('./passos/atomicos/PassoAnaliseProgramador')).default;
-          const passoAnalise = new PassoAnaliseProgramador(this.deps as any);
-          const analise = await passoAnalise.execute(ctx);
+              const PassoAnaliseProgramador = (await import('./passos/atomicos/PassoAnaliseProgramador')).default;
+              const passoAnalise = new PassoAnaliseProgramador(this.deps as any);
+              const analise: AnaliseProgramadorOutput = await passoAnalise.execute(ctx);
 
-          ctx.resultados.resultAnaliseProgramador = analise;
+              ctx.resultados.resultAnaliseProgramador = analise;
 
-          if (analise && analise.workspaceValidado) {
-            mensagemFinal = '✅ Trabalho validado. Prosseguindo para testes locais.';
-            novoStatus = ctx.config.STATUS.IN_PROGRESS;
-          } else {
-            falhaIrreversivelNoProgramador = true;
-            mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise?.mensagemCorrecao}`;
+              if (analise && analise.workspaceValidado) {
+                mensagemFinal = '✅ Trabalho validado. Prosseguindo para testes locais.';
+                novoStatus = ctx.config.STATUS.IN_PROGRESS;
+                terminou = true;
+              } else {
+                falhaIrreversivelNoProgramador = true;
+                mensagemFinal = `❌ Tarefa rejeitada. Último erro: ${analise?.mensagemCorrecao}`;
+              }
+            }
           }
+
         }
       }
 

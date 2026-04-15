@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────
 
 import type { Logger } from '../interfaces/logger';
-import type { AnaliseProgramadorOutput } from '../passos/atomicos/PassoAnaliseProgramador';
+import { retryableFailures, type AnaliseProgramadorOutput } from '../passos/atomicos/PassoAnaliseProgramador';
 export type AnaliseProgramadorOutputExtended = AnaliseProgramadorOutput & { fileChanges?: { total: number, modified: string[], created: string[], deleted: string[] }; hasDoneFile?: boolean; };
 
 import type { SessionInfo } from './SessionManagerService';
@@ -197,31 +197,18 @@ export class FeedbackServiceImpl implements FeedbackService {
     }
     
     // Tipos de falha que merecem nova tentativa
-    const retryableFailures = [
-      'SEM_DONE',
-      'SEM_ALTERACOES', 
-      'ALTERACOES_INSUFICIENTES',
-      'NADA_FEITO',
-      'BUILD_FALHOU',
-      'TESTES_FALHARAM'
-    ];
+    const _retryableFailures = retryableFailures;
     
-    return retryableFailures.includes(analysis.tipoFalha || '');
+    return _retryableFailures.includes(analysis.tipoFalha || '');
   }
 
   public getSpecificInstructions(analysis: AnaliseProgramadorOutputExtended): string {
     const tipoFalha = analysis.tipoFalha || 'NADA_FEITO';
     
     switch (tipoFalha) {
-      case 'SEM_DONE':
-        return `🔹 **CRIE O ARQUIVO .done**\n` +
-               `O sistema detectou alterações no código, mas falta o arquivo .done que marca a conclusão.\n` +
-               `Execute: \`write { path: ".done", content: "Tarefa concluída em ${new Date().toISOString()}" }\` na pasta da tarefa.\n` +
-               `Isso sinaliza ao sistema que você finalizou o trabalho.`;
-               
       case 'SEM_ALTERACOES':
         return `🔹 **FAÇA ALTERAÇÕES NO CÓDIGO**\n` +
-               `Você criou o arquivo .done, mas não houve alterações no código fonte.\n` +
+               `Não houve alterações no código fonte.\n` +
                `Por favor, use as ferramentas de edição (write, edit) para implementar as mudanças necessárias.\n` +
                `Verifique se está editando os arquivos corretos no diretório do projeto.`;
                
@@ -277,7 +264,6 @@ export class FeedbackServiceImpl implements FeedbackService {
     const tipoFalha = analysis.tipoFalha || 'NADA_FEITO';
     
     const diagnoses: Record<string, string> = {
-      'SEM_DONE': `O sistema detectou que você alterou arquivos (${analysis.fileChanges?.total || 0} mudanças), mas não criou o arquivo .done que sinaliza conclusão.`,
       'SEM_ALTERACOES': `Você criou o arquivo .done, mas não foram detectadas alterações no código fonte. O .done indica conclusão, mas sem mudanças não há evidência de trabalho realizado.`,
       'ALTERACOES_INSUFICIENTES': `Foram detectadas algumas alterações (${analysis.fileChanges?.total || 0} arquivos), mas são insuficientes para validar a implementação completa da tarefa.`,
       'NADA_FEITO': `Não foram detectadas alterações no código nem arquivo .done criado. O sistema não pode validar trabalho não realizado.`,

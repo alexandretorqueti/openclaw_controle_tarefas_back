@@ -5,10 +5,12 @@ import { ContextoExecucao } from '../../interfaces';
 import { PassoIAAbstrato } from '../passoIAAbstrato';
 import { MacroFaseInspecaoWorkspace } from '../macro/FaseInspecaoWorkspace';
 
+export const retryableFailures: [string, ...string[]] = ['SEM_ALTERACOES', 'ALTERACOES_INSUFICIENTES', 'ERRO_DE_SINTAXE', 'NAO_SEGUIU_O_PLANO', 'OUTRO', 'NADA_FEITO', 'BUILD_FALHOU', 'TESTES_FALHARAM'];
+
 const retornoAnaliseProgramador = z.object({
     workspaceValidado: z.boolean().describe('Verdadeiro se o código do programador atende aos requisitos, os arquivos certos foram criados e a sintaxe aparenta estar correta.'),
     precisaCorrecao: z.boolean().describe('Verdadeiro se o programador cometeu erros evidentes, não entregou o que foi pedido, ou causou regressões.'),
-    tipoFalha: z.enum(['SEM_DONE', 'SEM_ALTERACOES', 'ALTERACOES_INSUFICIENTES', 'ERRO_DE_SINTAXE', 'NAO_SEGUIU_O_PLANO', 'OUTRO', 'NADA_FEITO', 'BUILD_FALHOU', 'TESTES_FALHARAM']).optional().describe('Classificação da falha, se houver.'),
+    tipoFalha: z.enum(retryableFailures).optional().describe('Classificação da falha, se houver.'),
     mensagemCorrecao: z.string().describe('Mensagem detalhada para o programador explicando exatamente o que ele precisa corrigir na próxima tentativa.'),
     notasInspecao: z.string().describe('Notas internas do analista sobre a qualidade do código (não enviadas ao programador).')
 });

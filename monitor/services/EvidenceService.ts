@@ -9,8 +9,6 @@ import type { Logger } from '../interfaces/logger';
 export interface Evidence {
   timestamp: string;
   taskId: string;
-  hasDoneFile: boolean;
-  doneFilePath: string | null;
   hasRealChanges: boolean;
   fileChanges: {
     modified: string[];
@@ -65,8 +63,6 @@ export class EvidenceService {
     return {
       timestamp: new Date().toISOString(),
       taskId,
-      hasDoneFile: false,
-      doneFilePath: null,
       hasRealChanges: false,
       fileChanges: {
         modified: [],
@@ -159,25 +155,6 @@ export class EvidenceService {
   }
 
   /**
-   * Aplica evidência de arquivo .done
-   */
-  async applyDoneFileEvidence(
-    evidence: Evidence,
-    doneFilePath: string | null
-  ): Promise<Evidence> {
-    const updatedEvidence = { ...evidence };
-    
-    updatedEvidence.hasDoneFile = !!doneFilePath;
-    updatedEvidence.doneFilePath = doneFilePath;
-    
-    if (doneFilePath) {
-      await this.logger.debug(`📊 Evidência atualizada com .done: ${doneFilePath}`);
-    }
-    
-    return updatedEvidence;
-  }
-
-  /**
    * Aplica análise às evidências
    */
   async applyAnalysisEvidence(
@@ -202,11 +179,6 @@ export class EvidenceService {
   } {
     const reasons: string[] = [];
     
-    // Critério 1: Arquivo .done existe
-    if (evidence.hasDoneFile) {
-      reasons.push('Arquivo .done encontrado');
-    }
-    
     // Critério 2: Alterações reais nos arquivos
     if (evidence.hasRealChanges) {
       reasons.push(`Alterações detectadas (${evidence.fileChanges.total} arquivos)`);
@@ -225,10 +197,10 @@ export class EvidenceService {
     // Determina se é suficiente
     // Para tarefas de desenvolvimento: precisa de .done OU (alterações + análise positiva)
     // Para tarefas de análise: basta .done
-    const hasDoneOrChanges = evidence.hasDoneFile || evidence.hasRealChanges;
+
     const hasPositiveAnalysis = evidence.analysis?.hasFulfilledContract;
     
-    const sufficient = evidence.hasDoneFile || (evidence.hasRealChanges && hasPositiveAnalysis);
+    const sufficient = (evidence.hasRealChanges && hasPositiveAnalysis);
     
     return {
       sufficient,
@@ -244,7 +216,6 @@ export class EvidenceService {
     
     lines.push(`📊 RESUMO DE EVIDÊNCIAS - Tarefa ${evidence.taskId}`);
     lines.push(`📅 Timestamp: ${evidence.timestamp}`);
-    lines.push(`📁 .done: ${evidence.hasDoneFile ? `✅ ${evidence.doneFilePath}` : '❌ Não encontrado'}`);
     lines.push(`🔄 Alterações: ${evidence.hasRealChanges ? `✅ ${evidence.fileChanges.total} arquivos` : '❌ Nenhuma'}`);
     
     if (evidence.fileChanges.total > 0) {
@@ -287,13 +258,8 @@ export class EvidenceService {
   } {
     const inconsistencies: string[] = [];
     
-    // Inconsistência 1: Declarou .done mas não tem arquivo
-    if (evidence.analysis?.isDeclaringDone && !evidence.hasDoneFile) {
-      inconsistencies.push('Declarou conclusão mas arquivo .done não encontrado');
-    }
-    
     // Inconsistência 2: Tem .done mas análise diz que contrato não foi cumprido
-    if (evidence.hasDoneFile && evidence.analysis && !evidence.analysis.hasFulfilledContract) {
+    if (evidence.analysis && !evidence.analysis.hasFulfilledContract) {
       inconsistencies.push('Arquivo .done existe mas análise indica contrato não cumprido');
     }
     
