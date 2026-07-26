@@ -6,7 +6,6 @@
 
 import type { Project, Task, Prisma } from '@prisma/client';
 import { Snapshot } from '../services/WorkspaceSnapshotService';
-import { FaseArquitetoOutput } from '../passos/macro/FaseArquiteto';
 import { AnaliseProgramadorOutput } from '../passos/atomicos/PassoAnaliseProgramador';
 import { VerificaAtomicidadeOutput } from '../interfaces/retornosIA';
 import { DecompoeTarefaOutput } from '../passos/atomicos/PassoDecompoeTarefa';

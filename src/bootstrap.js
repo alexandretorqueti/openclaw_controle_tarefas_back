@@ -78,7 +78,7 @@ container.register('lockService', lockServiceInstance);
 const monitorStateServiceInstance = new MonitorStateService(config.TASKS_DIR);
 container.register('monitorStateService', monitorStateServiceInstance);
 container.register('apiService', axios.create({ baseURL: config.API_URL }));
-container.register('motorUniversal', new UniversalAgentEngine());
+container.register('motorUniversal', new UniversalAgentEngine({ fileSystem: fs }));
 container.register('validationService', ValidationService); // <-- Registra o ValidationService
 
 module.exports = container;

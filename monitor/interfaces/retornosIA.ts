@@ -13,8 +13,9 @@ const
             .optional()
             .describe('Camadas esperadas'),
         difficult: z.number().min(0).max(100).default(0).describe('Dificuldade da tarefa'),
-        error: z.string().optional().describe('Se houve algum erro no seu processamento'),
-        success: z.boolean().describe('Indica se a tarefa foi analisada com sucesso')
+        success: z.boolean().describe('Indica se a tarefa foi analisada com sucesso'),
+        motivos_camadas: z.string().describe('Diga claramente porque excolheu backend ou frontend como camadas.'),
+        motivos_tipo: z.string().describe('Diga claramente porque excolheu analysis, development ou automation como o tipo da tarefa.')
     });
 
 export type retornoTipoDaTarefaType = z.infer<typeof retornoTipoDaTarefa>;

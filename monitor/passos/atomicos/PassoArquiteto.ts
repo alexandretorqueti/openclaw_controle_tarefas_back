@@ -6,18 +6,18 @@ import zodToJsonSchema from 'zod-to-json-schema';
 import { ContextoExecucao, TarefaCompleta } from '../../interfaces';
 
 const retornoArquiteto = z.object({
-    planDetails: z.string().describe('O plano arquitetural detalhado passo a passo para o programador implementar.'),
+    planDetails: z.string().describe('O plano seguido para fazer a análise'),
     architectNotes: z.string().optional().describe('Notas adicionais, considerações de design ou avisos de arquitetura.'),
     isFullyImplemented: z.boolean().describe('Se a analise foi concluída com sucesso, marque como falso. Se você já ALTEROU os arquivos e IMPLEMENTOU a correção, marque como verdadeiro.'),
     success: z.boolean().describe('Indica se a análise e o plano foram gerados com sucesso.'),
-    error: z.string().optional().describe('Se houve algum erro no processamento.'),
-    comments: z.array(z.string()).optional().describe('Comentarios adicionais')
+    comments: z.array(z.string()).optional().describe('Comentarios adicionais'),
+    analise_completa: z.string().optional().describe('Escreva aqui a sua análise completa, sem comentários ou anotações. Faça uma análise para que seja enviada ao programador.'),
 });
 
 export type ArquitetoOutput = z.infer<typeof retornoArquiteto>;
 const ArquitetoSchema: JSONSchema7 = zodToJsonSchema(retornoArquiteto) as JSONSchema7;
 
-export class PassoArquiteto extends PassoIAAbstrato<ContextoExecucao, ArquitetoOutput> {
+export class PassoArquiteto extends PassoIAAbstrato<Readonly<ContextoExecucao>, ArquitetoOutput> {
     readonly nome: string = 'AnaliseEPlanejamentoArquiteto';
     protected readonly schema: JSONSchema7 = ArquitetoSchema;
 
@@ -26,7 +26,7 @@ export class PassoArquiteto extends PassoIAAbstrato<ContextoExecucao, ArquitetoO
             planDetails: '',
             isFullyImplemented: false,
             success: false,
-            error: mensagemErro
+            analise_completa: '',
         };
     }
 

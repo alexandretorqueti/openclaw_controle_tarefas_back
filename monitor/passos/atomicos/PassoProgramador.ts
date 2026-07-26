@@ -15,7 +15,7 @@ const retornoProgramador = z.object({
 export type ProgramadorOutput = z.infer<typeof retornoProgramador>;
 const ProgramadorSchema: JSONSchema7 = zodToJsonSchema(retornoProgramador) as JSONSchema7;
 
-export class PassoProgramador extends PassoIAAbstrato<ContextoExecucao, ProgramadorOutput> {
+export class PassoProgramador extends PassoIAAbstrato<Readonly<ContextoExecucao>, ProgramadorOutput> {
     readonly nome: string = 'FaseProgramador';
     protected readonly schema: JSONSchema7 = ProgramadorSchema;
 
@@ -29,17 +29,14 @@ export class PassoProgramador extends PassoIAAbstrato<ContextoExecucao, Programa
     }
 
     protected async construirPrompt(input: ContextoExecucao): Promise<string> {
-        const planoArquiteto = input.resultados?.arquiteto?.planDetails || input.tarefaAtual?.description || 'Plano indisponível';
+        let planoArquiteto = `
+        Análise do Arquiteto: ${input.resultados?.arquiteto?.analise_completa}
+        `;
         
         let prompt = FabricaPromptsIA.gerarPromptProgramador(
             input.tarefaAtual!,
-            planoArquiteto,
-            input.controle?.taskDir || ''
+            planoArquiteto
         );
-
-        if (input.controle?.feedbackPendente) {
-            prompt = `# FEEDBACK DA ANÁLISE ANTERIOR (CORRIJA OS SEGUINTES PONTOS ANTES DE PROSSEGUIR):\n${input.controle.feedbackPendente}\n\n# INSTRUÇÕES DA TAREFA\n${prompt}`;
-        }
 
         return prompt;
     }

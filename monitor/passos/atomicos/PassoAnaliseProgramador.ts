@@ -18,7 +18,7 @@ const retornoAnaliseProgramador = z.object({
 export type AnaliseProgramadorOutput = z.infer<typeof retornoAnaliseProgramador>;
 const AnaliseProgramadorSchema: JSONSchema7 = zodToJsonSchema(retornoAnaliseProgramador) as JSONSchema7;
 
-export class PassoAnaliseProgramador extends PassoIAAbstrato<ContextoExecucao, AnaliseProgramadorOutput> {
+export class PassoAnaliseProgramador extends PassoIAAbstrato<Readonly<ContextoExecucao>, AnaliseProgramadorOutput> {
     readonly nome: string = 'FaseAnaliseProgramador';
     protected readonly schema: JSONSchema7 = AnaliseProgramadorSchema;
 

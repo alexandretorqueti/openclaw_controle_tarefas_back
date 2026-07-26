@@ -4,7 +4,7 @@ import { retornoTipoDaTarefaType, retornoTipoDaTarefaSchema } from '../../interf
 import { FabricaPromptsIA } from '../../utils/fabricaPrompts';
 import { PassoIAAbstrato } from '../passoIAAbstrato';
 
-export class PassoPreAnaliseEscopoTarefa extends PassoIAAbstrato<ContextoExecucao, retornoTipoDaTarefaType> {
+export class PassoPreAnaliseEscopoTarefa extends PassoIAAbstrato<Readonly<ContextoExecucao>, retornoTipoDaTarefaType> {
     readonly nome = 'PreAnaliseEscopoTarefa';
     protected readonly schema: JSONSchema7 = retornoTipoDaTarefaSchema;
 
@@ -13,7 +13,6 @@ export class PassoPreAnaliseEscopoTarefa extends PassoIAAbstrato<ContextoExecuca
             taskType: 'development',
             expectedLayers: [],
             difficult: 0,
-            error: mensagemErro,
             success: false
         };
     }

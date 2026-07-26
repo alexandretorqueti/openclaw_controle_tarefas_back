@@ -29,17 +29,15 @@ export class FabricaPromptsIA {
       - Descrição: ${task.description}
 
       REGRAS DE CLASSIFICAÇÃO:
-      1. Se a tarefa pede para criar/alterar/corrigir código, ou alterar layout, o tipo é 'development'.
-      2. Se a tarefa mencionar BUG, ERRO, CORRIGIR, AJUSTAR, MELHORAR, ou palavras similares, é 'development'.
-      3. [REGRA DE ANÁLISE]: Se a tarefa pede APENAS para VERIFICAR, CHECAR, INSPECIONAR, DESCOBRIR, LER ou EXPLICAR algo (ex: "ver em qual porta roda", "analisar log"), o tipo é OBRIGATORIAMENTE 'analysis'. Tarefas de 'analysis' NÃO exigem modificação de arquivos, apenas leitura e relatório!
-      4. Se é uma tarefa de script/limpeza/execução repetitiva, é 'automation'.
-      5. Se requer um relatório detalhado ou passo a passo, marque "requiresReport" como true.
-      6. [REGRA DE CAMADAS]: Tarefas focadas em "layout", "tela", "protótipo", "componentes", "visual", "CSS" ou "design" NÃO DEVEM exigir o backend. SÓ inclua "backend" em "requiredModifiedLayers" se a tarefa pedir explicitamente para criar banco de dados, rotas de API ou lógica de servidor.
-      
-      REGRAS DE EXECUÇÃO:
-      1. Tarefas 'analysis' serão EXECUTADAS IMEDIATAMENTE pelo arquiteto (sem passar para o desenvolvedor).
-      2. Tarefas 'automation' simples serão executadas pelo arquiteto; complexas passarão para o desenvolvedor.
-      3. Tarefas 'development' sempre passarão para o desenvolvedor após planejamento.
+      1. Por default a tarefa é 'development'.
+      2. Caso explicitamente você identifique que o usuário pediu apenas para ANALISAR e NÃO CODIFICAR, o tipo é 'analysis'.
+      3. Caso o usuário pediu alguma ação externa como ler emails, ler logs, etc, o tipo é 'automation'.
+
+      REGRAS DE DOMÍNIO
+      1. Se a tarefa menciona questões do frontend, mas não precisa alterar o back, então ela é apenas de front.
+      2. Se a tarefa menciona questões do backend, mas não precisa alterar o front, então ela é apenas de back.
+      3. Se a tarefa menciona questões do backend e do frontend, ela é de ambos.
+
     `.trim();
   
   }
@@ -157,8 +155,7 @@ ${ctxFisico}${ctxPortas}
   // ==========================================================
   public static gerarPromptProgramador(
     tarefa: TarefaCompleta,
-    planoArquiteto: string,
-    caminhoTaskDir: string
+    planoArquiteto: string
   ): string {
     return `
 Você é o Desenvolvedor Senior encarregado de implementar esta tarefa.

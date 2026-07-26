@@ -11,13 +11,13 @@ const retornoVerificaAtomicidade = z.object({
     confidence: z.number().min(0).max(100).default(0).describe('Confiança da tarefa'),
     inferredDomain: z.enum(['backend', 'frontend']).optional().describe('Domínio inferido da tarefa'),
     success: z.boolean().describe('Indica se a tarefa foi verificada com sucesso'),
-    error: z.string().optional().describe('Se houve algum erro no seu processamento')
+    motivos: z.string().describe('Diga claramente porque escolheu isIdeal ou se deve ser dividida.'),
 });
 
 export type VerificaAtomicidadeOutput = z.infer<typeof retornoVerificaAtomicidade>;
 const VerificaAtomicidadeSchema: JSONSchema7 = zodToJsonSchema(retornoVerificaAtomicidade) as JSONSchema7;
 
-export class PassoVerificaAtomicidade extends PassoIAAbstrato<ContextoExecucao, VerificaAtomicidadeOutput> {
+export class PassoVerificaAtomicidade extends PassoIAAbstrato<Readonly<ContextoExecucao>, VerificaAtomicidadeOutput> {
     readonly nome: string = 'VerificaçãoDeAtomicidade';
     protected readonly schema: JSONSchema7 = VerificaAtomicidadeSchema;
 
@@ -27,7 +27,7 @@ export class PassoVerificaAtomicidade extends PassoIAAbstrato<ContextoExecucao, 
             reason: mensagemErro,
             confidence: 0,
             success: false,
-            error: mensagemErro
+            motivos: ''
         };
     }
 

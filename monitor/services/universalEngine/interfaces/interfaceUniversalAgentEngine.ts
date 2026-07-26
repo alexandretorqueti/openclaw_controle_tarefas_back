@@ -20,7 +20,7 @@ export interface JsonSchema {
 export interface ValidationResult {
     isValid: boolean;
     feedbackParaIA?: string;
-    parsedData?: any;
+    parsedData?: object;
 }
 
 export enum OutcomeType {

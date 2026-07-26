@@ -20,7 +20,7 @@ const retornoDecomposicao = z.object({
 export type DecompoeTarefaOutput = z.infer<typeof retornoDecomposicao>;
 const DecomposicaoSchema: JSONSchema7 = zodToJsonSchema(retornoDecomposicao) as JSONSchema7;
 
-export class PassoDecompoeTarefa extends PassoIAAbstrato<ContextoExecucao, DecompoeTarefaOutput> {
+export class PassoDecompoeTarefa extends PassoIAAbstrato<Readonly<ContextoExecucao>, DecompoeTarefaOutput> {
     readonly nome: string = 'DecomposiçãoDeTarefa';
     protected readonly schema: JSONSchema7 = DecomposicaoSchema;
 

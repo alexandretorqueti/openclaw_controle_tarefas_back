@@ -30,10 +30,10 @@ export class LLMService {
     // ============================================================================
     private async executeOllama(prompt: string, promptSistema: string, options: LLMOptions): Promise<RetornoOpenclaw> {
         try {
-            const model = options.model?.replace(/^ollama\//, '');
+            const model: string | undefined = options.model?.replace(/^ollama\//, '');
             
             // 1. A MÁGICA AQUI: Dizemos ao Axios qual é a interface exata que o Ollama vai devolver
-            const response: any = await axios.post<any>(this.OLLAMA_ENDPOINT, {
+            const response: any = await axios.post<any>(this.OLLAMA_ENDPOINT as string, {
                 model: model,
                 prompt: prompt,
                 system: promptSistema,
@@ -44,7 +44,7 @@ export class LLMService {
 
             // 2. Agora o TypeScript autocompleta e valida o response.data.response
             // (O texto bruto do LLM está seguro aqui dentro)
-            const content = (response.data.response) || (response.data.thinking) || '';
+            const content: string = (response.data.response) || (response.data.thinking) || '';
             
             // 3. Você converte (adapta) o formato do Ollama para o formato padrão do seu sistema!
             return {
@@ -55,7 +55,7 @@ export class LLMService {
             
         } catch (error: any) {
             // Prevenção de crash caso o erro não venha da API (ex: erro de rede local)
-            const errorMsg = error.response?.data?.error || error.message || 'Erro desconhecido';
+            const errorMsg: string = error.response?.data?.error || error.message || 'Erro desconhecido';
             await log(`❌ [Ollama] Erro: ${errorMsg}`);
             
             return { 
@@ -76,7 +76,7 @@ export class LLMService {
             if (schema.properties) {
             for (const [chave, propriedadeSchema] of Object.entries(schema.properties)) {
                 // Chamada recursiva para preencher as propriedades do objeto
-                exemploObjeto[chave] = this.gerarExemploDeSchema(propriedadeSchema);
+                exemploObjeto[chave] = this.gerarExemploDeSchema(propriedadeSchema as EsquemaSimples);
             }
             }
             return exemploObjeto;
@@ -86,16 +86,16 @@ export class LLMService {
         if (schema.type === 'array' || schema.items) {
             if (schema.items) {
             // Retorna um array contendo 1 item de exemplo (chamada recursiva)
-            return [this.gerarExemploDeSchema(schema.items)];
+            return [this.gerarExemploDeSchema(schema.items as EsquemaSimples)];
             }
             return []; // Fallback se não tiver itens definidos
         }
 
         // 3. Tratamento para Tipos Primitivos (string, number, boolean, etc.)
-        let representacaoValor = '';
+        let representacaoValor: string = '';
 
         // Se tiver um tipo definido, usa ele. Se for um array de tipos (ex: ["string", "null"]), pega o primeiro.
-        const tipoReal = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+        const tipoReal: string = Array.isArray(schema.type) ? schema.type[0] : (schema.type as string);
         representacaoValor += tipoReal || 'any';
 
         // Se for um Enum, mostra as opções disponíveis
@@ -116,11 +116,11 @@ export class LLMService {
         if (!agentId || agentId === 'main') return;
         
         // Mapeia o caminho exato da pasta de sessões no sistema
-        const sessionsDir = path.join(os.homedir(), '.openclaw', 'agents', agentId, 'sessions');
+        const sessionsDir: string = path.join(os.homedir(), '.openclaw', 'agents', agentId, 'sessions');
         
         try {
             // Verifica se a pasta sessions realmente existe no disco
-            const stats = await fs.promises.stat(sessionsDir).catch(
+            const stats: fs.Stats | null = await fs.promises.stat(sessionsDir).catch(
                 (error: NodeJS.ErrnoException) => {
                     console.log(error.message);
                     return null;
@@ -129,18 +129,15 @@ export class LLMService {
             if (!stats || !stats.isDirectory()) return;
 
             // Lê todos os nomes de arquivos que estão lá dentro
-            const files = await fs.promises.readdir(sessionsDir);
+            const files: string[] = await fs.promises.readdir(sessionsDir);
             let deletedCount: number = 0;
             
             for (const file of files) {
-            const filePath = path.join(sessionsDir, file);
-            const fileStat = await fs.promises.stat(filePath);
+            const filePath: string = path.join(sessionsDir, file);
+            const fileStat: fs.Stats = await fs.promises.stat(filePath);
             
             // Deleta apenas se for um arquivo (ignora se houver subpastas ali dentro)
             if (fileStat.isFile()) {
-                // Usa o unlink (que aprendemos agora pouco) para excluir o arquivo
-                // O .catch(()=>{}) no final garante que se um arquivo der erro (ex: travado pelo Windows/Linux), 
-                // o loop não quebra e continua apagando os outros.
                 await fs.promises.unlink(filePath).catch(() => {});
                 deletedCount++;
             }
@@ -159,17 +156,16 @@ export class LLMService {
     // ============================================================================
     private async executeOpenClaw(prompt: string, promptSistema: string, options: LLMOptions, expectedOutcomes: ExpectedOutcome[]): Promise<LLMResponse> {
         return new Promise(async (resolve) => {
-            const agent = options.agentId || 'main';
-            const sessionId = options.sessionId || `session-${Date.now()}`;
+            const agent: string = options.agentId || 'main';
+            const sessionId: string = options.sessionId || `session-${Date.now()}`;
             const agentConfig: AgentConfig = await AgentConfigService.getAgentConfig(agent);
 
             if (options.format) {
-                // Converte o objeto options.format em string (com indentação para o LLM entender melhor)
-                const exemploDoEsquema = this.gerarExemploDeSchema(options.format as EsquemaSimples);
+                const exemploDoEsquema: any = this.gerarExemploDeSchema(options.format as EsquemaSimples);
 
                 for (const outcome of expectedOutcomes) {
                     if (outcome.type === OutcomeType.JSON && outcome.schema) {
-                       const formatoDesejado = typeof options.format === 'string' 
+                       const formatoDesejado: string = typeof options.format === 'string' 
                             ? options.format 
                             : JSON.stringify(exemploDoEsquema, null, 2);
 
@@ -181,26 +177,51 @@ export class LLMService {
                  prompt += `\n\n⚠️ REGRA CRÍTICA DE SISTEMA: Você DEVE retornar a resposta encapsulada em um bloco markdown de JSON (\`\`\`json ... \`\`\`).`;
             }
 
-            // APAGANDO SESSÕES
             await this.wipeAgentAmnesiaCache(agent);
 
-            // 2. RECUPERANDO O CONTEXTO DE DIRETÓRIO (O CWD)
             let spawnCwd: string = os.homedir();
             if (agentConfig.workspace && fs.existsSync(agentConfig.workspace)) {
                 spawnCwd = agentConfig.workspace;
             }
 
-            const OPENCLAW_NODE = process.env.OPENCLAW_NODE!; 
-            const OPENCLAW_MJS = process.env.OPENCLAW_MJS!;
+            const OPENCLAW_NODE: string = process.env.OPENCLAW_NODE!; 
+            const OPENCLAW_MJS: string = process.env.OPENCLAW_MJS!;
 
-            const childArgs = [
-                'agent',
-                '--agent', agent,
-                '--session-id', sessionId,
-                '-m', prompt,
-                '--thinking', 'medium',
-                '--timeout', Math.floor(options.timeout / 1000).toString()
-            ];
+            if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
+                throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
+            }
+
+            // --- INÍCIO DA CORREÇÃO E2BIG VIA WRAPPER ---
+            const tempPromptPath: string = path.join(os.tmpdir(), `openclaw-prompt-${Date.now()}-${Math.random().toString(36).substring(7)}.txt`);
+            fs.writeFileSync(tempPromptPath, prompt, 'utf8');
+
+            const wrapperPath: string = path.join(os.tmpdir(), `openclaw-wrapper-${Date.now()}-${Math.random().toString(36).substring(7)}.mjs`);
+            const wrapperCode: string = `
+import fs from 'fs';
+import { pathToFileURL } from 'url';
+
+const promptText = fs.readFileSync(${JSON.stringify(tempPromptPath)}, 'utf8');
+
+// Injetamos o prompt gigante direto na memória do Node, driblando o limite do SO
+process.argv = [
+    process.argv[0], 
+    ${JSON.stringify(OPENCLAW_MJS)}, 
+    'agent', 
+    '--agent', ${JSON.stringify(agent)}, 
+    '--session-id', ${JSON.stringify(sessionId)}, 
+    '-m', promptText, 
+    '--thinking', 'medium', 
+    '--timeout', ${JSON.stringify(Math.floor(options.timeout / 1000).toString())}
+];
+
+// Inicia a CLI como se ela tivesse sido chamada pelo terminal
+import(pathToFileURL(${JSON.stringify(OPENCLAW_MJS)}).href);
+`;
+            fs.writeFileSync(wrapperPath, wrapperCode, 'utf8');
+
+            // Passamos APENAS o wrapper para o Node executar
+            const childArgs: string[] = [wrapperPath];
+            // --- FIM DA CORREÇÃO ---
 
             const env: NodeJS.ProcessEnv = { 
                 ...process.env,
@@ -224,9 +245,8 @@ export class LLMService {
                 OPENCLAW_WEB_ENABLED: agentConfig.tools.includes('web_search') ? 'true' : 'false',
             };
         
-            // 3. RECUPERANDO A MEMÓRIA DO AGENTE
             if (agentConfig.workspace) {
-                const memoryDir = path.join(agentConfig.workspace, 'memory');
+                const memoryDir: string = path.join(agentConfig.workspace, 'memory');
                 if (!fs.existsSync(memoryDir)) {
                     fs.mkdirSync(memoryDir, { recursive: true });
                 }
@@ -235,33 +255,34 @@ export class LLMService {
 
             delete env.NODE_OPTIONS;
 
-            if (!OPENCLAW_NODE || !OPENCLAW_MJS) {
-                throw new Error('OPENCLAW_NODE ou OPENCLAW_MJS não foram configurados');
-            }
-            const child: ChildProcess = await spawn(OPENCLAW_NODE, [OPENCLAW_MJS, ...childArgs], {
+            const child: ChildProcess = spawn(OPENCLAW_NODE, childArgs, {
                 cwd: spawnCwd, 
                 env, 
                 shell: false,
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 
-            // 1. Variáveis de Estado no escopo correto (Closure)
-            let stdout = '';
-            let stderr = '';
-            let isSettled = false;
+            let stdout: string = '';
+            let stderr: string = '';
+            let isSettled: boolean = false;
 
-            const MAX_SAFE_OUTPUT_LENGTH = 500000;
+            const MAX_SAFE_OUTPUT_LENGTH: number = 500000;
 
-            // 2. Função unificada de finalização
             const settle = (result: RetornoOpenclaw) => {
                 if (isSettled) return;
                 isSettled = true;
                 clearTimeout(timeoutTimer);
+                
+                // --- LIMPEZA DOS ARQUIVOS TEMPORÁRIOS ---
+                try {
+                    if (fs.existsSync(tempPromptPath)) fs.unlinkSync(tempPromptPath);
+                    if (fs.existsSync(wrapperPath)) fs.unlinkSync(wrapperPath);
+                } catch (cleanupError) {}
+
                 resolve(result);
             };
 
-            // 3. Timeout Global (Iniciado UMA VEZ)
-            const timeoutTimer = setTimeout(() => {
+            const timeoutTimer: NodeJS.Timeout = setTimeout(() => {
                 try { child.kill('SIGKILL'); } catch (_) {}
                 settle({ 
                     success: false, 
@@ -270,33 +291,34 @@ export class LLMService {
                 });
             }, options.timeout);
 
-            // 4. Manipuladores de Stream Inline
-            child.stdout.on('data', (data) => {
-                if (isSettled) return;
-                
-                const text = data.toString();
-                stdout += text;
-                
-                // Print ao vivo
-                process.stdout.write(text); // Melhor que log() para streams rápidos
+            if (child.stdout) {
+                child.stdout.on('data', (data: Buffer) => {
+                    if (isSettled) return;
+                    
+                    const text: string = data.toString();
+                    stdout += text;
+                    
+                    process.stdout.write(text); 
 
-                // Verificações de segurança
-                if (stdout.length + stderr.length > MAX_SAFE_OUTPUT_LENGTH || /\x00/.test(text)) {
-                    try { child.kill('SIGKILL'); } catch (_) {}
-                    settle({ 
-                        success: false, 
-                        content: '', 
-                        error: '[PÂNICO] Dados excessivos ou binários detectados.' 
-                    });
-                }
-            });
+                    if (stdout.length + stderr.length > MAX_SAFE_OUTPUT_LENGTH || /\x00/.test(text)) {
+                        try { child.kill('SIGKILL'); } catch (_) {}
+                        settle({ 
+                            success: false, 
+                            content: '', 
+                            error: '[PÂNICO] Dados excessivos ou binários detectados.' 
+                        });
+                    }
+                });
+            }
 
-            child.stderr.on('data', (data) => {
-                if (isSettled) return;
-                stderr += data.toString();
-            });
+            if (child.stderr) {
+                child.stderr.on('data', (data: Buffer) => {
+                    if (isSettled) return;
+                    stderr += data.toString();
+                });
+            }
 
-            child.on('close', (code) => {
+            child.on('close', (code: number | null) => {
                 if (code === 0) {
                     settle({ success: true, content: stdout, raw: { stdout, stderr } });
                 } else {
@@ -304,7 +326,7 @@ export class LLMService {
                 }
             });
 
-            child.on('error', (err) => {
+            child.on('error', (err: Error) => {
                 settle({ success: false, content: '', error: err.message });
             });
         });
@@ -312,5 +334,3 @@ export class LLMService {
 
     
 }
-
-

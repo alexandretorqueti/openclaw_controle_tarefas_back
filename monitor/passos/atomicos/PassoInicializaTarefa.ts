@@ -11,7 +11,6 @@ import type { Logger } from '../../interfaces/logger';
 import { ConfiguracaoMonitor } from '../../interfaces/tipos';
 export interface InicializaTarefaInput {
   tarefa: TarefaCompleta;
-  tasksDir: string;
   apiUrl: string;
   statusInProgress: string;
 }
@@ -61,7 +60,7 @@ export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, Inic
   }
 
   protected async processar(input: InicializaTarefaInput): Promise<InicializaTarefaOutput> {
-    const { tarefa, tasksDir, apiUrl, statusInProgress } = input;
+    const { tarefa, apiUrl, statusInProgress } = input;
 
     await this.logger.info(`⚙️ Inicializando ambiente para tarefa ${tarefa.id}...`);
 
@@ -72,14 +71,11 @@ export class PassoInicializaTarefa extends PassoBase<InicializaTarefaInput, Inic
     // 2. ESTADO
     await this.stateService.registerActiveTask(tarefa.id);
 
-    // 3. DISCO
-    const criacaoDisco = await this.criarDiretorioTrabalho(tarefa.id, tasksDir);
-    if (!criacaoDisco.sucesso) return { sucesso: false };
 
     // 4. API (degradação graciosa)
     await this.atualizarStatusNaApi(apiUrl, tarefa.id, statusInProgress);
 
-    return { sucesso: true, taskDir: criacaoDisco.taskDir };
+    return { sucesso: true};
   }
 
   private async adquirirLock(taskId: number | string): Promise<boolean> {

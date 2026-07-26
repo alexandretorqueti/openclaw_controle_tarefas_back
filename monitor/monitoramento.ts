@@ -93,49 +93,6 @@ export interface outputExecutarTurno {
 }
 
 /**
- * Adapter para chamar a API real do OpenClaw usando container legado
- * Suporte a sessões persistentes para feedback iterativo (TODO 6)
- */
-class ServicoOpenClawLegacy {
-  async executarTurno(input: ChamarIAInput): Promise<outputExecutarTurno> {
-    const OpenClawService = require('../src/services/openclawService');
-    const configuracao = config as ConfiguracaoMonitor;
-    
-    // Usar sessionId fornecido ou gerar novo (TODO 6: persistência de sessão)
-    const sessionId = input.sessionId || `session-${input.agente}-${Date.now()}`;
-    const terminalLogFile = null; // não usamos log de terminal para chamadas simples
-    const tasksDir = configuracao.TASKS_DIR || '/tmp';
-    const projectPath = process.cwd();
-    
-    const resultado = await OpenClawService.executeOptimized(
-      sessionId,
-      input.prompt,
-      input.agente,
-      null, // model (usa o padrão do agente)
-      tasksDir,
-      terminalLogFile,
-      projectPath,
-      input.timeoutMs || 120_000, // timeout 2 minutos
-      {
-        enableBrowser: false,
-        enableElevated: false,
-        enableThinking: true,
-        fallbackAgent: 'main',
-        maxRetries: 0
-      }
-    );
-    
-    return {
-      sucesso: resultado?.success ?? false,
-      output: resultado?.rawOutput ?? '',
-      rawOutput: resultado?.rawOutput ?? '',
-      // toolCall e toolResult não são extraídos pelo serviço atual
-      // Podem ser implementados posteriormente com parsing do rawOutput
-    };
-  }
-}
-
-/**
  * Utilitário: JSON parse genérico ou baseado em schema.
  */
 class JsonValidator {
@@ -361,7 +318,6 @@ Responda APENAS no formato JSON:
       fileSystem: require('fs').promises,
       pathUtil: require('path'),
       servicoBusca: new BuscadorTarefaViaApi(configuracao.API_URL),
-      servicoOpenClaw: new ServicoOpenClawLegacy(),
       servicoDisco: new ServicoDiscoLegacy(),
       jsonValidator: new JsonValidator(),
       motorUniversal: motorUniversal,

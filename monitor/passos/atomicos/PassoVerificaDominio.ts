@@ -33,7 +33,7 @@ export type VerificaDominioOutput = {
 
 const DominioJsonSchema: JSONSchema7 = zodToJsonSchema(retornoDominioSchema) as JSONSchema7;
 
-export class PassoVerificaDominio extends PassoIAAbstrato<ContextoExecucao, any> {
+export class PassoVerificaDominio extends PassoIAAbstrato<Readonly<ContextoExecucao>, any> {
     readonly nome = 'Verificação de Domínio';
     protected readonly schema: JSONSchema7 = DominioJsonSchema;
 

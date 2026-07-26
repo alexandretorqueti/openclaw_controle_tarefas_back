@@ -1,10 +1,17 @@
 import { JSONSchema7 } from "json-schema";
 import { ExpectedOutcome, JsonSchema, ValidationResult } from "./interfaces/interfaceUniversalAgentEngine";
 import { ContextoExecucao } from "../../interfaces";
+import { fa } from "zod/v4/locales";
+
+export interface UniversalValidatorDeps {
+    fileSystem: any;    
+}
+
 
 export class UniversalValidators {
-    constructor() {
-        
+    private deps : UniversalValidatorDeps;
+    constructor(deps: UniversalValidatorDeps) {
+        this.deps = deps;
     }
     
     public defaultValidateJSON(rawOutput: string, outcome: ExpectedOutcome): ValidationResult {
@@ -96,8 +103,26 @@ export class UniversalValidators {
     }
 
     public async defaultValidateFileCreation(rawOutput: string, targetFile?: string): Promise<ValidationResult> {
-        // TODO: Implementar validação de arquivos
-        return { isValid: true, parsedData: { fileCreated: targetFile } };
+        // Verificar se o arquivo em targetFile existe
+        if (targetFile) {
+            const arquivoGenericoExiste = await this.deps.fileSystem.access(targetFile);
+            if (arquivoGenericoExiste) {
+                return { 
+                    isValid: arquivoGenericoExiste, 
+                    feedbackParaIA: `O arquivo ${targetFile} foi criado.`
+                };
+            } else {
+                if (rawOutput && rawOutput.trim() !== '') {
+                    // Se arquivo não existe mas existe output, criar o arquivo com o output
+                    await this.deps.fileSystem.writeFile(targetFile, rawOutput);
+                    return { 
+                        isValid: true, 
+                        feedbackParaIA: `O arquivo ${targetFile} foi criado com o output fornecido.`
+                    };
+                }
+            }
+        }
+        return { isValid: false } as ValidationResult;
     }
 
 }

@@ -5,18 +5,28 @@ import { LLMService } from './services/llmService';
 import { executeWithValidationLoopArgs } from './interfaces/interfaceUniversalAgentEngine';
 import fs from 'fs/promises';
 import { RetornoOpenclaw } from './interfaces/interfaceRestostasIA';
-import { ContextoExecucao } from '../../../monitor/interfaces/tipos';
+
 
 // ============================================================================
 // 2. O MOTOR UNIVERSAL
 // ============================================================================
+export interface UniversalAgentEngineDeps {
+    fileSystem: any;
+}
+
 
 export class UniversalAgentEngine {
-    private readonly universalValidators = new UniversalValidators();
+    private deps : UniversalAgentEngineDeps;
+    private universalValidators : UniversalValidators;
     private readonly llmService = new LLMService();
-    public async executeWithValidationLoop<T = any>(
+
+    constructor(deps: UniversalAgentEngineDeps) {
+        this.deps = deps;
+        this.universalValidators = new UniversalValidators(deps);
+    } 
+    public async executeWithValidationLoop<T = any>  (
         { configIA: config, llmOptions } : executeWithValidationLoopArgs
-    ): Promise<T> { 
+    ): Promise<ValidationResult> { 
         
         const retries = config.maxRetries || 3;
         let tentativaAtual = 1;
@@ -36,12 +46,6 @@ export class UniversalAgentEngine {
                 
                 if (!response.success) {
                     await log(`💥 [Motor Universal] Erro na execução da IA: ${response.error}`);
-                    // TODO : TEMPORÁRIO TIRAR
-                    try {
-                        await fs.writeFile('/home/alexandrebragatorqueti/logllm.txt', response.error, 'utf8'); 
-                    } catch (error) {
-                        
-                    }
                     throw new Error(response.error);
                 }
                 
@@ -51,12 +55,11 @@ export class UniversalAgentEngine {
                 // 3. DECISÃO
                 if (validation.isValid) {
                     await log(`✅ [Motor Universal] Resposta validada com sucesso na tentativa ${tentativaAtual}!`);
-                    // Salva o resultado em um arquivo padrão de log
-                    // /home/alexandrebragatorqueti/logllm.txt
                     
-                    // TODO : TEMPORÁRIO TIRAR
-                    
-                    return validation.parsedData || response.raw;
+                    return {
+                        isValid: true,
+                        parsedData: validation.parsedData  || response.raw,
+                    } as ValidationResult
                 }
 
                 // 4. PREPARA O LOOP DE BRONCA
@@ -150,10 +153,10 @@ export class UniversalAgentEngine {
             return {
                 isValid: false,
                 feedbackParaIA: `Sua resposta falhou nos seguintes requisitos:\n${feedbacks.join('\n')}`
-            };
+            } as ValidationResult;
         }
 
-        return { isValid: true, parsedData: combinedParsedData };
+        return { isValid: true, parsedData: combinedParsedData } as ValidationResult;
     }
   
 }
